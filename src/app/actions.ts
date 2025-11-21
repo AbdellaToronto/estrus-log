@@ -236,12 +236,47 @@ export async function getSubjectLogs(subjectId: string) {
 
   const { data, error } = await supabase
     .from("estrus_logs")
-    .select("*")
+    .select("*, mice(name, cohort_id)")
     .eq("mouse_id", subjectId)
     .order("created_at", { ascending: false });
 
   if (error) throw error;
-  return data;
+
+  // --- FIX: Refresh Signed URLs on read ---
+  const { bucket } = getGcs();
+  const bucketName = bucket.name;
+  const prefix = `https://storage.googleapis.com/${bucketName}/`;
+
+  const updatedData = await Promise.all(
+    data.map(async (log) => {
+      let imageUrl = log.image_url;
+
+      if (imageUrl && imageUrl.includes(prefix)) {
+        try {
+          const objectPath = imageUrl.split(prefix)[1];
+          // Remove query params if any (signed urls have them)
+          const cleanPath = objectPath.split("?")[0];
+
+          const file = bucket.file(cleanPath);
+          const [newUrl] = await file.getSignedUrl({
+            version: "v4",
+            action: "read",
+            expires: Date.now() + 60 * 60 * 1000, // 1 hour
+          });
+          imageUrl = newUrl;
+        } catch (e) {
+          console.error("Failed to refresh URL for log", log.id, e);
+        }
+      }
+
+      return {
+        ...log,
+        image_url: imageUrl,
+      };
+    })
+  );
+
+  return updatedData;
 }
 
 export async function createLog(data: {
