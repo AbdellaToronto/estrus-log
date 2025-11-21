@@ -8,6 +8,8 @@ import { Search, ZoomIn, ZoomOut, Maximize2, Bell, User, Share2, Download } from
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { LogEntryModal } from '@/components/log-entry-modal';
 import { format } from 'date-fns';
+import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, BarChart, Bar, Cell } from "recharts";
+import { motion } from "framer-motion";
 
 export function SubjectPageClient({ subject, initialLogs }: { subject: any, initialLogs: any[] }) {
   const [logs, setLogs] = useState(initialLogs);
@@ -17,6 +19,31 @@ export function SubjectPageClient({ subject, initialLogs }: { subject: any, init
     // In a real app, we'd re-fetch or use a server action to get the new log
     // For now, we'll just reload the page to get fresh data
     window.location.reload();
+  };
+
+  // Prepare Chart Data
+  const timelineData = logs
+    .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+    .map(log => ({
+      date: format(new Date(log.created_at), 'MMM d'),
+      stage: log.stage,
+      confidence: typeof log.confidence === 'number' ? log.confidence : 0.95,
+      value: 1 // Simple activity counter
+    }));
+
+  const stageCounts = logs.reduce((acc, log) => {
+    acc[log.stage] = (acc[log.stage] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
+
+  const distributionData = Object.entries(stageCounts).map(([name, value]) => ({ name, value }));
+
+  const STAGE_COLORS: Record<string, string> = {
+    Proestrus: "#f472b6",
+    Estrus: "#fb7185",
+    Metestrus: "#38bdf8",
+    Diestrus: "#34d399",
+    Uncertain: "#cbd5f5",
   };
 
   return (
@@ -30,6 +57,75 @@ export function SubjectPageClient({ subject, initialLogs }: { subject: any, init
             <AvatarFallback>LW</AvatarFallback>
           </Avatar>
         </div>
+      </div>
+
+      {/* Top Row: Charts & Overview */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 shrink-0 h-48">
+         <motion.div 
+           initial={{ opacity: 0, y: 10 }}
+           animate={{ opacity: 1, y: 0 }}
+           className="glass-panel rounded-2xl p-4 flex flex-col justify-between"
+         >
+            <h3 className="text-xs font-bold uppercase text-muted-foreground tracking-wider">Activity Trend</h3>
+            <div className="flex-1 mt-2 min-h-0">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={timelineData}>
+                  <defs>
+                    <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#8884d8" stopOpacity={0.8}/>
+                      <stop offset="95%" stopColor="#8884d8" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <Tooltip 
+                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
+                    itemStyle={{ color: '#1e293b' }}
+                  />
+                  <Area type="monotone" dataKey="confidence" stroke="#8884d8" fillOpacity={1} fill="url(#colorValue)" />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+         </motion.div>
+
+         <motion.div 
+           initial={{ opacity: 0, y: 10 }}
+           animate={{ opacity: 1, y: 0 }}
+           transition={{ delay: 0.1 }}
+           className="glass-panel rounded-2xl p-4 flex flex-col justify-between"
+         >
+            <h3 className="text-xs font-bold uppercase text-muted-foreground tracking-wider">Stage Distribution</h3>
+            <div className="flex-1 mt-2 min-h-0">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={distributionData}>
+                  <Tooltip 
+                    cursor={{ fill: 'transparent' }}
+                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
+                  />
+                  <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                    {distributionData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={STAGE_COLORS[entry.name] || "#94a3b8"} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+         </motion.div>
+
+         <motion.div 
+           initial={{ opacity: 0, y: 10 }}
+           animate={{ opacity: 1, y: 0 }}
+           transition={{ delay: 0.2 }}
+           className="glass-panel rounded-2xl p-4 flex flex-col gap-2 justify-center items-start"
+         >
+            <div className="text-muted-foreground text-sm font-medium">Total Scans</div>
+            <div className="text-4xl font-bold text-slate-800">{logs.length}</div>
+            
+            <div className="w-full h-px bg-slate-100 my-2" />
+            
+            <div className="text-muted-foreground text-sm font-medium">Most Frequent Stage</div>
+            <div className="text-xl font-semibold text-primary">
+              {distributionData.sort((a,b) => b.value - a.value)[0]?.name || 'N/A'}
+            </div>
+         </motion.div>
       </div>
 
       {/* Main Split View */}

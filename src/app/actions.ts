@@ -772,11 +772,42 @@ export async function getCohortLogs(cohortId: string) {
 
   if (error) throw error;
 
-  // Transform to include subjectName for easier consumption
-  return data.map((log) => ({
-    ...log,
-    subjectName: log.mice?.name || "Unknown",
-  }));
+  // --- FIX: Refresh Signed URLs on read ---
+  const { bucket } = getGcs();
+  const bucketName = bucket.name;
+  const prefix = `https://storage.googleapis.com/${bucketName}/`;
+
+  const updatedData = await Promise.all(
+    data.map(async (log) => {
+      let imageUrl = log.image_url;
+
+      if (imageUrl && imageUrl.includes(prefix)) {
+        try {
+          const objectPath = imageUrl.split(prefix)[1];
+          // Remove query params if any (signed urls have them)
+          const cleanPath = objectPath.split("?")[0];
+
+          const file = bucket.file(cleanPath);
+          const [newUrl] = await file.getSignedUrl({
+            version: "v4",
+            action: "read",
+            expires: Date.now() + 60 * 60 * 1000, // 1 hour
+          });
+          imageUrl = newUrl;
+        } catch (e) {
+          console.error("Failed to refresh URL for log", log.id, e);
+        }
+      }
+
+      return {
+        ...log,
+        image_url: imageUrl,
+        subjectName: log.mice?.name || "Unknown",
+      };
+    })
+  );
+
+  return updatedData;
 }
 
 export async function getCohortInsights(
