@@ -1,81 +1,42 @@
-export type ClassificationStage =
-  | "Proestrus"
-  | "Estrus"
-  | "Metestrus"
-  | "Diestrus"
-  | "Uncertain";
+import { z } from "zod";
 
-export type ClassificationFeatures = {
-  swelling?: string;
-  color?: string;
-  opening?: string;
-  moistness?: string;
-  [key: string]: string | undefined;
-};
+export type ClassificationStage = "Proestrus" | "Estrus" | "Metestrus" | "Diestrus" | "Uncertain";
 
-export type StagePrediction = {
-  name: ClassificationStage;
-  confidence: number;
-};
-
-export type ClassificationResult = {
-  stage: StagePrediction[] | ClassificationStage;
-  reasoning?: string;
-  confidence?: number;
-  features?: ClassificationFeatures;
-};
-
-export function getPrimaryStagePrediction(
-  result?: ClassificationResult | null
-): StagePrediction | null {
-  if (!result?.stage) {
-    return null;
-  }
-
-  if (Array.isArray(result.stage)) {
-    if (result.stage.length === 0) {
-      return null;
-    }
-
-    return result.stage.reduce<StagePrediction | null>((best, entry) => {
-      if (!best || entry.confidence > best.confidence) {
-        return entry;
-      }
-      return best;
-    }, null);
-  }
-
-  const fallbackConfidence =
-    typeof result.confidence === "number" ? result.confidence : 1;
-
-  return {
-    name: result.stage,
-    confidence: fallbackConfidence,
+// Matches the schema from src/app/api/classify/route.ts (Reverted version)
+export interface ClassificationResult {
+  estrus_stage: ClassificationStage;
+  confidence_scores: {
+    Proestrus: number;
+    Estrus: number;
+    Metestrus: number;
+    Diestrus: number;
   };
+  features: {
+    vaginal_opening: string;
+    tissue_color: string;
+    swelling: string;
+    moisture: string;
+  };
+  reasoning: string;
 }
 
-export function getPrimaryStageName(
-  result?: ClassificationResult | null
-): ClassificationStage | null {
-  return getPrimaryStagePrediction(result)?.name ?? null;
+export function getPrimaryStageName(result?: ClassificationResult | null): ClassificationStage | undefined {
+  if (!result) return undefined;
+  return result.estrus_stage;
 }
 
-export function getPrimaryStageConfidence(
-  result?: ClassificationResult | null
-): number {
-  return getPrimaryStagePrediction(result)?.confidence ?? 0;
+export function getPrimaryStageConfidence(result?: ClassificationResult | null): number {
+  if (!result) return 0;
+  const stage = result.estrus_stage;
+  // @ts-ignore - Dynamic access to confidence scores
+  return result.confidence_scores[stage] || 0;
 }
 
-export function filenameFromPath(path: string): string {
-  const segments = path.split("/");
-  return decodeURIComponent(segments[segments.length - 1] || "asset");
-}
-
-export function extractSubjectNameFromFilename(
-  filename: string
-): string | null {
-  const token = filename.split(/[_\s.-]/)[0];
-  if (!token) return null;
-  return token.trim();
+export function getPrimaryStagePrediction(result?: ClassificationResult | null): { name: ClassificationStage; confidence: number } | undefined {
+  if (!result) return undefined;
+  return {
+    name: result.estrus_stage,
+    confidence: getPrimaryStageConfidence(result)
+  };
 }
 

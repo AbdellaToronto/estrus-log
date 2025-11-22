@@ -9,15 +9,16 @@ import {
   Users, 
   Library, 
   Settings, 
-  FlaskConical
+  FlaskConical,
+  LogOut
 } from "lucide-react";
 import { UserButton, OrganizationSwitcher, useUser } from "@clerk/nextjs";
 
 const NAV_ITEMS = [
-  { label: 'Dashboard', icon: LayoutDashboard, href: '/dashboard' },
-  { label: 'Cohorts', icon: Users, href: '/cohorts' }, // Placeholder route
-  { label: 'Library', icon: Library, href: '/library' }, // Placeholder route
-  { label: 'Settings', icon: Settings, href: '/settings' }, // Placeholder route
+  { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
+  { label: 'Cohorts', href: '/cohorts', icon: Users },
+  { label: 'Library', href: '/library', icon: Library },
+  { label: 'Settings', href: '/settings', icon: Settings },
 ];
 
 export function Sidebar() {
@@ -61,19 +62,24 @@ export function Sidebar() {
         {NAV_ITEMS.map((item) => {
           const isActive = pathname.startsWith(item.href);
           return (
-            <Link key={item.href} href={item.href}>
-              <Button
-                variant="ghost"
-                className={cn(
-                  "w-full justify-start gap-3 h-12 rounded-xl transition-all duration-300",
-                  isActive 
-                    ? "bg-primary/10 text-primary font-semibold shadow-sm" 
-                    : "text-muted-foreground hover:text-foreground hover:bg-white/10"
-                )}
-              >
-                <item.icon className="w-5 h-5" />
-                {item.label}
-              </Button>
+            <Link
+              key={item.href}
+              href={item.href}
+              className={cn(
+                "flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group",
+                isActive 
+                  ? "bg-primary text-primary-foreground shadow-lg shadow-primary/25" 
+                  : "text-muted-foreground hover:text-foreground hover:bg-white/5"
+              )}
+            >
+              <item.icon className={cn(
+                "w-5 h-5 transition-colors",
+                isActive ? "text-primary-foreground" : "text-muted-foreground group-hover:text-primary"
+              )} />
+              <span className="font-medium">{item.label}</span>
+              {isActive && (
+                <div className="ml-auto w-1.5 h-1.5 rounded-full bg-white/50" />
+              )}
             </Link>
           );
         })}

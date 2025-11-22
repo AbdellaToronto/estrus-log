@@ -22,7 +22,7 @@ type ClassificationResult = {
   reasoning: string;
 };
 
-export function LogEntryModal({ mouseId, onLogCreated }: { mouseId: string, onLogCreated: () => void }) {
+export function LogEntryModal({ subjectId, onLogCreated }: { subjectId: string, onLogCreated: () => void }) {
   const [open, setOpen] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
@@ -88,7 +88,7 @@ export function LogEntryModal({ mouseId, onLogCreated }: { mouseId: string, onLo
       
       // 3. Create Log Entry
       await createLog({
-        mouseId,
+        subjectId,
         stage: confirmedStage,
         confidence: result.confidence_scores,
         features: result.features,

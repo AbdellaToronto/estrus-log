@@ -610,6 +610,10 @@ export default function BatchUploadPage() {
           scanItemId: item.scanItemId,
           subjectId: item.assignedSubjectId,
           newSubjectName: item.newSubjectName?.trim() || undefined,
+          flexibleData: {
+             confidence_scores: item.result!.confidence_scores,
+             ...toFeaturePayload(item.result!.features) // Also include features in data json for robustness
+          }
         };
       });
 

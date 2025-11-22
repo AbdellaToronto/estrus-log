@@ -1,5 +1,4 @@
-import { createClient, type SupabaseClient } from "@supabase/supabase-js"
-import type { Database } from "@/lib/database-types"
+import { createClient } from "@supabase/supabase-js"
 
 export type SupabaseConfig = {
   url: string
@@ -13,7 +12,7 @@ export type SupabaseConfig = {
  * @param config Supabase configuration
  * @returns Supabase client with admin privileges
  */
-export function createServerClient(config: SupabaseConfig, accessToken?: string): SupabaseClient<Database> {
+export function createServerClient(config: SupabaseConfig, accessToken?: string) {
   const key = accessToken ? config.anonKey : (config.serviceRoleKey ?? config.anonKey)
   
   const options: any = {
@@ -32,7 +31,7 @@ export function createServerClient(config: SupabaseConfig, accessToken?: string)
     }
   }
 
-  return createClient<Database>(config.url, key, options)
+  return createClient(config.url, key, options)
 }
 
 /**

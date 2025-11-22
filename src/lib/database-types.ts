@@ -69,8 +69,7 @@ export type Database = {
           features: Json | null;
           id: string;
           image_url: string | null;
-          mouse_id: string | null;
-          cohort_id: string | null;
+          mouse_id: string;
           notes: string | null;
           stage: string;
         };
@@ -81,8 +80,7 @@ export type Database = {
           features?: Json | null;
           id?: string;
           image_url?: string | null;
-          mouse_id?: string | null;
-          cohort_id?: string | null;
+          mouse_id: string;
           notes?: string | null;
           stage: string;
         };
@@ -93,8 +91,7 @@ export type Database = {
           features?: Json | null;
           id?: string;
           image_url?: string | null;
-          mouse_id?: string | null;
-          cohort_id?: string | null;
+          mouse_id?: string;
           notes?: string | null;
           stage?: string;
         };
@@ -104,13 +101,6 @@ export type Database = {
             columns: ["mouse_id"];
             isOneToOne: false;
             referencedRelation: "mice";
-            referencedColumns: ["id"];
-          },
-          {
-            foreignKeyName: "estrus_logs_cohort_id_fkey";
-            columns: ["cohort_id"];
-            isOneToOne: false;
-            referencedRelation: "cohorts";
             referencedColumns: ["id"];
           }
         ];

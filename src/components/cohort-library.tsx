@@ -1,21 +1,15 @@
-'use client';
+"use client";
 
-import { useState, useMemo } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  Search, 
-  Filter, 
-  Calendar, 
-  User, 
-  Grid, 
-  List as ListIcon,
-  SlidersHorizontal,
+import { useState, useMemo } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  LayoutGrid,
+  Search,
+  Filter,
+  Calendar as CalendarIcon,
   ArrowUpDown,
-  Download
-} from 'lucide-react';
+} from "lucide-react";
 import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -23,316 +17,233 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-  DropdownMenuSeparator,
-  DropdownMenuLabel,
-  DropdownMenuCheckboxItem,
-} from "@/components/ui/dropdown-menu";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import Image from "next/image";
+import { format } from "date-fns";
+import { cn } from "@/lib/utils";
 
 type Log = {
   id: string;
   stage: string;
-  confidence: any;
+  confidence: number | { score: number };
   created_at: string;
   image_url: string | null;
-  subjectName: string;
-  notes: string | null;
+  subjectName?: string;
+  mice?: { name: string } | null;
+};
+
+type Subject = {
+  id: string;
+  name: string;
 };
 
 const STAGES = ["Proestrus", "Estrus", "Metestrus", "Diestrus", "Uncertain"];
 
-export function CohortLibrary({ logs }: { logs: Log[] }) {
-  const [search, setSearch] = useState('');
-  const [groupBy, setGroupBy] = useState<'none' | 'subject' | 'date'>('none');
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
-  const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'confidence'>('newest');
-  const [selectedStages, setSelectedStages] = useState<string[]>([]);
+export function CohortLibrary({
+  logs,
+  subjects,
+}: {
+  logs: any[];
+  subjects: any[];
+}) {
+  const [search, setSearch] = useState("");
+  const [stageFilter, setStageFilter] = useState("all");
+  const [subjectFilter, setSubjectFilter] = useState("all");
+  const [sortBy, setSortBy] = useState<"date" | "confidence">("date");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
 
-  // -- Filtering & Sorting --
-  const filteredLogs = useMemo(() => {
-    let result = logs;
-
-    // Search
-    if (search) {
-      const q = search.toLowerCase();
-      result = result.filter(log => 
-        log.subjectName.toLowerCase().includes(q) || 
-        log.stage.toLowerCase().includes(q) ||
-        (log.notes && log.notes.toLowerCase().includes(q))
-      );
-    }
-
-    // Stage Filter
-    if (selectedStages.length > 0) {
-      result = result.filter(log => selectedStages.includes(log.stage));
-    }
-
-    // Sort
-    result = [...result].sort((a, b) => {
-      if (sortBy === 'newest') return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-      if (sortBy === 'oldest') return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-      if (sortBy === 'confidence') {
-         const confA = typeof a.confidence === 'number' ? a.confidence : a.confidence?.score ?? 0;
-         const confB = typeof b.confidence === 'number' ? b.confidence : b.confidence?.score ?? 0;
-         return confB - confA;
-      }
-      return 0;
-    });
-
-    return result;
-  }, [logs, search, selectedStages, sortBy]);
-
-  // -- Grouping --
-  const groupedLogs = useMemo(() => {
-    if (groupBy === 'none') return { 'All Assets': filteredLogs };
-
-    const groups: Record<string, Log[]> = {};
-    
-    filteredLogs.forEach(log => {
-      let key = 'Other';
-      if (groupBy === 'subject') key = log.subjectName;
-      if (groupBy === 'date') key = new Date(log.created_at).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
-      
-      if (!groups[key]) groups[key] = [];
-      groups[key].push(log);
-    });
-
-    return groups;
-  }, [filteredLogs, groupBy]);
-
-  const toggleStage = (stage: string) => {
-    setSelectedStages(prev => 
-      prev.includes(stage) ? prev.filter(s => s !== stage) : [...prev, stage]
-    );
+  // Helper to extract numeric confidence
+  const getConfidence = (log: any) => {
+    const c = log.confidence;
+    return typeof c === "number" ? c : c?.score || 0;
   };
+
+  const filteredLogs = useMemo(() => {
+    return logs
+      .filter((log) => {
+        const matchesSearch =
+          log.subjectName?.toLowerCase().includes(search.toLowerCase()) ||
+          log.mice?.name?.toLowerCase().includes(search.toLowerCase()) ||
+          log.stage.toLowerCase().includes(search.toLowerCase());
+
+        const matchesStage =
+          stageFilter === "all" || log.stage === stageFilter;
+
+        const matchesSubject =
+          subjectFilter === "all" ||
+          log.mouse_id === subjectFilter ||
+          (!log.mouse_id && subjectFilter === "unassigned");
+
+        return matchesSearch && matchesStage && matchesSubject;
+      })
+      .sort((a, b) => {
+        if (sortBy === "date") {
+          return sortOrder === "desc"
+            ? new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+            : new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+        } else {
+          const confA = getConfidence(a);
+          const confB = getConfidence(b);
+          return sortOrder === "desc" ? confB - confA : confA - confB;
+        }
+      });
+  }, [logs, search, stageFilter, subjectFilter, sortBy, sortOrder]);
 
   return (
     <div className="space-y-6">
-      {/* Toolbar */}
-      <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between bg-white/50 backdrop-blur-xl p-4 rounded-2xl border border-white/50 shadow-sm">
-        <div className="flex items-center gap-2 w-full md:w-auto">
-          <div className="relative w-full md:w-64">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <Input 
-              placeholder="Search assets..." 
-              className="pl-9 bg-white border-slate-200 rounded-full h-10"
+      {/* Controls */}
+      <div className="flex flex-col lg:flex-row gap-4 justify-between bg-white/50 p-4 rounded-2xl border border-slate-200/50 backdrop-blur-sm">
+        <div className="flex flex-1 gap-3 min-w-0">
+          <div className="relative flex-1 max-w-md">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+            <Input
+              placeholder="Search by subject, stage..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
+              className="pl-9 bg-white border-slate-200 rounded-xl focus-visible:ring-blue-500"
             />
           </div>
-          
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="icon" className="rounded-full h-10 w-10 shrink-0 bg-white">
-                <Filter className={`w-4 h-4 ${selectedStages.length > 0 ? 'text-primary fill-primary/20' : 'text-slate-500'}`} />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-56">
-              <DropdownMenuLabel>Filter by Stage</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              {STAGES.map(stage => (
-                <DropdownMenuCheckboxItem 
-                  key={stage}
-                  checked={selectedStages.includes(stage)}
-                  onCheckedChange={() => toggleStage(stage)}
-                >
-                  <span className={`w-2 h-2 rounded-full mr-2 
-                    ${stage === 'Estrus' ? 'bg-red-500' : 
-                      stage === 'Proestrus' ? 'bg-pink-500' : 
-                      stage === 'Diestrus' ? 'bg-purple-500' : 
-                      stage === 'Metestrus' ? 'bg-orange-500' : 'bg-slate-500'}`} 
-                  />
-                  {stage}
-                </DropdownMenuCheckboxItem>
+          <Select value={stageFilter} onValueChange={setStageFilter}>
+            <SelectTrigger className="w-[140px] rounded-xl bg-white border-slate-200">
+              <div className="flex items-center gap-2 text-slate-600">
+                <Filter className="w-3.5 h-3.5" />
+                <SelectValue placeholder="Stage" />
+              </div>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Stages</SelectItem>
+              {STAGES.map((s) => (
+                <SelectItem key={s} value={s}>
+                  {s}
+                </SelectItem>
               ))}
-              {selectedStages.length > 0 && (
-                <>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onSelect={() => setSelectedStages([])} className="text-slate-500 justify-center text-xs">
-                    Clear Filters
-                  </DropdownMenuItem>
-                </>
+            </SelectContent>
+          </Select>
+          <Select value={subjectFilter} onValueChange={setSubjectFilter}>
+            <SelectTrigger className="w-[140px] rounded-xl bg-white border-slate-200">
+              <SelectValue placeholder="Subject" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Subjects</SelectItem>
+              <SelectItem value="unassigned">Unassigned</SelectItem>
+              {subjects.map((s) => (
+                <SelectItem key={s.id} value={s.id}>
+                  {s.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Select
+            value={sortBy}
+            onValueChange={(v: any) => setSortBy(v)}
+          >
+            <SelectTrigger className="w-[130px] rounded-xl bg-white border-slate-200">
+              <div className="flex items-center gap-2 text-slate-600">
+                <ArrowUpDown className="w-3.5 h-3.5" />
+                <SelectValue />
+              </div>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="date">Date</SelectItem>
+              <SelectItem value="confidence">Confidence</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
+            className="rounded-xl"
+          >
+            <ArrowUpDown
+              className={cn(
+                "w-4 h-4 transition-transform",
+                sortOrder === "asc" ? "rotate-180" : ""
               )}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-
-        <div className="flex items-center gap-2 w-full md:w-auto justify-end overflow-x-auto">
-           <Select value={groupBy} onValueChange={(v: any) => setGroupBy(v)}>
-             <SelectTrigger className="w-[140px] rounded-full bg-white h-10 border-slate-200">
-               <SelectValue placeholder="Group By" />
-             </SelectTrigger>
-             <SelectContent>
-               <SelectItem value="none">No Grouping</SelectItem>
-               <SelectItem value="subject">Subject</SelectItem>
-               <SelectItem value="date">Date</SelectItem>
-             </SelectContent>
-           </Select>
-
-           <Select value={sortBy} onValueChange={(v: any) => setSortBy(v)}>
-             <SelectTrigger className="w-[140px] rounded-full bg-white h-10 border-slate-200">
-               <SelectValue placeholder="Sort By" />
-             </SelectTrigger>
-             <SelectContent>
-               <SelectItem value="newest">Newest First</SelectItem>
-               <SelectItem value="oldest">Oldest First</SelectItem>
-               <SelectItem value="confidence">Confidence</SelectItem>
-             </SelectContent>
-           </Select>
-           
-           <div className="h-6 w-px bg-slate-200 mx-1" />
-
-           <div className="bg-slate-100 p-1 rounded-full flex items-center">
-              <Button 
-                variant="ghost" 
-                size="icon" 
-                className={`h-8 w-8 rounded-full ${viewMode === 'grid' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500'}`}
-                onClick={() => setViewMode('grid')}
-              >
-                <Grid className="w-4 h-4" />
-              </Button>
-              <Button 
-                variant="ghost" 
-                size="icon" 
-                className={`h-8 w-8 rounded-full ${viewMode === 'list' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500'}`}
-                onClick={() => setViewMode('list')}
-              >
-                <ListIcon className="w-4 h-4" />
-              </Button>
-           </div>
+            />
+          </Button>
         </div>
       </div>
 
-      {/* Content */}
-      <div className="space-y-8">
-        {Object.entries(groupedLogs).map(([groupName, groupLogs]) => (
-          <div key={groupName} className="space-y-4">
-            {groupBy !== 'none' && (
-              <div className="flex items-center gap-2">
-                <h3 className="font-semibold text-slate-700 text-lg">{groupName}</h3>
-                <Badge variant="secondary" className="bg-slate-100 text-slate-500">{groupLogs.length}</Badge>
-              </div>
-            )}
-            
-            {viewMode === 'grid' ? (
-              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
-                <AnimatePresence initial={false}>
-                  {groupLogs.map((log) => (
-                    <LogCard key={log.id} log={log} />
-                  ))}
-                </AnimatePresence>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                <AnimatePresence initial={false}>
-                  {groupLogs.map((log) => (
-                    <LogListItem key={log.id} log={log} />
-                  ))}
-                </AnimatePresence>
-              </div>
-            )}
-          </div>
-        ))}
-        
-        {filteredLogs.length === 0 && (
-           <div className="text-center py-20">
-             <div className="bg-slate-50 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
-               <Search className="w-8 h-8 text-slate-300" />
-             </div>
-             <h3 className="text-slate-900 font-medium">No assets found</h3>
-             <p className="text-slate-500 text-sm">Try adjusting your filters or search query</p>
-           </div>
-        )}
-      </div>
+      {/* Grid */}
+      {filteredLogs.length === 0 ? (
+        <div className="text-center py-20 text-slate-400">
+          <LayoutGrid className="w-12 h-12 mx-auto mb-4 opacity-20" />
+          <p className="text-lg font-medium">No images found</p>
+          <p className="text-sm">Try adjusting your filters</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
+          <AnimatePresence mode="popLayout">
+            {filteredLogs.map((log) => (
+              <motion.div
+                layout
+                key={log.id}
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.9 }}
+                transition={{ duration: 0.2 }}
+                className="group relative aspect-square rounded-2xl overflow-hidden bg-white border border-slate-100 shadow-sm hover:shadow-lg transition-all"
+              >
+                {log.image_url ? (
+                  <Image
+                    src={log.image_url}
+                    alt=""
+                    fill
+                    className="object-cover transition-transform duration-500 group-hover:scale-105"
+                  />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center bg-slate-50 text-slate-300">
+                    No Image
+                  </div>
+                )}
+
+                {/* Overlay */}
+                <div className="absolute inset-0 bg-linear-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 p-4 flex flex-col justify-end">
+                  <div className="flex items-center justify-between mb-1">
+                    <Badge
+                      className={cn(
+                        "border-0 backdrop-blur-md",
+                        getStageColor(log.stage)
+                      )}
+                    >
+                      {log.stage}
+                    </Badge>
+                    <span className="text-xs font-bold text-white/90">
+                      {Math.round(getConfidence(log) * 100)}%
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-white/80 text-xs">
+                    <span className="font-medium truncate max-w-[60%]">
+                      {log.subjectName || log.mice?.name || "Unassigned"}
+                    </span>
+                    <span>{format(new Date(log.created_at), "MMM d")}</span>
+                  </div>
+                </div>
+              </motion.div>
+            ))}
+          </AnimatePresence>
+        </div>
+      )}
     </div>
   );
 }
 
-function LogCard({ log }: { log: Log }) {
-  const confidence = typeof log.confidence === 'number' ? log.confidence : log.confidence?.score ?? 0;
-  
-  return (
-    <motion.div
-      layout
-      initial={{ opacity: 0, scale: 0.9 }}
-      animate={{ opacity: 1, scale: 1 }}
-      exit={{ opacity: 0, scale: 0.9 }}
-      className="group relative aspect-[4/5] rounded-2xl overflow-hidden bg-white border border-slate-200 shadow-sm hover:shadow-md transition-all cursor-pointer"
-    >
-      {/* Image */}
-      {log.image_url ? (
-        <div className="absolute inset-0 bg-slate-100">
-           <img src={log.image_url} alt={log.subjectName} className="w-full h-full object-cover" />
-           <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-        </div>
-      ) : (
-        <div className="absolute inset-0 bg-slate-100 flex items-center justify-center text-slate-300">
-          <User className="w-12 h-12" />
-        </div>
-      )}
-      
-      {/* Stage Badge (Always visible) */}
-      <div className="absolute top-2 right-2">
-        <Badge className={`
-          backdrop-blur-md shadow-sm border-0 font-medium bg-white/90 text-slate-800
-        `}>
-          {log.stage}
-        </Badge>
-      </div>
-
-      {/* Overlay Content (Hover) */}
-      <div className="absolute bottom-0 left-0 right-0 p-4 text-white opacity-0 group-hover:opacity-100 transition-opacity translate-y-2 group-hover:translate-y-0">
-         <div className="font-bold text-lg">{log.subjectName}</div>
-         <div className="text-xs text-white/80 flex justify-between items-center mt-1">
-            <span>{new Date(log.created_at).toLocaleDateString()}</span>
-            <span>{(confidence * 100).toFixed(0)}% conf</span>
-         </div>
-      </div>
-    </motion.div>
-  );
-}
-
-function LogListItem({ log }: { log: Log }) {
-  const confidence = typeof log.confidence === 'number' ? log.confidence : log.confidence?.score ?? 0;
-
-  return (
-    <motion.div
-      layout
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -10 }}
-      className="flex items-center gap-4 p-3 bg-white rounded-xl border border-slate-200 shadow-sm hover:border-primary/20 transition-colors"
-    >
-      <div className="w-12 h-12 rounded-lg bg-slate-100 overflow-hidden shrink-0">
-        {log.image_url && (
-          <img src={log.image_url} alt={log.subjectName} className="w-full h-full object-cover" />
-        )}
-      </div>
-      
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <span className="font-semibold text-slate-900">{log.subjectName}</span>
-          <Badge variant="outline" className="text-xs font-normal bg-slate-50">{log.stage}</Badge>
-        </div>
-        <div className="text-xs text-slate-500 truncate">
-          {new Date(log.created_at).toLocaleString()} • {(confidence * 100).toFixed(0)}% confidence
-        </div>
-      </div>
-
-      {log.notes && (
-        <div className="hidden md:block text-sm text-slate-600 max-w-xs truncate italic">
-          "{log.notes}"
-        </div>
-      )}
-      
-      <Button variant="ghost" size="sm" className="text-slate-400 hover:text-primary">
-         View
-      </Button>
-    </motion.div>
-  );
+function getStageColor(stage: string) {
+  switch (stage) {
+    case "Estrus":
+      return "bg-rose-500/80 text-white";
+    case "Proestrus":
+      return "bg-pink-500/80 text-white";
+    case "Metestrus":
+      return "bg-sky-500/80 text-white";
+    case "Diestrus":
+      return "bg-emerald-500/80 text-white";
+    default:
+      return "bg-slate-500/80 text-white";
+  }
 }
 

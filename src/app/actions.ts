@@ -21,7 +21,6 @@ type LogRow = Database["public"]["Tables"]["estrus_logs"]["Row"];
 type LogWithSubject = LogRow & {
   mice?: { name?: string; cohort_id?: string } | null;
 };
-type JsonObject = { [key: string]: Json };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -55,10 +54,10 @@ const coerceFeatureRecord = (value: unknown): Record<string, string> => {
 export async function getCohorts() {
   const { userId, getToken } = await auth();
   if (!userId) throw new Error("Unauthorized");
-
+  
   const token = await getToken();
   const supabase = createServerClient(configFromEnv(), token || undefined);
-
+  
   const { data, error } = await supabase
     .from("cohorts")
     .select("*")
@@ -71,10 +70,10 @@ export async function getCohorts() {
 export async function createCohort(formData: FormData) {
   const { userId, orgId, getToken } = await auth();
   if (!userId) throw new Error("Unauthorized");
-
+  
   const token = await getToken();
   const supabase = createServerClient(configFromEnv(), token || undefined);
-
+  
   // -- SAFETY CHECK: Ensure user exists in Supabase before creating foreign key ref --
   const user = await currentUser();
   if (user) {
@@ -163,10 +162,10 @@ export async function getSubjects() {
 export async function getCohortSubjects(cohortId: string) {
   const { userId, getToken } = await auth();
   if (!userId) throw new Error("Unauthorized");
-
+  
   const token = await getToken();
   const supabase = createServerClient(configFromEnv(), token || undefined);
-
+  
   const { data, error } = await supabase
     .from("mice")
     .select("*, cohorts(name, color, type, subject_config)")
@@ -180,10 +179,10 @@ export async function getCohortSubjects(cohortId: string) {
 export async function getSubject(id: string) {
   const { userId, getToken } = await auth();
   if (!userId) throw new Error("Unauthorized");
-
+  
   const token = await getToken();
   const supabase = createServerClient(configFromEnv(), token || undefined);
-
+  
   const { data, error } = await supabase
     .from("mice")
     .select("*, cohorts(name, color, type, subject_config, log_config)")
@@ -197,14 +196,14 @@ export async function getSubject(id: string) {
 export async function createSubject(formData: FormData) {
   const { userId, orgId, getToken } = await auth();
   if (!userId) throw new Error("Unauthorized");
-
+  
   const token = await getToken();
   const supabase = createServerClient(configFromEnv(), token || undefined);
-
+  
   const name = formData.get("name") as string;
   const cohortId = formData.get("cohortId") as string;
 
-  const metadata: JsonObject = {};
+  const metadata: Record<string, string> = {};
   ["dob", "genotype", "cage_number"].forEach((field) => {
     const value = formData.get(field);
     if (typeof value === "string" && value.length > 0) {
@@ -230,85 +229,64 @@ export async function createSubject(formData: FormData) {
 export async function getSubjectLogs(subjectId: string) {
   const { userId, getToken } = await auth();
   if (!userId) throw new Error("Unauthorized");
-
+  
   const token = await getToken();
   const supabase = createServerClient(configFromEnv(), token || undefined);
-
+  
   const { data, error } = await supabase
     .from("estrus_logs")
-    .select("*, mice(name, cohort_id)")
+    .select("*")
     .eq("mouse_id", subjectId)
     .order("created_at", { ascending: false });
 
   if (error) throw error;
 
-  // --- FIX: Refresh Signed URLs on read ---
+  // Refresh signed URLs
   const { bucket } = getGcs();
   const bucketName = bucket.name;
   const prefix = `https://storage.googleapis.com/${bucketName}/`;
 
-  const updatedData = await Promise.all(
+  const updatedLogs = await Promise.all(
     data.map(async (log) => {
-      let imageUrl = log.image_url;
-
-      if (imageUrl && imageUrl.includes(prefix)) {
+      if (log.image_url && log.image_url.includes(prefix)) {
         try {
-          const objectPath = imageUrl.split(prefix)[1];
-          // Remove query params if any (signed urls have them)
-          const cleanPath = objectPath.split("?")[0];
-
-          const file = bucket.file(cleanPath);
+          const objectPath = log.image_url.split(prefix)[1].split("?")[0];
+          const file = bucket.file(objectPath);
           const [newUrl] = await file.getSignedUrl({
             version: "v4",
             action: "read",
             expires: Date.now() + 60 * 60 * 1000, // 1 hour
           });
-          imageUrl = newUrl;
+          return { ...log, image_url: newUrl };
         } catch (e) {
           console.error("Failed to refresh URL for log", log.id, e);
+          return log;
         }
       }
-
-      return {
-        ...log,
-        image_url: imageUrl,
-      };
+      return log;
     })
   );
 
-  return updatedData;
+  return updatedLogs;
 }
 
 export async function createLog(data: {
   subjectId: string;
   stage: string;
   confidence: number | { score: number };
-  features?: JsonObject;
+  features?: Record<string, unknown>;
   imageUrl: string;
   notes: string;
-  flexibleData?: JsonObject;
+  flexibleData?: Record<string, unknown>;
 }) {
   const { userId, getToken } = await auth();
   if (!userId) throw new Error("Unauthorized");
-
+  
   const token = await getToken();
   const supabase = createServerClient(configFromEnv(), token || undefined);
-
-  // Fetch the subject first to get the cohort_id
-  const { data: subject, error: subjectError } = await supabase
-    .from("mice")
-    .select("cohort_id")
-    .eq("id", data.subjectId)
-    .single();
-
-  if (subjectError || !subject) {
-    console.error("Failed to fetch subject for log creation", subjectError);
-    throw new Error("Subject not found");
-  }
-
+  
   const { error } = await supabase.from("estrus_logs").insert({
     mouse_id: data.subjectId,
-    cohort_id: subject.cohort_id,
     stage: data.stage,
     confidence: data.confidence,
     features: data.features ?? {},
@@ -505,7 +483,7 @@ export async function updateScanItem(
   itemId: string,
   updates: {
     status: string;
-    result?: Json;
+    result?: Record<string, unknown>;
     mouseId?: string;
     imageUrl?: string;
   }
@@ -517,7 +495,7 @@ export async function updateScanItem(
 
   const payload: {
     status: string;
-    ai_result?: Json;
+    ai_result?: Record<string, unknown>;
     mouse_id?: string;
     image_url?: string;
   } = {
@@ -551,16 +529,16 @@ export async function getUploadUrl(
 ) {
   const { userId, orgId } = await auth();
   if (!userId) throw new Error("Unauthorized");
-
+  
   const { bucket } = getGcs();
-
+  
   // Organize by Org/User -> Cohort -> Logs
   const rootPath = orgId ? `orgs/${orgId}` : `users/${userId}`;
   const subPath = cohortId ? `${cohortId}/logs` : "uploads";
 
   const path = `${rootPath}/${subPath}/${Date.now()}-${filename}`;
   const file = bucket.file(path);
-
+  
   const [url] = await file.getSignedUrl({
     version: "v4",
     action: "write",
@@ -611,11 +589,12 @@ type BatchLogItem = {
   imageUrl: string;
   stage: string;
   confidence: number;
-  features?: JsonObject;
+  features?: Record<string, unknown>;
   reasoning: string;
   scanItemId?: string;
   subjectId?: string; // Explicit existing subject
   newSubjectName?: string; // Or create a new one
+  flexibleData?: Record<string, unknown>; // NEW: Support flexible data like granular confidences
 };
 
 export type CohortInsights = {
@@ -672,27 +651,22 @@ export async function batchSaveLogs(
     if (!subjectId) {
       // 1. Try explicit new name (e.g. user typed "227A" in UI)
       if (item.newSubjectName) {
-        const normalizedName = item.newSubjectName.trim();
-        const lowerName = normalizedName.toLowerCase();
+        const lowerName = item.newSubjectName.toLowerCase();
         subjectId = subjectMap.get(lowerName); // Check if exists first
 
         if (!subjectId) {
           // Create it
-          const { data: createdSubject, error: createSubjectError } =
-            await supabase
-              .from("mice")
-              .insert({
-                user_id: userId,
-                org_id: orgId || null,
-                cohort_id: cohortId,
-                name: normalizedName,
-              }) // removed status: 'Active' which caused errors
-              .select("id")
-              .single();
-
-          if (createSubjectError) {
-            console.error("Failed to create subject", createSubjectError);
-          }
+          const { data: createdSubject } = await supabase
+            .from("mice")
+            .insert({
+              user_id: userId,
+              org_id: orgId || null,
+              cohort_id: cohortId,
+              name: item.newSubjectName,
+              status: "Active",
+            })
+            .select("id")
+            .single();
 
           if (createdSubject) {
             subjectId = createdSubject.id;
@@ -700,65 +674,35 @@ export async function batchSaveLogs(
           }
         }
       }
-      // 2. Fallback to Filename heuristic (User confirmed this is useful)
+      // 2. Fallback to Filename heuristic (only if desired/legacy)
       else {
-        const cleaned = item.filename.replace(/^\d+-/, "");
-        const lastSegment = cleaned.split("/").pop() ?? cleaned;
-        const potentialName = lastSegment.split(/[_\s.-]/)[0];
-        const normalizedPotential = potentialName.trim();
-        if (normalizedPotential) {
-          const lookupKey = normalizedPotential.toLowerCase();
-          subjectId = subjectMap.get(lookupKey);
-
-          if (!subjectId) {
-            const {
-              data: createdFromFilename,
-              error: createFromFilenameError,
-            } = await supabase
-              .from("mice")
-              .insert({
-                user_id: userId,
-                org_id: orgId || null,
-                cohort_id: cohortId,
-                name: normalizedPotential,
-              })
-              .select("id")
-              .single();
-
-            if (createFromFilenameError) {
-              console.error(
-                "Failed to create subject from filename",
-                createFromFilenameError
-              );
-            }
-
-            if (createdFromFilename) {
-              subjectId = createdFromFilename.id;
-              subjectMap.set(lookupKey, subjectId);
-            }
-          }
+        const cleanFilename = item.filename.replace(/^\d+-/, "");
+        const potentialName = cleanFilename.split(/[_\s.-]/)[0];
+        if (potentialName) {
+          subjectId = subjectMap.get(potentialName.toLowerCase());
         }
       }
     }
 
-    // Always insert, even if no subject is found (mouse_id will be null)
-    logsToInsert.push({
-      cohort_id: cohortId, // Link directly to cohort
-      mouse_id: subjectId || null,
-      stage: item.stage,
-      confidence: typeof item.confidence === "number" ? item.confidence : 0.95,
-      features: item.features ?? {},
-      image_url: item.imageUrl,
-      notes: item.reasoning || "",
-      data: item.features ?? {},
-    });
-
-    if (item.scanItemId) {
-      scanItemsToUpdate.push({
-        id: item.scanItemId,
-        mouse_id: subjectId || null, // Allow null
-        status: "completed",
+    if (subjectId) {
+      logsToInsert.push({
+        mouse_id: subjectId,
+        stage: item.stage,
+        confidence:
+          typeof item.confidence === "number" ? item.confidence : 0.95,
+        features: item.features ?? {},
+        image_url: item.imageUrl,
+        notes: item.reasoning,
+        data: item.flexibleData ?? item.features ?? {},
       });
+
+      if (item.scanItemId) {
+        scanItemsToUpdate.push({
+          id: item.scanItemId,
+          mouse_id: subjectId,
+          status: "completed",
+        });
+      }
     }
   }
 
@@ -801,48 +745,43 @@ export async function getCohortLogs(cohortId: string) {
 
   const { data, error } = await supabase
     .from("estrus_logs")
-    .select("*, mice(name, cohort_id)")
-    .eq("cohort_id", cohortId) // Query by cohort_id directly
+    .select("*, mice!inner(name, cohort_id)")
+    .eq("mice.cohort_id", cohortId)
     .order("created_at", { ascending: false });
 
   if (error) throw error;
 
-  // --- FIX: Refresh Signed URLs on read ---
+  // Refresh signed URLs
   const { bucket } = getGcs();
   const bucketName = bucket.name;
   const prefix = `https://storage.googleapis.com/${bucketName}/`;
 
   const updatedData = await Promise.all(
     data.map(async (log) => {
-      let imageUrl = log.image_url;
-
-      if (imageUrl && imageUrl.includes(prefix)) {
+      if (log.image_url && log.image_url.includes(prefix)) {
         try {
-          const objectPath = imageUrl.split(prefix)[1];
-          // Remove query params if any (signed urls have them)
-          const cleanPath = objectPath.split("?")[0];
-
-          const file = bucket.file(cleanPath);
+          const objectPath = log.image_url.split(prefix)[1].split("?")[0];
+          const file = bucket.file(objectPath);
           const [newUrl] = await file.getSignedUrl({
             version: "v4",
             action: "read",
             expires: Date.now() + 60 * 60 * 1000, // 1 hour
           });
-          imageUrl = newUrl;
+          return { ...log, image_url: newUrl };
         } catch (e) {
           console.error("Failed to refresh URL for log", log.id, e);
+          return log;
         }
       }
-
-      return {
-        ...log,
-        image_url: imageUrl,
-        subjectName: log.mice?.name || "Unknown",
-      };
+      return log;
     })
   );
 
-  return updatedData;
+  // Transform to include subjectName for easier consumption
+  return updatedData.map((log) => ({
+    ...log,
+    subjectName: log.mice?.name || "Unknown",
+  }));
 }
 
 export async function getCohortInsights(
@@ -857,9 +796,9 @@ export async function getCohortInsights(
   const { data: logs, error } = await supabase
     .from("estrus_logs")
     .select(
-      "id, stage, confidence, created_at, image_url, features, mice(name, cohort_id)"
+      "id, stage, confidence, created_at, image_url, features, mice!inner(name, cohort_id)"
     )
-    .eq("cohort_id", cohortId) // Query by cohort_id directly
+    .eq("mice.cohort_id", cohortId)
     .order("created_at", { ascending: false });
 
   if (error) throw error;

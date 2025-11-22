@@ -359,7 +359,7 @@ export function SubjectPageClient({
             </div>
           )}
 
-          <LogEntryModal mouseId={subject.id} onLogCreated={handleLogCreated} />
+          <LogEntryModal subjectId={subject.id} onLogCreated={handleLogCreated} />
         </div>
       </div>
 

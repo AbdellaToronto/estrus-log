@@ -1,47 +1,85 @@
 import { google } from '@ai-sdk/google';
+import { openai } from '@ai-sdk/openai';
 import { generateObject } from 'ai';
 import { z } from 'zod';
+import { NextRequest } from 'next/server';
 
-// Schema for the classification result
-const ClassificationSchema = z.object({
-  stage: z.enum(['Proestrus', 'Estrus', 'Metestrus', 'Diestrus', 'Uncertain']),
-  confidence: z.number().min(0).max(1).describe("Confidence score between 0 and 1"),
-  features: z.object({
-    swelling: z.enum(['None', 'Mild', 'Moderate', 'Severe']).describe("Degree of swelling of the vaginal opening"),
-    color: z.enum(['Pale', 'Pink', 'Red', 'Dark Red', 'Purple']).describe("Color of the tissue"),
-    opening: z.enum(['Closed', 'Open', 'Wide Open']).describe("State of the vaginal opening"),
-    moistness: z.enum(['Dry', 'Moist', 'Wet']).describe("Apparent moistness or discharge")
+// Define the schema for the classification result
+const ImageClassificationSchema = z.object({
+  estrus_stage: z.enum(['Proestrus', 'Estrus', 'Metestrus', 'Diestrus']),
+  confidence_scores: z.object({
+    Proestrus: z.number(),
+    Estrus: z.number(),
+    Metestrus: z.number(),
+    Diestrus: z.number(),
   }),
-  reasoning: z.string().describe("Concise explanation of the classification based on visual evidence")
+  features: z.object({
+    vaginal_opening: z.string(),
+    tissue_color: z.string(),
+    swelling: z.string(),
+    moisture: z.string(),
+  }),
+  reasoning: z.string(),
 });
 
-export async function POST(req: Request) {
-  try {
-    const { image } = await req.json(); // Expecting base64 data URI
+const SYSTEM_PROMPT = `
+You are an expert in mouse reproductive biology. Your task is to analyze images of mouse external genitalia and classify the estrus stage.
 
-    if (!image) {
-      return new Response('Missing image data', { status: 400 });
+The four stages are:
+1. Proestrus: Vaginal opening begins to open, tissue becomes pink and moist, swelling increases.
+2. Estrus: Vaginal opening is fully open, tissue is bright pink/red, swollen, and moist.
+3. Metestrus: Vaginal opening is partially closed, swelling decreases, tissue becomes pale, discharge may be present.
+4. Diestrus: Vaginal opening is small/closed, tissue is pale and dry, no swelling.
+
+Analyze the image for:
+- Vaginal Opening state
+- Tissue Color
+- Swelling
+- Moisture/Discharge
+
+Provide confidence scores for each stage (must sum to 1.0) and a detailed reasoning for your classification.
+`;
+
+export async function POST(req: NextRequest) {
+  try {
+    const formData = await req.formData();
+    const file = formData.get('file') as File;
+    
+    if (!file) {
+      return new Response("No file provided", { status: 400 });
     }
 
-    // Gemini 3 Pro preview delivers improved reasoning + multimodal accuracy.
-    // Ref: https://ai-sdk.dev/cookbook/guides/gemini#gemini-3
-    const result = await generateObject({
-      model: google('gemini-3-pro-preview'),
-      schema: ClassificationSchema,
+    // Convert the file to base64
+    const bytes = await file.arrayBuffer();
+    const buffer = Buffer.from(bytes);
+    const base64Image = buffer.toString('base64');
+
+    const { object: result } = await generateObject({
+      model: google('gemini-2.0-flash-001', {
+        structuredOutputs: true,
+      }),
+      schema: ImageClassificationSchema,
+      system: SYSTEM_PROMPT,
       messages: [
         {
           role: 'user',
           content: [
-            { type: 'text', text: 'You are an expert rodent estrus cycle classifier. Analyze this image of a mouse and determine the estrus stage. Be precise about visual features like swelling, color, and the opening state.' },
-            { type: 'image', image }
+            { type: 'text', text: 'Analyze this image and classify the estrus stage.' },
+            { type: 'image', image: base64Image }
           ]
         }
       ]
     });
 
-    return Response.json(result.object);
+    return Response.json(result);
+
   } catch (error) {
-    console.error('Classification error:', error);
-    return new Response('Failed to classify image', { status: 500 });
+    console.error('Error in classifyImage:', error);
+    return new Response(
+      JSON.stringify({
+        error: error instanceof Error ? error.message : "Unknown error occurred",
+      }),
+      { status: 500, headers: { "Content-Type": "application/json" } }
+    );
   }
 }
