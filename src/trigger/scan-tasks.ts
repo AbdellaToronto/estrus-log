@@ -99,9 +99,17 @@ export const analyzeScanItemTask = task({
     try {
       const base64 = await fetchImageAsBase64(typedScanItem.image_url);
 
-      const classification = await generateObject({
+      const { object: classification, reasoning } = await generateObject({
         model: google("gemini-3-pro-preview"),
         schema: ClassificationSchema,
+        providerOptions: {
+          google: {
+            thinkingConfig: {
+              thinkingLevel: "high",
+              includeThoughts: true,
+            },
+          },
+        },
         messages: [
           {
             role: "user",
@@ -158,13 +166,16 @@ export const analyzeScanItemTask = task({
         .from("scan_items")
         .update({
           status: "complete",
-          ai_result: classification.object,
+          ai_result: {
+            ...classification,
+            thoughts: reasoning,
+          },
         })
         .eq("id", scanItemId);
 
       logger.log("Scan item analyzed", { scanItemId });
 
-      return classification.object;
+      return classification;
     } catch (error) {
       await client
         .from("scan_items")

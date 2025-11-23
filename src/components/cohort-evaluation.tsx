@@ -66,7 +66,13 @@ export function CohortEvaluation({ logs }: { logs: any[] }) {
         // Try to get filename from image_url
         // URL format: .../path/timestamp-filename.jpg
         const urlParts = log.image_url.split("/");
-        const rawFilename = urlParts[urlParts.length - 1] || "";
+        let rawFilename = urlParts[urlParts.length - 1] || "";
+        
+        // Remove query params
+        if (rawFilename.includes("?")) {
+            rawFilename = rawFilename.split("?")[0];
+        }
+
         // Remove timestamp prefix if present (usually 13 digits + dash)
         const filename = rawFilename.replace(/^\d+-/, "");
 
@@ -269,8 +275,10 @@ export function CohortEvaluation({ logs }: { logs: any[] }) {
                     />
                   </div>
                 </TableCell>
-                <TableCell className="font-medium text-slate-700 text-xs font-mono">
-                  {log.filename}
+                <TableCell className="font-medium text-slate-700 text-xs font-mono max-w-[300px]">
+                  <div className="truncate" title={log.filename}>
+                    {log.filename}
+                  </div>
                 </TableCell>
                 <TableCell>
                   <Badge variant="outline" className="bg-slate-50">

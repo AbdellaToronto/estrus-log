@@ -30,6 +30,7 @@ import {
   Copy,
   Sparkles,
   X,
+  Brain,
 } from "lucide-react";
 import Link from "next/link";
 import {
@@ -611,9 +612,10 @@ export default function BatchUploadPage() {
           subjectId: item.assignedSubjectId,
           newSubjectName: item.newSubjectName?.trim() || undefined,
           flexibleData: {
-             confidence_scores: item.result!.confidence_scores,
-             ...toFeaturePayload(item.result!.features) // Also include features in data json for robustness
-          }
+            confidence_scores: item.result!.confidence_scores,
+            thoughts: item.result!.thoughts,
+            ...toFeaturePayload(item.result!.features), // Also include features in data json for robustness
+          },
         };
       });
 
@@ -1263,6 +1265,22 @@ export default function BatchUploadPage() {
                         </div>
 
                         <div className="space-y-4">
+                          {selectedItem.result.thoughts && (
+                            <>
+                              <h4 className="text-xs uppercase tracking-[0.2em] text-slate-400 font-bold flex items-center gap-2 pl-1">
+                                <Brain className="w-3 h-3" /> Thinking Process
+                              </h4>
+                              <motion.div
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ delay: 0.15 }}
+                                className="bg-slate-50 border border-slate-200/60 rounded-2xl p-5 shadow-inner leading-relaxed text-xs text-slate-500 font-mono whitespace-pre-wrap max-h-60 overflow-y-auto mb-6"
+                              >
+                                {selectedItem.result.thoughts}
+                              </motion.div>
+                            </>
+                          )}
+
                           <h4 className="text-xs uppercase tracking-[0.2em] text-slate-400 font-bold flex items-center gap-2 pl-1">
                             <FlaskConical className="w-3 h-3" /> AI Reasoning
                           </h4>

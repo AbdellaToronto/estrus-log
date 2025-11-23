@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { CohortAnalysis } from "@/components/cohort-analysis";
 import { CohortLibrary } from "@/components/cohort-library";
 import { CohortEvaluation } from "@/components/cohort-evaluation";
+import { CohortSubjectsList } from "@/components/cohort-subjects-list";
 
 export function CohortClient({ 
   cohort, 
@@ -124,9 +125,7 @@ export function CohortClient({
 
             <TabsContent value="subjects" className="mt-0 focus-visible:ring-0">
               <div className="glass-panel rounded-3xl p-6 min-h-[300px]">
-                <div className="text-center py-12 text-slate-400">
-                  <p>Subject list view coming soon</p>
-                </div>
+                <CohortSubjectsList subjects={initialSubjects} />
               </div>
             </TabsContent>
             

@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
+import { Database } from "@/lib/database-types";
 
-let client: ReturnType<typeof createClient> | null = null;
+let client: ReturnType<typeof createClient<Database>> | null = null;
 
 export function getServiceSupabase() {
   if (client) return client;
@@ -12,7 +13,7 @@ export function getServiceSupabase() {
     throw new Error("Missing Supabase environment variables");
   }
 
-  client = createClient(url, serviceKey, {
+  client = createClient<Database>(url, serviceKey, {
     auth: { persistSession: false },
   });
 

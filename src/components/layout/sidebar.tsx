@@ -10,13 +10,15 @@ import {
   Library, 
   Settings, 
   FlaskConical,
-  LogOut
+  LogOut,
+  TestTube
 } from "lucide-react";
 import { UserButton, OrganizationSwitcher, useUser } from "@clerk/nextjs";
 
 const NAV_ITEMS = [
   { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { label: 'Cohorts', href: '/cohorts', icon: Users },
+  { label: 'Experiments', href: '/experiments', icon: TestTube },
   { label: 'Library', href: '/library', icon: Library },
   { label: 'Settings', href: '/settings', icon: Settings },
 ];

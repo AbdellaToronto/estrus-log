@@ -123,9 +123,9 @@ export function SubjectPageClient({
   const confidenceScore = selectedLog ? getConfidence(selectedLog) : 0;
 
   return (
-    <div className="space-y-6 h-[calc(100vh-2rem)] flex flex-col">
+    <div className="space-y-8 pb-8">
       {/* Header */}
-      <div className="flex items-center justify-between shrink-0">
+      <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-foreground/80">
           Analysis View: {subject.name}
         </h1>
@@ -138,7 +138,7 @@ export function SubjectPageClient({
       </div>
 
       {/* Top Row: Charts & Overview */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 shrink-0 h-48">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 h-48">
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
@@ -238,7 +238,7 @@ export function SubjectPageClient({
       </div>
 
       {/* Main Split View */}
-      <div className="grid lg:grid-cols-[1fr_350px] gap-6 flex-1 min-h-0">
+      <div className="grid lg:grid-cols-[1fr_400px] gap-8 h-[600px]">
         {/* Left: Image Viewer */}
         <div className="glass-panel rounded-3xl p-4 relative flex flex-col overflow-hidden border border-white/40 shadow-sm bg-white/60 backdrop-blur-xl">
           <div className="absolute top-6 left-6 z-10 flex flex-col gap-2">
@@ -364,8 +364,8 @@ export function SubjectPageClient({
       </div>
 
       {/* Bottom: Data Library */}
-      <div className="glass-panel rounded-3xl p-6 flex flex-col gap-4 flex-1 min-h-0 border border-white/40 shadow-sm bg-white/60 backdrop-blur-xl">
-        <div className="flex items-center justify-between shrink-0">
+      <div className="glass-panel rounded-3xl p-8 flex flex-col gap-6 border border-white/40 shadow-sm bg-white/60 backdrop-blur-xl">
+        <div className="flex items-center justify-between">
           <div>
             <div className="text-xs font-bold uppercase text-slate-400 tracking-wider mb-1">
               Project: {subject.cohorts?.name || "Unassigned"}
@@ -376,12 +376,12 @@ export function SubjectPageClient({
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
             <Input
               placeholder="Search scans..."
-              className="pl-10 bg-white/70 border-slate-200 rounded-full w-64 focus:bg-white transition-all shadow-sm"
+              className="pl-10 bg-white/70 border-slate-200 rounded-full w-72 focus:bg-white transition-all shadow-sm"
             />
           </div>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 overflow-y-auto pr-2 pb-2">
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6">
           {logs.map((log) => (
             <div
               key={log.id}
@@ -433,7 +433,7 @@ export function SubjectPageClient({
                   </Badge>
                 </div>
               </div>
-              <div className="flex justify-between items-center px-1">
+              <div className="flex justify-between items-center px-1 mt-2">
                 <span
                   className={`text-xs font-medium ${
                     selectedLog?.id === log.id
