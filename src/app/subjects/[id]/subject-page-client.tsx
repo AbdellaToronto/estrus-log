@@ -29,6 +29,7 @@ type SubjectLog = {
   created_at: string;
   image_url: string | null;
   notes?: string | null;
+  data?: Record<string, unknown> | null;
 };
 
 type SubjectSummary = {
@@ -52,7 +53,6 @@ const STAGE_COLORS: Record<string, string> = {
   Estrus: "#fb7185",
   Metestrus: "#38bdf8",
   Diestrus: "#34d399",
-  Uncertain: "#cbd5f5",
 };
 
 export function SubjectPageClient({
@@ -330,7 +330,7 @@ export function SubjectPageClient({
                   </span>
                 </div>
                 {/* Progress bar */}
-                <div className="h-3 bg-slate-100 rounded-full overflow-hidden shadow-inner">
+                <div className="h-3 bg-slate-100 rounded-full overflow-hidden shadow-inner mb-6">
                   <motion.div
                     initial={{ width: 0 }}
                     animate={{ width: `${confidenceScore * 100}%` }}
@@ -342,6 +342,88 @@ export function SubjectPageClient({
                     }}
                   />
                 </div>
+
+                {/* All Scores Breakdown */}
+                {selectedLog.data?.confidence_scores && (
+                  <div className="space-y-2">
+                    <div className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-2">
+                      Full Breakdown
+                    </div>
+                    {Object.entries(selectedLog.data.confidence_scores).map(
+                      ([stage, score]) => {
+                        const val = score as number;
+                        return (
+                          <div
+                            key={stage}
+                            className="flex items-center gap-2 text-xs"
+                          >
+                            <div className="w-20 font-medium text-slate-600">
+                              {stage}
+                            </div>
+                            <div className="flex-1 h-1.5 bg-slate-50 rounded-full overflow-hidden">
+                              <div
+                                className="h-full rounded-full"
+                                style={{
+                                  width: `${val * 100}%`,
+                                  backgroundColor:
+                                    STAGE_COLORS[stage] || "#94a3b8",
+                                  opacity:
+                                    stage === selectedLog.stage ? 1 : 0.3,
+                                }}
+                              />
+                            </div>
+                            <div className="w-10 text-right text-slate-500">
+                              {Math.round(val * 100)}%
+                            </div>
+                          </div>
+                        );
+                      }
+                    )}
+                  </div>
+                )}
+
+                {/* Legacy Support: Fallback if data.confidence_scores is missing but confidence is an object */}
+                {!selectedLog.data?.confidence_scores &&
+                  selectedLog.confidence &&
+                  typeof selectedLog.confidence === "object" &&
+                  Object.keys(selectedLog.confidence).length > 1 && (
+                    <div className="space-y-2">
+                      <div className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-2">
+                        Full Breakdown
+                      </div>
+                      {Object.entries(selectedLog.confidence).map(
+                        ([stage, score]) => {
+                          if (stage === "score") return null; // Skip legacy field
+                          const val = score as number;
+                          return (
+                            <div
+                              key={stage}
+                              className="flex items-center gap-2 text-xs"
+                            >
+                              <div className="w-20 font-medium text-slate-600">
+                                {stage}
+                              </div>
+                              <div className="flex-1 h-1.5 bg-slate-50 rounded-full overflow-hidden">
+                                <div
+                                  className="h-full rounded-full"
+                                  style={{
+                                    width: `${val * 100}%`,
+                                    backgroundColor:
+                                      STAGE_COLORS[stage] || "#94a3b8",
+                                    opacity:
+                                      stage === selectedLog.stage ? 1 : 0.3,
+                                  }}
+                                />
+                              </div>
+                              <div className="w-10 text-right text-slate-500">
+                                {Math.round(val * 100)}%
+                              </div>
+                            </div>
+                          );
+                        }
+                      )}
+                    </div>
+                  )}
               </div>
 
               <div className="space-y-3 pt-4 border-t border-slate-100">
@@ -359,7 +441,10 @@ export function SubjectPageClient({
             </div>
           )}
 
-          <LogEntryModal subjectId={subject.id} onLogCreated={handleLogCreated} />
+          <LogEntryModal
+            subjectId={subject.id}
+            onLogCreated={handleLogCreated}
+          />
         </div>
       </div>
 

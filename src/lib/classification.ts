@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export type ClassificationStage = "Proestrus" | "Estrus" | "Metestrus" | "Diestrus" | "Uncertain";
+export type ClassificationStage = "Proestrus" | "Estrus" | "Metestrus" | "Diestrus";
 
 // Matches the schema from src/app/api/classify/route.ts (Reverted version)
 export interface ClassificationResult {

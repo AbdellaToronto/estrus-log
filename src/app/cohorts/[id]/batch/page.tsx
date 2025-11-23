@@ -105,11 +105,12 @@ const STAGE_BADGE_CLASSES: Record<ClassificationStage, string> = {
   Proestrus: "bg-pink-500",
   Metestrus: "bg-sky-500",
   Diestrus: "bg-emerald-600",
-  Uncertain: "bg-slate-600",
 };
 
-const getStageBadgeClass = (stage?: ClassificationStage | null) =>
-  stage ? STAGE_BADGE_CLASSES[stage] : STAGE_BADGE_CLASSES.Uncertain;
+const getStageBadgeClass = (stage?: string | null) =>
+  stage && stage in STAGE_BADGE_CLASSES
+    ? STAGE_BADGE_CLASSES[stage as ClassificationStage]
+    : "bg-slate-500";
 
 const UNASSIGNED_SELECT_VALUE = "__none";
 
@@ -1137,31 +1138,63 @@ export default function BatchUploadPage() {
                           </div>
                         </div>
 
-                        <div className="space-y-2">
-                          <div className="flex items-center justify-between text-xs font-medium text-white/90 uppercase tracking-wide">
-                            <span>Confidence Score</span>
-                            <span>
-                              {selectedItem.result
-                                ? `${Math.round(
-                                    selectedStageConfidence * 100
-                                  )}%`
-                                : "--"}
-                            </span>
+                        <div className="space-y-4">
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between text-xs font-medium text-white/90 uppercase tracking-wide">
+                              <span>Confidence Score</span>
+                              <span>
+                                {selectedItem.result
+                                  ? `${Math.round(
+                                      selectedStageConfidence * 100
+                                    )}%`
+                                  : "--"}
+                              </span>
+                            </div>
+                            <div className="h-2 bg-black/20 rounded-full overflow-hidden backdrop-blur-sm">
+                              <motion.div
+                                initial={{ width: 0 }}
+                                animate={{
+                                  width: `${
+                                    selectedItem.result
+                                      ? selectedStageConfidence * 100
+                                      : 0
+                                  }%`,
+                                }}
+                                transition={{ duration: 1, ease: "circOut" }}
+                                className="h-full bg-white rounded-full shadow-[0_0_10px_rgba(255,255,255,0.5)]"
+                              />
+                            </div>
                           </div>
-                          <div className="h-2 bg-black/20 rounded-full overflow-hidden backdrop-blur-sm">
-                            <motion.div
-                              initial={{ width: 0 }}
-                              animate={{
-                                width: `${
-                                  selectedItem.result
-                                    ? selectedStageConfidence * 100
-                                    : 0
-                                }%`,
-                              }}
-                              transition={{ duration: 1, ease: "circOut" }}
-                              className="h-full bg-white rounded-full shadow-[0_0_10px_rgba(255,255,255,0.5)]"
-                            />
-                          </div>
+
+                          {/* Full Breakdown */}
+                          {selectedItem.result?.confidence_scores && (
+                            <div className="space-y-1 pt-2 border-t border-white/10">
+                              <div className="text-[10px] uppercase tracking-wider text-white/60 font-bold mb-2">
+                                Full Breakdown
+                              </div>
+                              {Object.entries(
+                                selectedItem.result.confidence_scores
+                              ).map(([stage, score]) => (
+                                <div
+                                  key={stage}
+                                  className="flex items-center gap-2 text-[10px] text-white/80"
+                                >
+                                  <div className="w-16 font-medium">
+                                    {stage}
+                                  </div>
+                                  <div className="flex-1 h-1 bg-black/20 rounded-full overflow-hidden">
+                                    <div
+                                      className="h-full bg-white/80 rounded-full"
+                                      style={{ width: `${score * 100}%` }}
+                                    />
+                                  </div>
+                                  <div className="w-8 text-right">
+                                    {Math.round(score * 100)}%
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       </div>
 

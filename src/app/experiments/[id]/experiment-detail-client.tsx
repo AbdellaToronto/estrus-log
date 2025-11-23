@@ -106,7 +106,6 @@ const STAGE_COLORS: Record<string, string> = {
   Estrus: "#ef4444", // Red
   Metestrus: "#10b981", // Emerald
   Diestrus: "#3b82f6", // Blue
-  Uncertain: "#9ca3af", // Gray
 };
 
 // --- Helper: CSV Download ---

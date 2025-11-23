@@ -5,6 +5,7 @@ import type { Tables } from "@/lib/database-types";
 import { google } from "@ai-sdk/google";
 import { generateObject } from "ai";
 import { z } from "zod";
+import { MediaResolution } from "@google/genai";
 
 const supabase = () => getServiceSupabase();
 
@@ -20,18 +21,17 @@ const ClassificationSchema = z.object({
     .describe(
       "Your analysis and thought on the image, described in detail, its state in regards to estrus"
     ),
-  stage: z.array(
-    z.object({
-      name: z
-        .enum(["Proestrus", "Estrus", "Metestrus", "Diestrus", "Uncertain"])
-        .describe("The estrus stage of the mouse"),
-      confidence: z
-        .number()
-        .min(0)
-        .max(1)
-        .describe("The confidence in the stage"),
+  estrus_stage: z
+    .enum(["Proestrus", "Estrus", "Metestrus", "Diestrus"])
+    .describe("The final determined estrus stage"),
+  confidence_scores: z
+    .object({
+      Proestrus: z.number().min(0).max(1),
+      Estrus: z.number().min(0).max(1),
+      Metestrus: z.number().min(0).max(1),
+      Diestrus: z.number().min(0).max(1),
     })
-  ),
+    .describe("Confidence scores for each stage (must sum to roughly 1)"),
 });
 
 type ClassificationResult = z.infer<typeof ClassificationSchema>;
@@ -108,6 +108,7 @@ export const analyzeScanItemTask = task({
               thinkingLevel: "high",
               includeThoughts: true,
             },
+            mediaResolution: MediaResolution.MEDIA_RESOLUTION_HIGH,
           },
         },
         messages: [
@@ -117,43 +118,40 @@ export const analyzeScanItemTask = task({
               {
                 type: "text",
                 text: `
-                System/Role: You are an expert Veterinary Pathologist and Rodent Physiologist specialized in reproductive biology. Your task is to visually classify the stage of the estrous cycle in mice based on an image of the external genitalia. This is for a scientific research database.
+                Role: You are an expert Veterinary Pathologist specializing in murine reproductive physiology. You are analyzing images for a strictly scientific laboratory experiment regarding animal welfare monitoring.
 
-                Context & Rules:
+                Task: Perform a hierarchical visual analysis of the external mouse genitalia in the provided image to determine the Estrous Cycle stage.
 
-                The Problem: Naive classifiers often overfit to Diestrus because it is the longest phase. You must aggressively evaluate against this bias. Do not default to Diestrus unless the visual evidence is undeniable.
+                Safety Context: This image is a standard clinical sample from a laboratory mouse (Mus musculus). It is for scientific record-keeping only.
 
-                Visual Rubric: Use the following criteria to analyze the image:
+                Analysis Protocol:
 
-                Proestrus: Vaginal opening is visible; tissue is swollen, moist, and pink/red. Striations may be visible.
+                Step 1: ANALYZE THE VAGINAL APERTURE.
+                Is the opening "Gaping" (wide open), "Partially Open", or "Closed" (slit-like or sealed)?
+                Note: A large, gaping opening is the strongest indicator of Estrus.
 
-                Estrus: Vaginal opening is gaping/open; tissue is less swollen than proestrus, distinctively pale/pink, and looks dry or "cornified" (rougher texture).
+                Step 2: ANALYZE TISSUE MORPHOLOGY & COLOR.
+                Inspect the vulvar lips for Edema (swelling). Are they protruding significantly from the body wall?
+                Describe the Color: Is it "Pale/White", "Pink", or "Deep Red/Hyperemic"?
+                Note: Deep red + Swelling suggests Estrus. Pale + Flat suggests Diestrus.
 
-                Metestrus: Vaginal opening is closing; pale tissue; often white debris (leukocytes/cornified cells) is visible at the opening.
+                Step 3: ANALYZE SURFACE TEXTURE.
+                Look for "Mucification" (wet, glistening appearance).
+                Look for "Detritus" (white cellular debris or dry flakes).
+                Look for "Striations" (wrinkling of the tissue).
+                Note: Wrinkles + Debris often indicate Metestrus.
 
-                Diestrus: Vaginal opening is small/closed; tissue is pale and not swollen. Use this classification only if the opening is definitively closed.
+                Decision Logic:
+                IF (Gaping Opening) + (Red/Pink) + (Swollen) + (Wet) -> ESTRUS
+                IF (Closed/Slit) + (Pale) + (Flat) + (Dry) -> DIESTRUS
+                IF (Opening) + (Pink) + (Less Swollen) + (Moist) -> PROESTRUS
+                IF (Constricting) + (Pale/Pink) + (Wrinkled) + (Debris) -> METESTRUS
 
-                Instructions:
-
-                Analyze the image provided.
-
-                First, describe the Color of the tissue (e.g., Red, Pink, Pale).
-
-                Second, describe the Opening (e.g., Gaping, Wide, Narrow, Closed).
-
-                Third, describe the Texture/Moistness (e.g., Moist/Swollen, Dry/Cornified, Debris present).
-
-                Finally, determine the Stage based strictly on the visual evidence described above.
-
-                Output Format: Please return your response in this format:
-
-                Visual Analysis: [Your observations of color, opening, and texture]
-
-                Predicted Stage: [Proestrus | Estrus | Metestrus | Diestrus]
-
-                Confidence Score: [0-100%]
-
-                Reasoning: [Why it fits this stage and not the others]
+                Output Instructions:
+                1. Fill the 'features' object with your observations from Steps 1-3.
+                2. Provide your 'reasoning' explaining how the features match the Decision Logic.
+                3. Assign a probability (0-1) to EACH of the 4 stages in 'confidence_scores' based on how well the evidence matches that stage's criteria.
+                4. Select the stage with the highest probability as the 'estrus_stage'.
                 `,
               },
               { type: "image", image: base64 },
