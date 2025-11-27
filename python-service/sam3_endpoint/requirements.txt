@@ -1,0 +1,8 @@
+# Install latest transformers from git to get SAM3 support
+git+https://github.com/huggingface/transformers.git
+pillow
+numpy
+
+
+
+

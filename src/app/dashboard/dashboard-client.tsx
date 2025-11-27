@@ -1,12 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Input } from "@/components/ui/input";
 import { Search } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { DashboardStats as DashboardStatsComponent } from "@/components/dashboard/dashboard-stats";
 import { RecentActivity } from "@/components/dashboard/recent-activity";
 import { CohortList } from "@/components/dashboard/cohort-list";
+import { OnboardingFlow } from "@/components/onboarding";
 import type { DashboardStats } from "@/app/actions";
 
 export function DashboardClient({ 
@@ -19,13 +20,27 @@ export function DashboardClient({
   stats: DashboardStats
 }) {
   const [search, setSearch] = useState('');
+  const [showOnboarding, setShowOnboarding] = useState(false);
 
-  // We might use 'initialSubjects' for search or just ignore it if we don't show the full library here.
-  // If the user searches, we could maybe show a dropdown or filter the cohorts?
-  // For now, I'll leave the search bar but it won't filter anything visible unless I add search results.
-  // Actually, let's make the search bar redirect to the library or filter the cohort list if names match?
-  // Let's just keep it visual for now or remove it if it does nothing. 
-  // The user had a search bar, so I'll keep it but maybe make it just a placeholder for future global search.
+  // Show onboarding if user has no cohorts
+  useEffect(() => {
+    if (initialCohorts.length === 0) {
+      setShowOnboarding(true);
+    }
+  }, [initialCohorts.length]);
+
+  // If showing onboarding, render that instead
+  if (showOnboarding) {
+    return (
+      <OnboardingFlow 
+        onComplete={() => {
+          setShowOnboarding(false);
+          // Refresh the page to get the new cohort
+          window.location.reload();
+        }} 
+      />
+    );
+  }
 
   return (
     <div className="space-y-8">
@@ -64,16 +79,6 @@ export function DashboardClient({
         {/* Right Column: Cohorts & Quick Links */}
         <div className="space-y-6">
           <CohortList cohorts={initialCohorts} />
-          
-          {/* Maybe a "Quick Start" card? */}
-          {/* 
-          <Card>
-            <CardHeader><CardTitle>Quick Actions</CardTitle></CardHeader>
-            <CardContent>
-              <Button className="w-full">Start New Scan Session</Button>
-            </CardContent>
-          </Card> 
-          */}
         </div>
       </div>
     </div>

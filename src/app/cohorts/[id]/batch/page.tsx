@@ -31,7 +31,10 @@ import {
   Sparkles,
   X,
   Brain,
+  Eye,
+  EyeOff,
 } from "lucide-react";
+import { CycleWheel, ConfidenceBars } from "@/components/analysis";
 import Link from "next/link";
 import {
   getUploadUrls,
@@ -42,17 +45,18 @@ import {
   getScanSession,
   getScanItems,
   startScanSessionAnalysis,
+  getCohort,
 } from "@/app/actions";
 import { useParams, useRouter } from "next/navigation";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
 import {
   ClassificationResult,
-  ClassificationStage,
   getPrimaryStageConfidence,
   getPrimaryStageName,
   getPrimaryStagePrediction,
 } from "@/lib/classification";
+import { useParsedCohortConfig } from "@/lib/cohort-config-context";
 
 type ScanItem = {
   id: string; // Local ID for UI
@@ -69,6 +73,8 @@ type ScanItem = {
     | "error"
     | "saved";
   gcsUrl?: string;
+  croppedImageUrl?: string; // Segmented/cropped image
+  maskImageUrl?: string; // Segmentation mask for visualization
   result?: ClassificationResult;
   assignedSubjectId?: string;
   newSubjectName?: string;
@@ -89,29 +95,6 @@ const STATUS_LABELS: Record<ScanItem["status"], string> = {
   saved: "Saved",
 };
 
-const STAGE_GRADIENTS: Record<string, string> = {
-  Estrus: "from-rose-400/80 via-rose-500/70 to-rose-600/60",
-  Proestrus: "from-pink-400/80 via-pink-500/70 to-pink-600/60",
-  Metestrus: "from-sky-400/80 via-sky-500/70 to-sky-600/60",
-  Diestrus: "from-emerald-400/80 via-emerald-500/70 to-emerald-600/60",
-  default: "from-slate-400/80 via-slate-500/70 to-slate-600/60",
-};
-
-const getStageGradient = (stage?: string) =>
-  STAGE_GRADIENTS[stage ?? "default"] ?? STAGE_GRADIENTS.default;
-
-const STAGE_BADGE_CLASSES: Record<ClassificationStage, string> = {
-  Estrus: "bg-rose-500",
-  Proestrus: "bg-pink-500",
-  Metestrus: "bg-sky-500",
-  Diestrus: "bg-emerald-600",
-};
-
-const getStageBadgeClass = (stage?: string | null) =>
-  stage && stage in STAGE_BADGE_CLASSES
-    ? STAGE_BADGE_CLASSES[stage as ClassificationStage]
-    : "bg-slate-500";
-
 const UNASSIGNED_SELECT_VALUE = "__none";
 
 type DbScanItem = {
@@ -121,6 +104,8 @@ type DbScanItem = {
   ai_result: ClassificationResult | null;
   created_at: string;
   mouse_id: string | null;
+  cropped_image_url: string | null;
+  mask_image_url: string | null;
 };
 
 const mapDbStatus = (status: string | null): ScanItem["status"] => {
@@ -157,6 +142,8 @@ const deserializeServerItem = (item: DbScanItem): ScanItem => {
     previewUrl: item.image_url,
     status: mapDbStatus(item.status),
     gcsUrl: item.image_url,
+    croppedImageUrl: item.cropped_image_url || undefined,
+    maskImageUrl: item.mask_image_url || undefined,
     result: (item.ai_result as ClassificationResult) || undefined,
     assignedSubjectId: item.mouse_id || undefined,
   };
@@ -176,6 +163,20 @@ export default function BatchUploadPage() {
   const [subjects, setSubjects] = useState<SubjectOption[]>([]);
   const [subjectsLoading, setSubjectsLoading] = useState(false);
   const [subjectsError, setSubjectsError] = useState<string | null>(null);
+  const [showCroppedImage, setShowCroppedImage] = useState(false);
+  const [cohort, setCohort] = useState<{
+    type?: string | null;
+    log_config?: unknown;
+    subject_config?: unknown;
+  } | null>(null);
+
+  // Load cohort config
+  useEffect(() => {
+    getCohort(cohortId).then(setCohort).catch(console.error);
+  }, [cohortId]);
+
+  // Get config from cohort
+  const { stages, getColor, getGradient, subjectLabel } = useParsedCohortConfig(cohort);
 
   const selectedItem = items.find((i) => i.id === selectedId);
   const hasItems = items.length > 0;
@@ -349,6 +350,8 @@ export default function BatchUploadPage() {
             status: mapDbStatus(server.status),
             gcsUrl: isValidServerUrl ? serverUrl : item.gcsUrl,
             previewUrl: isValidServerUrl ? serverUrl : item.previewUrl,
+            croppedImageUrl: server.cropped_image_url || item.croppedImageUrl,
+            maskImageUrl: server.mask_image_url || item.maskImageUrl,
             result: (server.ai_result as ClassificationResult) || item.result,
             assignedSubjectId:
               serverAssignedId || item.assignedSubjectId || undefined,
@@ -1026,10 +1029,8 @@ export default function BatchUploadPage() {
                                   >
                                     <div className="flex items-center justify-center">
                                       <Badge
-                                        className={cn(
-                                          "backdrop-blur-md border-0 shadow-lg text-white font-bold px-3 py-1 text-xs tracking-wide",
-                                          getStageBadgeClass(stageName)
-                                        )}
+                                        className="backdrop-blur-md border-0 shadow-lg text-white font-bold px-3 py-1 text-xs tracking-wide"
+                                        style={{ backgroundColor: getColor(stageName) }}
                                       >
                                         {stageName}
                                       </Badge>
@@ -1059,12 +1060,68 @@ export default function BatchUploadPage() {
               className="border-l border-slate-200 bg-white flex flex-col overflow-hidden shadow-2xl z-30 shrink-0 h-full"
             >
               <div className="h-72 relative bg-linear-to-br from-slate-100 via-slate-50 to-white border-b border-slate-100 shrink-0">
-                <Image
-                  src={selectedItem.previewUrl}
-                  alt=""
-                  fill
-                  className="object-contain p-8"
-                />
+                {/* Original Image */}
+                <AnimatePresence mode="wait">
+                  <motion.div
+                    key={showCroppedImage && selectedItem.croppedImageUrl ? "cropped" : "original"}
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.95 }}
+                    transition={{ duration: 0.2 }}
+                    className="absolute inset-0"
+                  >
+                    <Image
+                      src={showCroppedImage && selectedItem.croppedImageUrl 
+                        ? selectedItem.croppedImageUrl 
+                        : selectedItem.previewUrl}
+                      alt=""
+                      fill
+                      className={cn(
+                        "object-contain p-8",
+                        showCroppedImage && selectedItem.croppedImageUrl && "bg-black"
+                      )}
+                    />
+                  </motion.div>
+                </AnimatePresence>
+
+                {/* Analyzing overlay animation */}
+                {selectedItem.status === "analyzing" && (
+                  <motion.div
+                    className="absolute inset-0 flex items-center justify-center pointer-events-none"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                  >
+                    <motion.div
+                      className="absolute inset-x-0 h-0.5 bg-gradient-to-r from-transparent via-purple-500 to-transparent"
+                      initial={{ top: "10%" }}
+                      animate={{ top: ["10%", "90%", "10%"] }}
+                      transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+                    />
+                  </motion.div>
+                )}
+
+                {/* Toggle cropped/original button */}
+                {selectedItem.croppedImageUrl && (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => setShowCroppedImage(!showCroppedImage)}
+                    className="absolute top-4 left-4 bg-white/80 hover:bg-white shadow-sm rounded-full backdrop-blur-md z-10 gap-1.5 text-xs"
+                  >
+                    {showCroppedImage ? (
+                      <>
+                        <EyeOff className="w-3 h-3" />
+                        Original
+                      </>
+                    ) : (
+                      <>
+                        <Eye className="w-3 h-3" />
+                        Segmented
+                      </>
+                    )}
+                  </Button>
+                )}
+
                 <Button
                   size="icon"
                   variant="secondary"
@@ -1118,9 +1175,7 @@ export default function BatchUploadPage() {
                       transition={{ delay: 0.1 }}
                       className={cn(
                         "rounded-3xl p-6 border border-white/20 shadow-xl shadow-slate-900/5 text-white overflow-hidden relative",
-                        `bg-linear-to-br ${getStageGradient(
-                          selectedStageName ?? undefined
-                        )}`
+                        `bg-linear-to-br ${getGradient(selectedStageName ?? "")}`
                       )}
                     >
                       <div className="relative z-10">
@@ -1166,33 +1221,18 @@ export default function BatchUploadPage() {
                             </div>
                           </div>
 
-                          {/* Full Breakdown */}
+                          {/* Cycle Wheel Visualization */}
                           {selectedItem.result?.confidence_scores && (
-                            <div className="space-y-1 pt-2 border-t border-white/10">
-                              <div className="text-[10px] uppercase tracking-wider text-white/60 font-bold mb-2">
-                                Full Breakdown
+                            <div className="pt-2 border-t border-white/10">
+                              <div className="flex justify-center py-2">
+                                <CycleWheel
+                                  confidences={selectedItem.result.confidence_scores}
+                                  predictedStage={selectedStageName ?? undefined}
+                                  isAnalyzing={selectedItem.status === "analyzing"}
+                                  size={160}
+                                  stages={stages}
+                                />
                               </div>
-                              {Object.entries(
-                                selectedItem.result.confidence_scores
-                              ).map(([stage, score]) => (
-                                <div
-                                  key={stage}
-                                  className="flex items-center gap-2 text-[10px] text-white/80"
-                                >
-                                  <div className="w-16 font-medium">
-                                    {stage}
-                                  </div>
-                                  <div className="flex-1 h-1 bg-black/20 rounded-full overflow-hidden">
-                                    <div
-                                      className="h-full bg-white/80 rounded-full"
-                                      style={{ width: `${score * 100}%` }}
-                                    />
-                                  </div>
-                                  <div className="w-8 text-right">
-                                    {Math.round(score * 100)}%
-                                  </div>
-                                </div>
-                              ))}
                             </div>
                           )}
                         </div>
@@ -1203,16 +1243,35 @@ export default function BatchUploadPage() {
                       <div className="absolute -bottom-10 -left-10 w-40 h-40 bg-black/10 rounded-full blur-3xl pointer-events-none" />
                     </motion.div>
 
+                    {/* Confidence Breakdown */}
+                    {selectedItem.result?.confidence_scores && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.2 }}
+                        className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm"
+                      >
+                        <h4 className="text-xs uppercase tracking-[0.2em] text-slate-400 font-bold mb-4">
+                          Confidence Breakdown
+                        </h4>
+                        <ConfidenceBars
+                          confidences={selectedItem.result.confidence_scores}
+                          predictedStage={selectedStageName ?? undefined}
+                          stages={stages}
+                        />
+                      </motion.div>
+                    )}
+
                     {selectedItem.status === "complete" &&
                     selectedItem.result ? (
                       <>
                         <div className="space-y-4">
                           <h4 className="text-xs uppercase tracking-[0.2em] text-slate-400 font-bold pl-1">
-                            Subject Assignment
+                            {subjectLabel} Assignment
                           </h4>
                           <div className="space-y-2">
                             <Label className="text-xs text-slate-500 font-semibold">
-                              Select existing subject
+                              Select existing {subjectLabel.toLowerCase()}
                             </Label>
                             <Select
                               value={
@@ -1235,8 +1294,8 @@ export default function BatchUploadPage() {
                                 <SelectValue
                                   placeholder={
                                     subjectsLoading
-                                      ? "Loading subjects..."
-                                      : "Choose subject"
+                                      ? `Loading ${subjectLabel.toLowerCase()}s...`
+                                      : `Choose ${subjectLabel.toLowerCase()}`
                                   }
                                 />
                               </SelectTrigger>
@@ -1258,7 +1317,7 @@ export default function BatchUploadPage() {
                               <span>
                                 {subjectsLoading
                                   ? "Loading..."
-                                  : `${subjects.length} subjects`}
+                                  : `${subjects.length} ${subjectLabel.toLowerCase()}${subjects.length !== 1 ? 's' : ''}`}
                               </span>
                               <button
                                 type="button"
@@ -1277,7 +1336,7 @@ export default function BatchUploadPage() {
 
                           <div className="space-y-2">
                             <Label className="text-xs text-slate-500 font-semibold">
-                              Or create a new subject
+                              Or create a new {subjectLabel.toLowerCase()}
                             </Label>
                             <Input
                               placeholder="Enter identifier e.g. 227A"
@@ -1291,7 +1350,7 @@ export default function BatchUploadPage() {
                               className="h-11 bg-white border-slate-200 rounded-xl"
                             />
                             <p className="text-[11px] text-slate-400">
-                              New subjects will be created automatically when
+                              New {subjectLabel.toLowerCase()}s will be created automatically when
                               you save.
                             </p>
                           </div>

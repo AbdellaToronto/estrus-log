@@ -1,0 +1,9 @@
+# Requirements for SAM3 Inference Endpoint
+# Add this as requirements.txt in your forked sam3 repo
+
+pillow
+numpy
+
+
+
+

@@ -2,10 +2,7 @@ import { batch, logger, task } from "@trigger.dev/sdk/v3";
 import { getServiceSupabase } from "@/lib/supabase-admin";
 import { getGcs } from "@/lib/gcs";
 import type { Tables } from "@/lib/database-types";
-import { google } from "@ai-sdk/google";
-import { generateObject } from "ai";
 import { z } from "zod";
-import { MediaResolution } from "@google/genai";
 
 const supabase = () => getServiceSupabase();
 
@@ -49,16 +46,13 @@ type BatchChildRun = {
 
 const gcs = getGcs();
 
-async function fetchImageAsBase64(url: string) {
+async function fetchImageAsBlob(url: string): Promise<Blob> {
   try {
     const response = await fetch(url);
     if (!response.ok) {
       throw new Error(`Unable to fetch image ${url}: ${response.status}`);
     }
-    const arrayBuffer = await response.arrayBuffer();
-    const contentType = response.headers.get("content-type") || "image/jpeg";
-    const base64 = Buffer.from(arrayBuffer).toString("base64");
-    return `data:${contentType};base64,${base64}`;
+    return await response.blob();
   } catch (networkError) {
     const prefix = `https://storage.googleapis.com/${gcs.bucket.name}/`;
     if (!url.startsWith(prefix)) {
@@ -69,8 +63,16 @@ async function fetchImageAsBase64(url: string) {
     const [buffer] = await file.download();
     const [metadata] = await file.getMetadata();
     const contentType = metadata?.contentType || "image/jpeg";
-    return `data:${contentType};base64,${buffer.toString("base64")}`;
+    return new Blob([buffer as unknown as Uint8Array], { type: contentType });
   }
+}
+
+interface Neighbor {
+  id: string;
+  label: string;
+  similarity: number;
+  image_path: string | null;
+  metadata: any;
 }
 
 export const analyzeScanItemTask = task({
@@ -97,81 +99,211 @@ export const analyzeScanItemTask = task({
       .eq("id", scanItemId);
 
     try {
-      const base64 = await fetchImageAsBase64(typedScanItem.image_url);
+      // 1. Fetch Image
+      const imageBlob = await fetchImageAsBlob(typedScanItem.image_url);
 
-      const { object: classification, reasoning } = await generateObject({
-        model: google("gemini-3-pro-preview"),
-        schema: ClassificationSchema,
-        providerOptions: {
-          google: {
-            thinkingConfig: {
-              thinkingLevel: "high",
-              includeThoughts: true,
-            },
-            mediaResolution: MediaResolution.MEDIA_RESOLUTION_HIGH,
-          },
-        },
-        messages: [
-          {
-            role: "user",
-            content: [
-              {
-                type: "text",
-                text: `
-                Role: You are an expert Veterinary Pathologist specializing in murine reproductive physiology. You are analyzing images for a strictly scientific laboratory experiment regarding animal welfare monitoring.
+      // 2. Generate Embedding via Modal Cloud BioCLIP Service
+      const bioclipUrl =
+        process.env.BIOCLIP_API_URL ||
+        "https://abdellaalioncan--estrus-pipeline-embed-endpoint.modal.run";
 
-                Task: Perform a hierarchical visual analysis of the external mouse genitalia in the provided image to determine the Estrous Cycle stage.
+      // Convert blob to base64 for the Modal endpoint
+      const arrayBuffer = await imageBlob.arrayBuffer();
+      const base64Image = Buffer.from(arrayBuffer).toString("base64");
 
-                Safety Context: This image is a standard clinical sample from a laboratory mouse (Mus musculus). It is for scientific record-keeping only.
-
-                Analysis Protocol:
-
-                Step 1: ANALYZE THE VAGINAL APERTURE.
-                Is the opening "Gaping" (wide open), "Partially Open", or "Closed" (slit-like or sealed)?
-                Note: A large, gaping opening is the strongest indicator of Estrus.
-
-                Step 2: ANALYZE TISSUE MORPHOLOGY & COLOR.
-                Inspect the vulvar lips for Edema (swelling). Are they protruding significantly from the body wall?
-                Describe the Color: Is it "Pale/White", "Pink", or "Deep Red/Hyperemic"?
-                Note: Deep red + Swelling suggests Estrus. Pale + Flat suggests Diestrus.
-
-                Step 3: ANALYZE SURFACE TEXTURE.
-                Look for "Mucification" (wet, glistening appearance).
-                Look for "Detritus" (white cellular debris or dry flakes).
-                Look for "Striations" (wrinkling of the tissue).
-                Note: Wrinkles + Debris often indicate Metestrus.
-
-                Decision Logic:
-                IF (Gaping Opening) + (Red/Pink) + (Swollen) + (Wet) -> ESTRUS
-                IF (Closed/Slit) + (Pale) + (Flat) + (Dry) -> DIESTRUS
-                IF (Opening) + (Pink) + (Less Swollen) + (Moist) -> PROESTRUS
-                IF (Constricting) + (Pale/Pink) + (Wrinkled) + (Debris) -> METESTRUS
-
-                Output Instructions:
-                1. Fill the 'features' object with your observations from Steps 1-3.
-                2. Provide your 'reasoning' explaining how the features match the Decision Logic.
-                3. Assign a probability (0-1) to EACH of the 4 stages in 'confidence_scores' based on how well the evidence matches that stage's criteria.
-                4. Select the stage with the highest probability as the 'estrus_stage'.
-                `,
-              },
-              { type: "image", image: base64 },
-            ],
-          },
-        ],
+      logger.log("Sending image to BioCLIP cloud service...", {
+        url: bioclipUrl,
       });
+
+      const embedResponse = await fetch(bioclipUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ image: base64Image }),
+      });
+
+      if (!embedResponse.ok) {
+        const errorText = await embedResponse.text();
+        throw new Error(
+          `BioCLIP Service Error: ${embedResponse.status} ${embedResponse.statusText} - ${errorText}`
+        );
+      }
+
+      const { embedding } = (await embedResponse.json()) as {
+        embedding: number[];
+      };
+
+      // 2b. Generate SAM3 cropped image for visual artifact (optional, non-blocking)
+      let croppedImageUrl: string | null = null;
+      try {
+        const sam3Url =
+          process.env.SAM3_API_URL ||
+          "https://abdellaalioncan--estrus-pipeline-segment-endpoint.modal.run";
+
+        logger.log("Generating SAM3 cropped image...");
+
+        const sam3Response = await fetch(sam3Url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            image: base64Image,
+            prompt: "mouse body",
+            bg_mode: "mask_crop",
+          }),
+        });
+
+        if (sam3Response.ok) {
+          const sam3Result = (await sam3Response.json()) as {
+            image: string;
+            format: string;
+          };
+
+          // Upload cropped image to GCS
+          const croppedBuffer = Buffer.from(sam3Result.image, "base64");
+          const croppedFileName = `scans/${typedScanItem.session_id}/${scanItemId}_cropped.${sam3Result.format}`;
+          const croppedFile = gcs.bucket.file(croppedFileName);
+
+          await croppedFile.save(croppedBuffer, {
+            contentType:
+              sam3Result.format === "png" ? "image/png" : "image/jpeg",
+          });
+
+          croppedImageUrl = `https://storage.googleapis.com/${gcs.bucket.name}/${croppedFileName}`;
+          logger.log("SAM3 cropped image saved", { croppedImageUrl });
+        } else {
+          logger.warn("SAM3 cropping failed, continuing without cropped image");
+        }
+      } catch (sam3Error) {
+        logger.warn("SAM3 cropping error, continuing without cropped image", {
+          error: sam3Error,
+        });
+      }
+
+      // 3. Find Neighbors (k-NN)
+      logger.log("Finding similar reference images...");
+
+      // Cast to any because the RPC function is not yet in the generated types
+      const { data: neighborsData, error: matchError } = await (
+        client as any
+      ).rpc("match_reference_images", {
+        query_embedding: embedding,
+        match_threshold: 0.0, // Return top k regardless of similarity
+        match_count: 3,
+      });
+
+      if (matchError) {
+        logger.error("Similarity search failed", { error: matchError });
+        throw new Error("Failed to match reference images");
+      }
+
+      const neighbors = neighborsData as Neighbor[] | null;
+
+      if (!neighbors || neighbors.length === 0) {
+        logger.warn(
+          "No reference images found. Defaulting to Diestrus (Uncertain)."
+        );
+        // Fallback result
+        const result: ClassificationResult = {
+          estrus_stage: "Diestrus",
+          confidence_scores: {
+            Proestrus: 0,
+            Estrus: 0,
+            Metestrus: 0,
+            Diestrus: 1,
+          },
+          features: {
+            swelling: "Unknown",
+            color: "Unknown",
+            opening: "Unknown",
+            moistness: "Unknown",
+          },
+          reasoning: "No reference images available for comparison.",
+        };
+
+        await client
+          .from("scan_items")
+          .update({ status: "complete", ai_result: result })
+          .eq("id", scanItemId);
+        return result;
+      }
+
+      // 4. Voting Logic
+      const votes: Record<string, number> = {
+        Proestrus: 0,
+        Estrus: 0,
+        Metestrus: 0,
+        Diestrus: 0,
+      };
+
+      neighbors.forEach((n) => {
+        if (votes[n.label] !== undefined) {
+          votes[n.label]++;
+        } else {
+          // Handle potential case mismatches or new labels
+          votes[n.label] = 1;
+        }
+      });
+
+      // Determine Winner
+      let winner: "Proestrus" | "Estrus" | "Metestrus" | "Diestrus" =
+        "Diestrus"; // Default
+      let maxVotes = -1;
+
+      // Check for majority (>=2 out of 3) or plurality
+      for (const [stage, count] of Object.entries(votes)) {
+        if (count > maxVotes) {
+          maxVotes = count;
+          // Cast string to enum type if valid, else fallback
+          if (
+            ["Proestrus", "Estrus", "Metestrus", "Diestrus"].includes(stage)
+          ) {
+            winner = stage as any;
+          }
+        }
+      }
+
+      // Calculate confidence based on vote share
+      const totalVotes = neighbors.length;
+      const confidence_scores = {
+        Proestrus: (votes.Proestrus || 0) / totalVotes,
+        Estrus: (votes.Estrus || 0) / totalVotes,
+        Metestrus: (votes.Metestrus || 0) / totalVotes,
+        Diestrus: (votes.Diestrus || 0) / totalVotes,
+      };
+
+      const neighborSummary = neighbors
+        .map((n) => `${n.label} (${(n.similarity * 100).toFixed(1)}%)`)
+        .join(", ");
+
+      const classification: ClassificationResult = {
+        estrus_stage: winner,
+        confidence_scores,
+        features: {
+          swelling: "N/A (BioCLIP Analysis)",
+          color: "N/A (BioCLIP Analysis)",
+          opening: "N/A (BioCLIP Analysis)",
+          moistness: "N/A (BioCLIP Analysis)",
+        },
+        reasoning: `Classified using BioCLIP (Frozen Feature Extractor) + k-NN (k=3). Neighbors: ${neighborSummary}.`,
+      };
+
+      // Validate result
+      const validatedResult = ClassificationSchema.parse(classification);
 
       await client
         .from("scan_items")
         .update({
           status: "complete",
           ai_result: {
-            ...classification,
-            thoughts: reasoning,
+            ...validatedResult,
+            thoughts: validatedResult.reasoning,
           },
+          cropped_image_url: croppedImageUrl,
         })
         .eq("id", scanItemId);
 
-      logger.log("Scan item analyzed", { scanItemId });
+      logger.log("Scan item analyzed", { scanItemId, result: winner });
 
       return classification;
     } catch (error) {

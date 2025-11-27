@@ -2,3 +2,8 @@
 ALTER TABLE mice
 ADD COLUMN status text DEFAULT 'Active';
 
+
+
+
+
+

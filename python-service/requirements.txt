@@ -1,0 +1,20 @@
+fastapi
+uvicorn
+torch
+transformers
+pillow
+supabase
+python-multipart
+python-dotenv
+scikit-learn
+numpy<2
+open_clip_torch
+huggingface_hub
+joblib
+# EVF-SAM2 dependencies
+hydra-core
+timm
+einops
+sentencepiece
+torchscale==0.2.0
+opencv-python

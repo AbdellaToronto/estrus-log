@@ -32,6 +32,7 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
 
 # vercel
 .vercel
@@ -44,3 +45,27 @@ next-env.d.ts
 /.clerk/
 
 .trigger
+
+# Dataset folders (large image files)
+dataset_raw/
+dataset_cropped/
+dataset_split/
+dataset_split_cropped/
+dataset_evf_cropped/
+dataset_sam3_cropped/
+MPP/
+
+# Python service artifacts
+python-service/*.jpg
+python-service/*.png
+python-service/classifier.pkl
+python-service/__pycache__/
+python-service/evf_sam_repo/
+python-service/venv/
+python-service/.venv/
+
+# SAM3 endpoint repo (separate deployment)
+sam3_endpoint_repo/
+
+# Test data archives
+*.zip
