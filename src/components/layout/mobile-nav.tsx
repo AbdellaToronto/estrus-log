@@ -12,11 +12,11 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
-import { 
-  LayoutDashboard, 
-  Users, 
-  Library, 
-  Settings, 
+import {
+  LayoutDashboard,
+  Users,
+  Library,
+  Settings,
   FlaskConical,
   TestTube,
   Search,
@@ -26,20 +26,25 @@ import {
   Cog,
   ChevronRight,
 } from "lucide-react";
-import { UserButton, useUser, useOrganization, useOrganizationList } from "@clerk/nextjs";
+import {
+  UserButton,
+  useUser,
+  useOrganization,
+  useOrganizationList,
+} from "@clerk/nextjs";
 import { Badge } from "@/components/ui/badge";
 
 // Navigation items when user HAS an organization
 const ORG_NAV_ITEMS = [
-  { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-  { label: 'Cohorts', href: '/cohorts', icon: Users },
-  { label: 'Experiments', href: '/experiments', icon: TestTube },
-  { label: 'Settings', href: '/settings', icon: Settings },
+  { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+  { label: "Cohorts", href: "/cohorts", icon: Users },
+  { label: "Experiments", href: "/experiments", icon: TestTube },
+  { label: "Settings", href: "/settings", icon: Settings },
 ];
 
 // Navigation items when user has NO organization (exploring)
 const EXPLORE_NAV_ITEMS = [
-  { label: 'Find a Lab', href: '/discover', icon: Search },
+  { label: "Find a Lab", href: "/discover", icon: Search },
 ];
 
 export function MobileNav() {
@@ -48,7 +53,9 @@ export function MobileNav() {
   const pathname = usePathname();
   const { user } = useUser();
   const { organization } = useOrganization();
-  const { userMemberships, setActive } = useOrganizationList({ userMemberships: { infinite: true } });
+  const { userMemberships, setActive } = useOrganizationList({
+    userMemberships: { infinite: true },
+  });
 
   const hasOrg = !!organization;
   const navItems = hasOrg ? ORG_NAV_ITEMS : EXPLORE_NAV_ITEMS;
@@ -56,7 +63,7 @@ export function MobileNav() {
 
   const handleSwitchOrg = async (orgId: string) => {
     if (orgId === organization?.id || isSwitching || !setActive) return;
-    
+
     setIsSwitching(true);
     try {
       await setActive({ organization: orgId });
@@ -72,8 +79,8 @@ export function MobileNav() {
   };
 
   // Don't show on certain pages
-  const hiddenPaths = ['/sign-in', '/sign-up'];
-  if (hiddenPaths.some(path => pathname.startsWith(path))) {
+  const hiddenPaths = ["/sign-in", "/sign-up"];
+  if (hiddenPaths.some((path) => pathname.startsWith(path))) {
     return null;
   }
 
@@ -113,35 +120,42 @@ export function MobileNav() {
                     <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-1 mb-2">
                       Your Labs
                     </p>
-                    
+
                     {/* List all orgs the user is in */}
                     {userMemberships?.data?.map((membership) => {
-                      const isActive = membership.organization.id === organization?.id;
+                      const isActive =
+                        membership.organization.id === organization?.id;
                       return (
                         <button
                           key={membership.organization.id}
-                          onClick={() => handleSwitchOrg(membership.organization.id)}
+                          onClick={() =>
+                            handleSwitchOrg(membership.organization.id)
+                          }
                           disabled={isSwitching}
                           className={cn(
                             "w-full flex items-center gap-3 p-3 rounded-xl transition-colors text-left",
-                            isActive 
-                              ? "bg-primary/10 border border-primary/20" 
+                            isActive
+                              ? "bg-primary/10 border border-primary/20"
                               : "hover:bg-white/5 border border-transparent"
                           )}
                         >
-                          <div className={cn(
-                            "w-9 h-9 rounded-lg flex items-center justify-center text-white font-bold text-sm",
-                            isActive 
-                              ? "bg-primary" 
-                              : "bg-gradient-to-br from-slate-500 to-slate-600"
-                          )}>
+                          <div
+                            className={cn(
+                              "w-9 h-9 rounded-lg flex items-center justify-center text-white font-bold text-sm",
+                              isActive
+                                ? "bg-primary"
+                                : "bg-gradient-to-br from-slate-500 to-slate-600"
+                            )}
+                          >
                             {membership.organization.name?.[0] || "L"}
                           </div>
                           <div className="flex-1 min-w-0">
-                            <p className={cn(
-                              "font-medium text-sm truncate",
-                              isActive && "text-primary"
-                            )}>
+                            <p
+                              className={cn(
+                                "font-medium text-sm truncate",
+                                isActive && "text-primary"
+                              )}
+                            >
                               {membership.organization.name}
                             </p>
                             <p className="text-xs text-muted-foreground capitalize">
@@ -156,7 +170,7 @@ export function MobileNav() {
                         </button>
                       );
                     })}
-                    
+
                     {/* Link to discover more labs */}
                     <Link
                       href="/discover"
@@ -175,7 +189,9 @@ export function MobileNav() {
                     <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20">
                       <div className="flex items-center gap-2 text-amber-600 mb-1">
                         <Building2 className="w-4 h-4" />
-                        <span className="text-sm font-medium">No Lab Selected</span>
+                        <span className="text-sm font-medium">
+                          No Lab Selected
+                        </span>
                       </div>
                       <p className="text-xs text-muted-foreground">
                         Join or create a lab to access all features
@@ -196,13 +212,14 @@ export function MobileNav() {
                 <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
                   <div className="pb-2">
                     <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                      {hasOrg ? 'Lab Tools' : 'Explore'}
+                      {hasOrg ? "Lab Tools" : "Explore"}
                     </span>
                   </div>
-                  
+
                   {navItems.map((item) => {
-                    const isActive = pathname === item.href || 
-                      (item.href !== '/' && pathname.startsWith(item.href));
+                    const isActive =
+                      pathname === item.href ||
+                      (item.href !== "/" && pathname.startsWith(item.href));
                     return (
                       <Link
                         key={item.href}
@@ -210,15 +227,19 @@ export function MobileNav() {
                         onClick={() => setOpen(false)}
                         className={cn(
                           "flex items-center gap-3 px-3 py-3 rounded-xl transition-all duration-200",
-                          isActive 
-                            ? "bg-primary text-primary-foreground shadow-lg shadow-primary/25" 
+                          isActive
+                            ? "bg-primary text-primary-foreground shadow-lg shadow-primary/25"
                             : "text-muted-foreground hover:text-foreground hover:bg-white/10"
                         )}
                       >
-                        <item.icon className={cn(
-                          "w-5 h-5",
-                          isActive ? "text-primary-foreground" : "text-muted-foreground"
-                        )} />
+                        <item.icon
+                          className={cn(
+                            "w-5 h-5",
+                            isActive
+                              ? "text-primary-foreground"
+                              : "text-muted-foreground"
+                          )}
+                        />
                         <span className="font-medium">{item.label}</span>
                       </Link>
                     );
@@ -238,8 +259,8 @@ export function MobileNav() {
                         onClick={() => setOpen(false)}
                         className={cn(
                           "flex items-center gap-3 px-3 py-3 rounded-xl transition-all duration-200",
-                          pathname === '/discover'
-                            ? "bg-primary text-primary-foreground shadow-lg shadow-primary/25" 
+                          pathname === "/discover"
+                            ? "bg-primary text-primary-foreground shadow-lg shadow-primary/25"
                             : "text-muted-foreground hover:text-foreground hover:bg-white/10"
                         )}
                       >
@@ -254,8 +275,12 @@ export function MobileNav() {
                 <div className="p-4 border-t border-white/10">
                   <div className="flex items-center gap-3">
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{user?.fullName || 'User'}</p>
-                      <p className="text-xs text-muted-foreground truncate">{user?.primaryEmailAddress?.emailAddress}</p>
+                      <p className="text-sm font-medium truncate">
+                        {user?.fullName || "User"}
+                      </p>
+                      <p className="text-xs text-muted-foreground truncate">
+                        {user?.primaryEmailAddress?.emailAddress}
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -267,4 +292,3 @@ export function MobileNav() {
     </div>
   );
 }
-
