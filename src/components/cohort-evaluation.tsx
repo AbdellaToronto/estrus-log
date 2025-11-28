@@ -38,19 +38,31 @@ import Image from "next/image";
 // We will look for stage names in the filename
 const STAGES = ["Proestrus", "Estrus", "Metestrus", "Diestrus"];
 
+// Order matters! Check longer/more specific names first to avoid false matches
+// e.g., "METESTRUS" contains "estrus", so we must check "metestrus" first
+const STAGE_PATTERNS = [
+  { pattern: "metestrus", stage: "Metestrus" },
+  { pattern: "diestrus", stage: "Diestrus" },
+  { pattern: "proestrus", stage: "Proestrus" },
+  { pattern: "estrus", stage: "Estrus" }, // Must be last - it's a substring of others
+];
+
 function inferGroundTruth(filename: string): string | null {
   if (!filename) return null;
   const lower = filename.toLowerCase();
-  for (const stage of STAGES) {
-    if (lower.includes(stage.toLowerCase())) {
+  
+  // Check full stage names first (order matters!)
+  for (const { pattern, stage } of STAGE_PATTERNS) {
+    if (lower.includes(pattern)) {
       return stage;
     }
   }
-  // Common abbreviations
-  if (lower.includes("_pro_") || lower.includes("-pro-")) return "Proestrus";
-  if (lower.includes("_est_") || lower.includes("-est-")) return "Estrus";
-  if (lower.includes("_met_") || lower.includes("-met-")) return "Metestrus";
-  if (lower.includes("_die_") || lower.includes("-die-")) return "Diestrus";
+  
+  // Common abbreviations (with delimiters to avoid false matches)
+  if (lower.includes("_met_") || lower.includes("-met-") || lower.includes("_met.")) return "Metestrus";
+  if (lower.includes("_die_") || lower.includes("-die-") || lower.includes("_die.")) return "Diestrus";
+  if (lower.includes("_pro_") || lower.includes("-pro-") || lower.includes("_pro.")) return "Proestrus";
+  if (lower.includes("_est_") || lower.includes("-est-") || lower.includes("_est.")) return "Estrus";
 
   return null;
 }
