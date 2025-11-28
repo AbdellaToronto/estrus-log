@@ -47,6 +47,7 @@ import {
   startScanSessionAnalysis,
   getCohort,
   deleteCohort,
+  parseFilenamesWithLLM,
 } from "@/app/actions";
 import { useParams, useRouter } from "next/navigation";
 import Image from "next/image";
@@ -58,6 +59,14 @@ import {
   getPrimaryStagePrediction,
 } from "@/lib/classification";
 import { useParsedCohortConfig } from "@/lib/cohort-config-context";
+
+// Parsed info extracted from filename (via LLM)
+type ParsedFilename = {
+  subjectId: string | null;      // e.g., "229B" from "MPP/229B_10_16_METESTRUS.jpg"
+  groundTruthStage: string | null; // e.g., "Metestrus" from filename
+  date: string | null;           // e.g., "10_16" parsed as date hint
+  confidence: number;            // How confident the LLM is in the extraction
+};
 
 type ScanItem = {
   id: string; // Local ID for UI
@@ -79,6 +88,7 @@ type ScanItem = {
   result?: ClassificationResult;
   assignedSubjectId?: string;
   newSubjectName?: string;
+  parsed?: ParsedFilename; // Extracted info from filename (via LLM)
 };
 
 type SubjectOption = {
@@ -158,6 +168,7 @@ export default function BatchUploadPage() {
   const [items, setItems] = useState<ScanItem[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isParsing, setIsParsing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [copiedLinkId, setCopiedLinkId] = useState<string | null>(null);
@@ -204,6 +215,44 @@ export default function BatchUploadPage() {
     () => items.some((i) => i.status === "uploaded" || i.status === "error"),
     [items]
   );
+
+  // Group items by detected subject ID for visual grouping
+  const subjectGroups = useMemo(() => {
+    const groups = new Map<string, { items: ScanItem[]; color: string }>();
+    const colors = [
+      "bg-blue-100 border-blue-300",
+      "bg-green-100 border-green-300",
+      "bg-purple-100 border-purple-300",
+      "bg-amber-100 border-amber-300",
+      "bg-rose-100 border-rose-300",
+      "bg-cyan-100 border-cyan-300",
+      "bg-indigo-100 border-indigo-300",
+      "bg-orange-100 border-orange-300",
+    ];
+    let colorIdx = 0;
+    
+    items.forEach((item) => {
+      const subjectId = item.parsed?.subjectId || item.newSubjectName || "Unknown";
+      if (!groups.has(subjectId)) {
+        groups.set(subjectId, { 
+          items: [], 
+          color: subjectId === "Unknown" ? "bg-slate-100 border-slate-300" : colors[colorIdx++ % colors.length]
+        });
+      }
+      groups.get(subjectId)!.items.push(item);
+    });
+    
+    return groups;
+  }, [items]);
+
+  // Check if any items have ground truth that differs from AI prediction
+  const groundTruthMismatches = useMemo(() => {
+    return items.filter((item) => {
+      if (!item.parsed?.groundTruthStage || !item.result) return false;
+      const predicted = getPrimaryStageName(item.result);
+      return predicted && predicted.toLowerCase() !== item.parsed.groundTruthStage.toLowerCase();
+    });
+  }, [items]);
   const selectedItemSource = selectedItem?.gcsUrl?.split("?")[0];
   const selectedStageName = getPrimaryStageName(selectedItem?.result);
   const selectedStageConfidence = getPrimaryStageConfidence(
@@ -433,7 +482,7 @@ export default function BatchUploadPage() {
       }
     }
 
-    // 2. Create UI Items
+    // 2. Create UI Items (initially without parsed info)
     const newUIItems: ScanItem[] = filesToProcess.map((file) => ({
       id: Math.random().toString(36).substring(7),
       file,
@@ -445,7 +494,36 @@ export default function BatchUploadPage() {
     setItems((prev) => [...prev, ...newUIItems]);
     if (!selectedId && newUIItems.length > 0) setSelectedId(newUIItems[0].id);
 
-    // 3. Bulk Create DB Items
+    // 3. Parse filenames with LLM (async, updates items when done)
+    const filenames = filesToProcess.map((f) => f.name);
+    setIsParsing(true);
+    parseFilenamesWithLLM(filenames)
+      .then((parseResults) => {
+        // Create a map for quick lookup
+        const parseMap = new Map(parseResults.map((r) => [r.filename, r.parsed]));
+        
+        // Update items with parsed info
+        setItems((prev) =>
+          prev.map((item) => {
+            const parsed = parseMap.get(item.filename);
+            if (parsed) {
+              return {
+                ...item,
+                parsed,
+                // Auto-fill the newSubjectName if we have high confidence
+                newSubjectName: parsed.subjectId && parsed.confidence >= 0.7 
+                  ? parsed.subjectId 
+                  : item.newSubjectName,
+              };
+            }
+            return item;
+          })
+        );
+      })
+      .catch((err) => console.error("Failed to parse filenames:", err))
+      .finally(() => setIsParsing(false));
+
+    // 4. Bulk Create DB Items
     // We use a temporary path "pending/filename"
     const dbPayload = newUIItems.map((i) => ({
       imageUrl: `pending/${i.filename}`,
@@ -973,29 +1051,64 @@ export default function BatchUploadPage() {
               exit={{ opacity: 0, x: 50 }}
               className="flex-1 bg-slate-50/50 flex flex-col relative z-10 min-w-0 h-full overflow-hidden"
             >
-              <div className="h-20 border-b border-slate-200 flex items-center justify-between px-8 bg-white/80 backdrop-blur-xl sticky top-0 z-20 shrink-0">
-                <h2 className="font-semibold text-slate-800 text-lg">
-                  Library{" "}
-                  <span className="text-slate-400 ml-2 font-normal">
-                    {items.length} items
-                  </span>
-                </h2>
+              <div className="border-b border-slate-200 bg-white/80 backdrop-blur-xl sticky top-0 z-20 shrink-0">
+                <div className="h-16 flex items-center justify-between px-8">
+                  <h2 className="font-semibold text-slate-800 text-lg">
+                    Library{" "}
+                    <span className="text-slate-400 ml-2 font-normal">
+                      {items.length} items
+                    </span>
+                  </h2>
 
-                {/* Visual Indicator of State */}
-                <div className="flex items-center gap-4 text-sm font-medium text-slate-500">
-                  <div className="flex items-center gap-1">
-                    <div className="w-2 h-2 rounded-full bg-slate-300" />
-                    Pending
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <div className="w-2 h-2 rounded-full bg-blue-400" />
-                    Uploaded
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <div className="w-2 h-2 rounded-full bg-emerald-400" />
-                    Analyzed
+                  {/* Visual Indicator of State */}
+                  <div className="flex items-center gap-4 text-sm font-medium text-slate-500">
+                    <div className="flex items-center gap-1">
+                      <div className="w-2 h-2 rounded-full bg-slate-300" />
+                      Pending
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <div className="w-2 h-2 rounded-full bg-blue-400" />
+                      Uploaded
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <div className="w-2 h-2 rounded-full bg-emerald-400" />
+                      Analyzed
+                    </div>
                   </div>
                 </div>
+                
+                {/* Subject Groups Summary */}
+                {(subjectGroups.size > 0 || isParsing) && (
+                  <div className="px-8 pb-3 flex items-center gap-2 flex-wrap">
+                    {isParsing ? (
+                      <div className="flex items-center gap-2 text-sm text-slate-500">
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                        <span>Analyzing filenames...</span>
+                      </div>
+                    ) : (
+                      <>
+                        <span className="text-xs text-slate-500 font-medium mr-1">
+                          {subjectGroups.size} {subjectGroups.size === 1 ? "subject" : "subjects"} detected:
+                        </span>
+                        {Array.from(subjectGroups.entries()).map(([subjectId, { items: groupItems, color }]) => (
+                          <Badge 
+                            key={subjectId}
+                            className={cn("text-[10px] px-2 py-0.5 font-semibold border", color)}
+                          >
+                            {subjectId} ({groupItems.length})
+                          </Badge>
+                        ))}
+                      </>
+                    )}
+                    
+                    {/* Ground truth mismatch warning */}
+                    {groundTruthMismatches.length > 0 && (
+                      <div className="ml-auto flex items-center gap-1 text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded-full border border-amber-200">
+                        <span className="font-medium">⚠️ {groundTruthMismatches.length} prediction{groundTruthMismatches.length > 1 ? "s" : ""} differ from ground truth</span>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div className="flex-1 overflow-hidden relative">
@@ -1074,19 +1187,47 @@ export default function BatchUploadPage() {
                               )}
                             </div>
 
-                            <div className="absolute top-3 left-3 z-10">
-                              <span
-                                className={cn(
-                                  "block w-2.5 h-2.5 rounded-full border-2 border-white shadow-sm",
-                                  item.assignedSubjectId || item.newSubjectName
-                                    ? "bg-emerald-500"
-                                    : "bg-amber-400"
-                                )}
-                                title={
-                                  getAssignmentLabel(item) ||
-                                  "Unassigned subject"
-                                }
-                              />
+                            {/* Subject ID badge (from filename parsing) */}
+                            <div className="absolute top-3 left-3 z-10 flex flex-col gap-1">
+                              {item.parsed?.subjectId ? (
+                                <Badge 
+                                  className={cn(
+                                    "text-[10px] px-1.5 py-0.5 font-bold border shadow-sm",
+                                    subjectGroups.get(item.parsed.subjectId)?.color || "bg-slate-100 border-slate-300"
+                                  )}
+                                  title={`Subject: ${item.parsed.subjectId} (${Math.round((item.parsed.confidence || 0) * 100)}% confidence)`}
+                                >
+                                  {item.parsed.subjectId}
+                                </Badge>
+                              ) : isParsing ? (
+                                <Badge className="text-[10px] px-1.5 py-0.5 bg-slate-100 border-slate-300 animate-pulse">
+                                  <Loader2 className="w-2 h-2 animate-spin mr-1" />
+                                  ...
+                                </Badge>
+                              ) : (
+                                <span
+                                  className={cn(
+                                    "block w-2.5 h-2.5 rounded-full border-2 border-white shadow-sm",
+                                    item.assignedSubjectId || item.newSubjectName
+                                      ? "bg-emerald-500"
+                                      : "bg-amber-400"
+                                  )}
+                                  title={
+                                    getAssignmentLabel(item) ||
+                                    "Unassigned subject"
+                                  }
+                                />
+                              )}
+                              
+                              {/* Ground truth badge */}
+                              {item.parsed?.groundTruthStage && (
+                                <Badge 
+                                  className="text-[9px] px-1 py-0 font-medium bg-white/90 text-slate-600 border border-slate-200"
+                                  title={`Ground truth: ${item.parsed.groundTruthStage}`}
+                                >
+                                  GT: {item.parsed.groundTruthStage.substring(0, 3)}
+                                </Badge>
+                              )}
                             </div>
 
                             {/* Bottom Result Label */}

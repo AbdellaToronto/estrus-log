@@ -7,6 +7,9 @@ import { revalidatePath } from "next/cache";
 import { tasks } from "@trigger.dev/sdk/v3";
 import type { analyzeScanSessionTask } from "@/trigger/scan-tasks";
 import type { Database, Json } from "@/lib/database-types";
+import { google } from "@ai-sdk/google";
+import { generateObject } from "ai";
+import { z } from "zod";
 
 // --- Types/Defaults ---
 const DEFAULT_ESTRUS_CONFIG = {
@@ -315,8 +318,8 @@ export async function getSubjectLogs(subjectId: string) {
   const updatedLogs = data.map((log) => {
     if (log.image_url) {
       return { ...log, image_url: log.image_url.split("?")[0] };
-    }
-    return log;
+      }
+      return log;
   });
 
   return updatedLogs;
@@ -413,11 +416,11 @@ export async function getScanItems(sessionId: string) {
 
   // Bucket is public - just strip any existing query params (old signed URLs) and return clean public URLs
   const updatedItems = data.map((item) => {
-    if (item.image_url && item.image_url.includes(prefix)) {
+      if (item.image_url && item.image_url.includes(prefix)) {
       const cleanUrl = item.image_url.split("?")[0];
       return { ...item, image_url: cleanUrl };
-    }
-    return item;
+      }
+      return item;
   });
 
   return updatedItems;
@@ -793,26 +796,26 @@ export async function batchSaveLogs(
   const getOrCreateSubject = async (name: string): Promise<string | null> => {
     const lowerName = name.toLowerCase();
     let subjectId = subjectMap.get(lowerName);
-    
-    if (!subjectId) {
-      // Create the subject
-      const { data: createdSubject } = await supabase
-        .from("mice")
-        .insert({
-          user_id: userId,
-          org_id: orgId || null,
-          cohort_id: cohortId,
-          name: name,
-          status: "Active",
-        })
-        .select("id")
-        .single();
 
-      if (createdSubject) {
-        subjectId = createdSubject.id;
-        subjectMap.set(lowerName, subjectId);
-      }
-    }
+        if (!subjectId) {
+      // Create the subject
+          const { data: createdSubject } = await supabase
+            .from("mice")
+            .insert({
+              user_id: userId,
+              org_id: orgId || null,
+              cohort_id: cohortId,
+          name: name,
+              status: "Active",
+            })
+            .select("id")
+            .single();
+
+          if (createdSubject) {
+            subjectId = createdSubject.id;
+            subjectMap.set(lowerName, subjectId);
+          }
+        }
     return subjectId || null;
   };
 
@@ -835,24 +838,24 @@ export async function batchSaveLogs(
     }
 
     // Always save the log - subject is optional
-    logsToInsert.push({
+      logsToInsert.push({
       mouse_id: subjectId || null,
       cohort_id: cohortId,
-      stage: item.stage,
-      confidence:
-        typeof item.confidence === "number" ? item.confidence : 0.95,
-      features: item.features ?? {},
-      image_url: item.imageUrl,
-      notes: item.reasoning,
-      data: item.flexibleData ?? item.features ?? {},
-    });
+        stage: item.stage,
+        confidence:
+          typeof item.confidence === "number" ? item.confidence : 0.95,
+        features: item.features ?? {},
+        image_url: item.imageUrl,
+        notes: item.reasoning,
+        data: item.flexibleData ?? item.features ?? {},
+      });
 
-    if (item.scanItemId) {
-      scanItemsToUpdate.push({
-        id: item.scanItemId,
+      if (item.scanItemId) {
+        scanItemsToUpdate.push({
+          id: item.scanItemId,
         mouse_id: subjectId || null,
         status: "saved",
-      });
+        });
     }
   }
 
@@ -1078,23 +1081,23 @@ export async function getDashboardStats(): Promise<DashboardStats> {
   const recentActivity = recentLogs.map((log) => {
     const imageUrl = log.image_url?.split("?")[0] || log.image_url;
 
-    // Safe access for cohorts (might be object or array depending on TS inference)
-    const cohortData = log.cohorts as unknown as
-      | { name: string }
-      | { name: string }[]
-      | null;
-    const cohortName = Array.isArray(cohortData)
-      ? cohortData[0]?.name
-      : cohortData?.name || "Unassigned";
+      // Safe access for cohorts (might be object or array depending on TS inference)
+      const cohortData = log.cohorts as unknown as
+        | { name: string }
+        | { name: string }[]
+        | null;
+      const cohortName = Array.isArray(cohortData)
+        ? cohortData[0]?.name
+        : cohortData?.name || "Unassigned";
 
-    return {
-      id: log.id,
-      mouseName: log.mice?.name || "Unknown",
-      cohortName,
-      stage: log.stage,
-      imageUrl,
-      time: log.created_at,
-    };
+      return {
+        id: log.id,
+        mouseName: log.mice?.name || "Unknown",
+        cohortName,
+        stage: log.stage,
+        imageUrl,
+        time: log.created_at,
+      };
   });
 
   // 4. Stage Distribution (Last 7 days)
@@ -1350,10 +1353,10 @@ export async function getExperimentInsights(
     // cohorts can be an array or single object depending on Supabase typing
     const cohortData = Array.isArray(ec.cohorts) ? ec.cohorts[0] : ec.cohorts;
     return {
-      id: ec.cohort_id,
+    id: ec.cohort_id,
       name: cohortData?.name || "Unknown",
-      subjectCount: cohortSubjectCounts.get(ec.cohort_id) || 0,
-      logCount: cohortLogCounts.get(ec.cohort_id) || 0,
+    subjectCount: cohortSubjectCounts.get(ec.cohort_id) || 0,
+    logCount: cohortLogCounts.get(ec.cohort_id) || 0,
     };
   });
 
@@ -1408,22 +1411,22 @@ export async function getExperimentExportData(experimentId: string) {
   // Bucket is public - just strip query params from old signed URLs
   const rows = data.map((log) => {
     const imageUrl = log.image_url?.split("?")[0] || "";
-    const mouse = log.mice as any;
-    const cohort = mouse?.cohorts as any;
+      const mouse = log.mice as any;
+      const cohort = mouse?.cohorts as any;
 
-    return {
-      LogID: log.id,
-      Date: new Date(log.created_at).toLocaleString(),
-      SubjectName: mouse?.name || "Unknown",
-      CohortName: cohort?.name || "Unknown",
-      Stage: log.stage,
-      Confidence: extractConfidenceValue(log.confidence),
-      Notes: log.notes || "",
+      return {
+        LogID: log.id,
+        Date: new Date(log.created_at).toLocaleString(),
+        SubjectName: mouse?.name || "Unknown",
+        CohortName: cohort?.name || "Unknown",
+        Stage: log.stage,
+        Confidence: extractConfidenceValue(log.confidence),
+        Notes: log.notes || "",
       ImageURL: imageUrl,
-      Features: JSON.stringify(log.features || {}),
-      FlexibleData: JSON.stringify(log.data || {}),
-      SubjectMetadata: JSON.stringify(mouse?.metadata || {}),
-    };
+        Features: JSON.stringify(log.features || {}),
+        FlexibleData: JSON.stringify(log.data || {}),
+        SubjectMetadata: JSON.stringify(mouse?.metadata || {}),
+      };
   });
 
   return rows;
@@ -1826,4 +1829,92 @@ export async function denyJoinRequest(requestId: string, note?: string) {
 
   revalidatePath("/");
   return { success: true };
+}
+
+// =============================================================================
+// Filename Parsing with LLM
+// =============================================================================
+
+const ParsedFilenameSchema = z.object({
+  subjectId: z.string().nullable().describe("The subject/mouse identifier (e.g., '229B', 'FCONPL57', 'Mouse_A')"),
+  groundTruthStage: z.enum(["Proestrus", "Estrus", "Metestrus", "Diestrus"]).nullable().describe("If a stage name is in the filename, extract it"),
+  date: z.string().nullable().describe("Any date information in the filename (e.g., '10_16', '2024-01-15')"),
+  confidence: z.number().min(0).max(1).describe("How confident you are in the subject ID extraction (0-1)"),
+});
+
+export type ParsedFilename = z.infer<typeof ParsedFilenameSchema>;
+
+export type FilenameParseResult = {
+  filename: string;
+  parsed: ParsedFilename;
+};
+
+/**
+ * Use Gemini 2.5 Flash to intelligently parse filenames and extract subject IDs,
+ * ground truth stages, and dates.
+ */
+export async function parseFilenamesWithLLM(
+  filenames: string[]
+): Promise<FilenameParseResult[]> {
+  if (filenames.length === 0) return [];
+
+  // Batch filenames into a single prompt for efficiency
+  const FilenamesBatchSchema = z.object({
+    results: z.array(
+      z.object({
+        filename: z.string(),
+        subjectId: z.string().nullable(),
+        groundTruthStage: z.enum(["Proestrus", "Estrus", "Metestrus", "Diestrus"]).nullable(),
+        date: z.string().nullable(),
+        confidence: z.number().min(0).max(1),
+      })
+    ),
+  });
+
+  try {
+    const { object } = await generateObject({
+      model: google("gemini-2.5-flash-preview-04-17"),
+      schema: FilenamesBatchSchema,
+      prompt: `You are parsing scientific image filenames from a mouse estrus cycle study.
+
+Extract the following from each filename:
+1. **subjectId**: The mouse/subject identifier (usually alphanumeric like "229B", "FCONPL57", "MouseA", etc.)
+2. **groundTruthStage**: If the filename contains an estrus stage name (Proestrus, Estrus, Metestrus, or Diestrus), extract it
+3. **date**: Any date information (could be "10_16" meaning Oct 16, or "2024-01-15", etc.)
+4. **confidence**: How confident you are in the subjectId extraction (0.0 to 1.0)
+
+Common filename patterns:
+- "MPP/229B_10_16_METESTRUS.jpg" -> subjectId: "229B", stage: "Metestrus", date: "10_16"
+- "FCONPL57_10_22_ESTRUS.jpg" -> subjectId: "FCONPL57", stage: "Estrus", date: "10_22"
+- "mouse_A_diestrus.png" -> subjectId: "mouse_A", stage: "Diestrus"
+- "IMG_1234.jpg" -> subjectId: null (can't determine), confidence: 0.0
+
+Parse these filenames:
+${filenames.map((f, i) => `${i + 1}. "${f}"`).join("\n")}
+
+Return results in the same order as the input filenames.`,
+    });
+
+    return object.results.map((r) => ({
+      filename: r.filename,
+      parsed: {
+        subjectId: r.subjectId,
+        groundTruthStage: r.groundTruthStage,
+        date: r.date,
+        confidence: r.confidence,
+      },
+    }));
+  } catch (error) {
+    console.error("Failed to parse filenames with LLM:", error);
+    // Return empty parsed results on error
+    return filenames.map((filename) => ({
+      filename,
+      parsed: {
+        subjectId: null,
+        groundTruthStage: null,
+        date: null,
+        confidence: 0,
+      },
+    }));
+  }
 }
