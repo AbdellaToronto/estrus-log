@@ -817,19 +817,19 @@ export async function batchSaveLogs(
   };
 
   for (const item of items) {
-    let subjectId = item.subjectId;
+    let subjectId: string | undefined = item.subjectId;
 
     // If no explicit ID, try to find or create by name
     if (!subjectId) {
       // 1. Try explicit new name (e.g. user typed "227A" in UI)
       if (item.newSubjectName) {
-        subjectId = await getOrCreateSubject(item.newSubjectName);
+        subjectId = (await getOrCreateSubject(item.newSubjectName)) ?? undefined;
       }
       // 2. Try to extract from filename (e.g., "FCONPL57_10_22_ESTRUS.jpg" -> "FCONPL57")
       else {
         const extractedName = extractSubjectFromFilename(item.filename);
         if (extractedName) {
-          subjectId = await getOrCreateSubject(extractedName);
+          subjectId = (await getOrCreateSubject(extractedName)) ?? undefined;
         }
       }
     }
