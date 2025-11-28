@@ -1,6 +1,6 @@
 "use server";
 
-import { auth, currentUser } from "@clerk/nextjs/server";
+import { auth, currentUser, clerkClient } from "@clerk/nextjs/server";
 import { createServerClient, configFromEnv } from "@/lib/supabase";
 import { getGcs } from "@/lib/gcs";
 import { revalidatePath } from "next/cache";
@@ -1824,13 +1824,22 @@ export async function approveJoinRequest(requestId: string) {
 
   if (updateError) throw updateError;
 
-  // TODO: Create Clerk invitation using Clerk Backend API
-  // const clerkOrgId = request.organization_profiles?.clerk_org_id;
-  // await clerkClient.organizations.createOrganizationInvitation({
-  //   organizationId: clerkOrgId,
-  //   emailAddress: request.user_email,
-  //   role: "basic_member",
-  // });
+  // Create Clerk invitation to add user to the organization
+  const clerkOrgId = request.organization_profiles?.clerk_org_id;
+  if (clerkOrgId && request.user_email) {
+    try {
+      const clerk = await clerkClient();
+      await clerk.organizations.createOrganizationInvitation({
+        organizationId: clerkOrgId,
+        emailAddress: request.user_email,
+        role: "org:member",
+        inviterUserId: userId,
+      });
+    } catch (clerkError) {
+      console.error("Failed to create Clerk invitation:", clerkError);
+      // Don't throw - the request is still approved, user just needs manual invite
+    }
+  }
 
   revalidatePath("/");
   return { success: true };
