@@ -33,8 +33,7 @@ import { Badge } from "@/components/ui/badge";
 const ORG_NAV_ITEMS = [
   { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { label: 'Cohorts', href: '/cohorts', icon: Users },
-  // { label: 'Experiments', href: '/experiments', icon: TestTube }, // Coming soon
-  // { label: 'Library', href: '/library', icon: Library }, // Coming soon
+  { label: 'Experiments', href: '/experiments', icon: TestTube },
   { label: 'Settings', href: '/settings', icon: Settings },
 ];
 
