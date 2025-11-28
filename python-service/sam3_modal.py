@@ -365,7 +365,25 @@ class BioCLIPEmbedder:
         import torch
         from PIL import Image
         
-        image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        # Validate image bytes
+        if not image_bytes or len(image_bytes) < 100:
+            raise ValueError(f"Invalid image bytes: received {len(image_bytes) if image_bytes else 0} bytes")
+        
+        # Check for common error responses (HTML/text instead of image)
+        try:
+            preview = image_bytes[:50].decode('utf-8', errors='ignore').lower()
+            if '<html' in preview or '<!doctype' in preview or 'error' in preview:
+                raise ValueError(f"Received HTML/error instead of image data: {preview[:100]}")
+        except:
+            pass  # Binary data, which is expected
+        
+        try:
+            image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        except Exception as e:
+            # Log more details about what we received
+            print(f"Failed to open image. Bytes length: {len(image_bytes)}, first 20 bytes: {image_bytes[:20]}")
+            raise ValueError(f"Cannot decode image: {str(e)}")
+        
         image_tensor = self.preprocess(image).unsqueeze(0)
         
         if torch.cuda.is_available():
@@ -549,12 +567,20 @@ def embed_endpoint(item: dict):
     if not image_b64:
         return {"error": "No image provided"}
     
-    image_bytes = base64.b64decode(image_b64)
+    try:
+        image_bytes = base64.b64decode(image_b64)
+    except Exception as e:
+        return {"error": f"Invalid base64 encoding: {str(e)}"}
     
-    embedder = BioCLIPEmbedder()
-    embedding = embedder.embed.remote(image_bytes)
+    if len(image_bytes) < 100:
+        return {"error": f"Image too small: {len(image_bytes)} bytes"}
     
-    return {"embedding": embedding}
+    try:
+        embedder = BioCLIPEmbedder()
+        embedding = embedder.embed.remote(image_bytes)
+        return {"embedding": embedding}
+    except Exception as e:
+        return {"error": f"Embedding failed: {str(e)}"}
 
 
 # =============================================================================

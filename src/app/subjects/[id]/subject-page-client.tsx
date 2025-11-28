@@ -5,7 +5,8 @@ import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Search, ZoomIn, ZoomOut, Maximize2 } from "lucide-react";
+import { Search, ZoomIn, ZoomOut, Maximize2, ArrowLeft } from "lucide-react";
+import Link from "next/link";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { LogEntryModal } from "@/components/log-entry-modal";
 import { format } from "date-fns";
@@ -40,7 +41,8 @@ type SubjectLog = {
 type SubjectSummary = {
   id: string;
   name: string;
-  cohorts?: { name?: string | null } | null;
+  cohort_id?: string | null;
+  cohorts?: { id?: string | null; name?: string | null } | null;
 };
 
 type TimelinePoint = {
@@ -129,13 +131,34 @@ export function SubjectPageClient({
 
   const confidenceScore = selectedLog ? getConfidence(selectedLog) : 0;
 
+  // Get cohort ID for back navigation
+  const cohortId = subject.cohorts?.id || subject.cohort_id;
+
   return (
     <div className="space-y-4 sm:space-y-6 md:space-y-8 pb-8">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-        <h1 className="text-lg sm:text-xl md:text-2xl font-bold text-foreground/80 line-clamp-2">
-          Analysis: {subject.name}
-        </h1>
+        <div className="flex items-center gap-3">
+          {cohortId && (
+            <Link 
+              href={`/cohorts/${cohortId}?tab=subjects`}
+              className="p-2 -ml-2 rounded-full hover:bg-slate-100 transition-colors text-muted-foreground hover:text-foreground"
+              title="Back to subjects"
+            >
+              <ArrowLeft className="w-5 h-5" />
+            </Link>
+          )}
+          <div>
+            <h1 className="text-lg sm:text-xl md:text-2xl font-bold text-foreground/80 line-clamp-2">
+              {subject.name}
+            </h1>
+            {subject.cohorts?.name && (
+              <p className="text-sm text-muted-foreground">
+                {subject.cohorts.name}
+              </p>
+            )}
+          </div>
+        </div>
         <div className="hidden sm:flex items-center gap-4">
           <Avatar className="h-9 w-9 border-2 border-white/20 shadow-sm">
             <AvatarImage src="https://github.com/shadcn.png" />

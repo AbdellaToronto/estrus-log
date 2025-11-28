@@ -137,7 +137,7 @@ export async function createCohort(formData: FormData) {
     }
   }
 
-  const { error } = await supabase.from("cohorts").insert({
+  const { data, error } = await supabase.from("cohorts").insert({
     user_id: userId,
     org_id: orgId || null,
     name,
@@ -146,10 +146,13 @@ export async function createCohort(formData: FormData) {
     type,
     subject_config: subjectConfig,
     log_config: logConfig,
-  });
+  }).select().single();
 
   if (error) throw error;
   revalidatePath("/dashboard");
+  revalidatePath("/cohorts");
+  
+  return data;
 }
 
 export async function getCohort(id: string) {
@@ -267,7 +270,7 @@ export async function getSubject(id: string) {
 
   const { data, error } = await supabase
     .from("mice")
-    .select("*, cohorts(name, color, type, subject_config, log_config)")
+    .select("*, cohorts(id, name, color, type, subject_config, log_config)")
     .eq("id", id)
     .single();
 

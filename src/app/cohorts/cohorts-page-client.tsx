@@ -8,12 +8,27 @@ export function CohortsPageClient({ initialCohorts }: { initialCohorts: any[] })
   const [cohorts, setCohorts] = useState(initialCohorts);
 
   async function handleAddCohort(newCohort: any) {
-    // Optimistic update
+    // Optimistic update with temporary ID
+    const tempId = newCohort.id;
     setCohorts([newCohort, ...cohorts]);
-    const formData = new FormData();
-    formData.append('name', newCohort.name);
-    formData.append('description', newCohort.description);
-    await createCohort(formData);
+    
+    try {
+      const formData = new FormData();
+      formData.append('name', newCohort.name);
+      formData.append('description', newCohort.description);
+      
+      // Get the real cohort with database ID
+      const createdCohort = await createCohort(formData);
+      
+      // Replace temp cohort with real one (with correct ID)
+      setCohorts(prev => prev.map(c => 
+        c.id === tempId ? { ...c, ...createdCohort } : c
+      ));
+    } catch (error) {
+      // Rollback on error
+      setCohorts(prev => prev.filter(c => c.id !== tempId));
+      console.error("Failed to create cohort:", error);
+    }
   }
 
   return (

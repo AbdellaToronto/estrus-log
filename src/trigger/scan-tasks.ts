@@ -269,6 +269,13 @@ export const analyzeScanItemTask = task({
       const arrayBuffer = await imageBlob.arrayBuffer();
       const base64Image = Buffer.from(arrayBuffer).toString("base64");
 
+      // Validate image data
+      if (arrayBuffer.byteLength < 100) {
+        throw new Error(`Image too small: ${arrayBuffer.byteLength} bytes. URL may be invalid.`);
+      }
+      
+      logger.log(`Image size: ${Math.round(arrayBuffer.byteLength / 1024)}KB`);
+
       // 2. Run BioCLIP k-NN classification
       logger.log("Running BioCLIP k-NN classification...");
       
