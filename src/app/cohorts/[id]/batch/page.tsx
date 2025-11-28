@@ -550,7 +550,10 @@ export default function BatchUploadPage() {
               headers: { "Content-Type": item.file!.type },
             });
 
-            updateItemState(item.id, "uploaded", { gcsUrl: urlData.publicUrl });
+            updateItemState(item.id, "uploaded", { 
+              gcsUrl: urlData.publicUrl,
+              previewUrl: urlData.publicUrl, // Switch from blob URL to public GCS URL
+            });
 
             if (item.scanItemId) {
               updateScanItem(item.scanItemId, {
