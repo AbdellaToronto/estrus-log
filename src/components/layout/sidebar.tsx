@@ -2,8 +2,10 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useState, useEffect } from 'react';
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { 
   LayoutDashboard, 
   Users, 
@@ -15,8 +17,10 @@ import {
   Building2,
   Globe,
   UserPlus,
+  Cog,
 } from "lucide-react";
 import { UserButton, OrganizationSwitcher, useUser, useOrganization } from "@clerk/nextjs";
+import { getPendingRequestsForOrg } from "@/app/actions";
 
 // Navigation items when user HAS an organization
 const ORG_NAV_ITEMS = [
@@ -43,9 +47,21 @@ export function Sidebar() {
   const pathname = usePathname();
   const { user } = useUser();
   const { organization } = useOrganization();
+  const [pendingCount, setPendingCount] = useState(0);
 
   const hasOrg = !!organization;
   const navItems = hasOrg ? ORG_NAV_ITEMS : EXPLORE_NAV_ITEMS;
+
+  // Fetch pending join requests count
+  useEffect(() => {
+    if (organization?.id) {
+      getPendingRequestsForOrg(organization.id)
+        .then((requests) => setPendingCount(requests.length))
+        .catch(() => setPendingCount(0));
+    } else {
+      setPendingCount(0);
+    }
+  }, [organization?.id]);
 
   // Don't show sidebar on certain pages
   const hiddenPaths = ['/sign-in', '/sign-up'];
@@ -136,9 +152,43 @@ export function Sidebar() {
           );
         })}
 
-        {/* Divider and secondary nav for users with orgs */}
+        {/* Lab Management section for users with orgs */}
         {hasOrg && (
           <>
+            <div className="my-4 mx-4 border-t border-white/10" />
+            <div className="px-4 py-2">
+              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                Lab Management
+              </span>
+            </div>
+            <Link
+              href="/organization/requests"
+              className={cn(
+                "flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group",
+                pathname.startsWith('/organization')
+                  ? "bg-primary text-primary-foreground shadow-lg shadow-primary/25" 
+                  : "text-muted-foreground hover:text-foreground hover:bg-white/5"
+              )}
+            >
+              <Cog className={cn(
+                "w-5 h-5 transition-colors",
+                pathname.startsWith('/organization') ? "text-primary-foreground" : "text-muted-foreground group-hover:text-primary"
+              )} />
+              <span className="font-medium">Lab Settings</span>
+              {pendingCount > 0 && (
+                <Badge 
+                  className={cn(
+                    "ml-auto text-[10px] px-1.5 py-0 h-5 min-w-[20px] justify-center",
+                    pathname.startsWith('/organization')
+                      ? "bg-white/20 text-white"
+                      : "bg-amber-500 text-white"
+                  )}
+                >
+                  {pendingCount}
+                </Badge>
+              )}
+            </Link>
+            
             <div className="my-4 mx-4 border-t border-white/10" />
             <div className="px-4 py-2">
               <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
