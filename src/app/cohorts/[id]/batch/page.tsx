@@ -454,29 +454,20 @@ export default function BatchUploadPage() {
     }
   }, [isProcessing, hasActiveWork, hasCompletedItems]);
 
-  // Auto-upload and auto-analyze after files are added
-  const autoProcessFiles = useCallback(async (itemIds: string[]) => {
-    // Wait a tick for state to settle
-    await new Promise(resolve => setTimeout(resolve, 100));
+  // Auto-upload files after they are added (pass the actual items, not IDs, to avoid stale closure)
+  const autoUploadFiles = useCallback(async (itemsToUpload: ScanItem[]) => {
+    if (itemsToUpload.length === 0) return;
     
     setIsProcessing(true);
     setUploadError(null);
-    
-    // Get the items we need to process
-    const itemsToProcess = items.filter(i => itemIds.includes(i.id) && i.status === "pending" && i.file);
-    
-    if (itemsToProcess.length === 0) {
-      setIsProcessing(false);
-      return;
-    }
 
     let uploadErrors = 0;
     let uploadedCount = 0;
 
-    // Upload in chunks
+    // Upload in chunks (concurrency: 3)
     const chunkSize = 3;
-    for (let i = 0; i < itemsToProcess.length; i += chunkSize) {
-      const chunk = itemsToProcess.slice(i, i + chunkSize);
+    for (let i = 0; i < itemsToUpload.length; i += chunkSize) {
+      const chunk = itemsToUpload.slice(i, i + chunkSize);
 
       await Promise.all(
         chunk.map(async (item) => {
@@ -495,7 +486,7 @@ export default function BatchUploadPage() {
             });
 
             if (item.scanItemId) {
-              updateScanItem(item.scanItemId, {
+              await updateScanItem(item.scanItemId, {
                 status: "uploaded",
                 imageUrl: result.publicUrl,
               });
@@ -516,39 +507,9 @@ export default function BatchUploadPage() {
       setUploadError(`${uploadErrors} file${uploadErrors > 1 ? 's' : ''} failed to upload. Check file size (max 10MB) and format.`);
     }
 
-    // Only proceed to analysis if we have uploaded items
-    if (uploadedCount === 0) {
-      setIsProcessing(false);
-      return;
-    }
-
-    // After upload completes, auto-trigger analysis
-    // Update items to "analyzing" status
-    setItems((prev) =>
-      prev.map((item) =>
-        itemIds.includes(item.id) && item.status === "uploaded" ? { ...item, status: "analyzing" } : item
-      )
-    );
-
-    try {
-      const currentSessionId = await ensureSession();
-      if (currentSessionId) {
-        // Fire and forget - don't wait for the background job to complete
-        startScanSessionAnalysis(currentSessionId).catch((err) => {
-          console.error("Background analysis failed to start:", err);
-          setUploadError("Analysis failed to start. Please try again.");
-        });
-        
-        // Start polling for results
-        refreshItemsFromServer();
-      }
-    } catch (e) {
-      console.error("Failed to start analysis:", e);
-      setUploadError("Failed to start analysis. Please try again.");
-    }
-    
-    // Keep isProcessing true - the polling will handle the "analyzing" state
-  }, [items, ensureSession, refreshItemsFromServer]);
+    // Upload phase complete
+    setIsProcessing(false);
+  }, []);
 
   const handleFiles = async (files: File[]) => {
     const currentSessionId = await ensureSession();
@@ -728,6 +689,13 @@ export default function BatchUploadPage() {
       .then((dbItems) => {
         if (dbItems) {
           // Match back to UI items by index (preserved order)
+          // Also update the newUIItems with scanItemIds for the upload
+          newUIItems.forEach((uiItem, idx) => {
+            if (dbItems[idx]) {
+              uiItem.scanItemId = dbItems[idx].id;
+            }
+          });
+          
           setItems((prev) => {
             const updated = [...prev];
             newUIItems.forEach((uiItem, idx) => {
@@ -740,8 +708,8 @@ export default function BatchUploadPage() {
           });
         }
         
-        // 5. Auto-start upload and analysis after DB items are created
-        autoProcessFiles(newItemIds);
+        // 5. Auto-start upload after DB items are created (pass actual items, not IDs)
+        autoUploadFiles(newUIItems);
       })
       .catch(console.error);
   };
@@ -871,10 +839,11 @@ export default function BatchUploadPage() {
   // --- Action: Analyze ---
 
   const handleAnalyze = async () => {
-    // IMMEDIATELY lock the button - this is synchronous and happens before any async work
+    // IMMEDIATELY lock the button
     setIsProcessing(true);
+    setUploadError(null);
     
-    // Also update items to "analyzing" status
+    // Mark uploaded items as "analyzing"
     setItems((prev) =>
       prev.map((item) =>
         item.status === "uploaded" ? { ...item, status: "analyzing" } : item
@@ -884,28 +853,18 @@ export default function BatchUploadPage() {
     try {
       const currentSessionId = await ensureSession();
       if (!currentSessionId) {
-        // Revert items back to uploaded on error
-        setItems((prev) =>
-          prev.map((item) =>
-            item.status === "analyzing" ? { ...item, status: "uploaded" } : item
-          )
-        );
-        setIsProcessing(false);
         throw new Error("No active session found");
       }
 
-      // Fire and forget - don't wait for the background job to complete
-      startScanSessionAnalysis(currentSessionId).catch((err) => {
-        console.error("Background analysis failed to start:", err);
-      });
+      // Start the analysis task
+      await startScanSessionAnalysis(currentSessionId);
 
-      // Start polling for results immediately
+      // Start polling for results
       refreshItemsFromServer();
       
-      // Keep isProcessing true - the polling will handle the "analyzing" state
-      // and the button will stay disabled via isAnalyzing until items complete
+      // isProcessing stays true - will be reset when analysis completes
     } catch (e) {
-      console.error("Failed to queue analysis", e);
+      console.error("Failed to start analysis", e);
       // Revert items back to uploaded on error
       setItems((prev) =>
         prev.map((item) =>
@@ -913,7 +872,7 @@ export default function BatchUploadPage() {
         )
       );
       setIsProcessing(false);
-      alert("Failed to start analysis job. Please try again.");
+      setUploadError("Failed to start analysis. Please try again.");
     }
   };
 
@@ -1157,29 +1116,30 @@ export default function BatchUploadPage() {
               <div className="space-y-3">
                 {/* Split Buttons: Upload vs Analyze */}
 
-                {items.some((i) => i.status === "pending") && (
-                  <Button
-                    className="w-full bg-slate-100 text-slate-900 hover:bg-slate-200 h-12 rounded-xl font-semibold text-sm transition-all border border-slate-200 shadow-sm"
-                    onClick={handleUpload}
-                    disabled={isProcessing}
-                  >
-                    {isProcessing &&
-                    items.some((i) => i.status === "pending") ? (
-                      <Loader2 className="animate-spin mr-2 w-4 h-4" />
-                    ) : (
-                      <Cloud className="mr-2 w-4 h-4" />
-                    )}
-                    Upload Pending (
-                    {items.filter((i) => i.status === "pending").length})
-                  </Button>
+                {/* Upload Progress Indicator (auto-upload, no button needed) */}
+                {items.some((i) => i.status === "pending" || i.status === "uploading") && (
+                  <div className="w-full bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-center gap-3">
+                    <Loader2 className="animate-spin w-5 h-5 text-blue-600" />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-blue-900">
+                        Uploading {items.filter((i) => i.status === "uploading").length} of {items.filter((i) => i.status === "pending" || i.status === "uploading").length} files...
+                      </p>
+                      <p className="text-xs text-blue-600">
+                        {items.filter((i) => i.status === "uploaded").length} uploaded
+                      </p>
+                    </div>
+                  </div>
                 )}
 
+                {/* Analyze Button - only enabled when uploads are complete */}
                 <Button
                   className={cn(
                     "w-full h-12 rounded-xl font-semibold text-sm transition-all",
                     isAnalyzing 
                       ? "bg-purple-600 text-white hover:bg-purple-500 shadow-xl shadow-purple-600/20"
-                      : "bg-slate-900 text-white hover:bg-slate-800 shadow-xl shadow-slate-900/10 hover:scale-[1.02] active:scale-[0.98]"
+                      : hasAnalyzableItems
+                        ? "bg-slate-900 text-white hover:bg-slate-800 shadow-xl shadow-slate-900/10 hover:scale-[1.02] active:scale-[0.98]"
+                        : "bg-slate-200 text-slate-500 cursor-not-allowed"
                   )}
                   onClick={handleAnalyze}
                   disabled={isProcessing || isAnalyzing || !hasAnalyzableItems}
@@ -1192,18 +1152,22 @@ export default function BatchUploadPage() {
                   ) : isProcessing ? (
                     <>
                       <Loader2 className="animate-spin mr-2 w-4 h-4" />
-                      Starting Analysis...
+                      {items.some((i) => i.status === "uploading") ? "Uploading..." : "Starting..."}
+                    </>
+                  ) : hasAnalyzableItems ? (
+                    <>
+                      <CloudLightning className="mr-2 w-4 h-4" />
+                      Analyze {items.filter((i) => i.status === "uploaded").length} Images
+                    </>
+                  ) : items.some((i) => i.status === "pending" || i.status === "uploading") ? (
+                    <>
+                      <Cloud className="mr-2 w-4 h-4" />
+                      Waiting for uploads...
                     </>
                   ) : (
                     <>
                       <CloudLightning className="mr-2 w-4 h-4" />
-                      Analyze Uploaded (
-                      {
-                        items.filter(
-                          (i) => i.status === "uploaded" || i.status === "error"
-                        ).length
-                      }
-                      )
+                      No images to analyze
                     </>
                   )}
                 </Button>
