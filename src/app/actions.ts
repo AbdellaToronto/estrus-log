@@ -386,19 +386,19 @@ export async function getScanItems(sessionId: string) {
           const objectPath = item.image_url.split(prefix)[1];
           // Remove query params if any (signed urls have them)
           const cleanPath = objectPath.split("?")[0];
+          console.log("[getScanItems] Signing URL for path:", cleanPath);
 
           const file = bucket.file(cleanPath);
           const [newUrl] = await file.getSignedUrl({
             version: "v4",
-            action: "read", // Use 'read' for viewing, but 'write' if we were re-uploading (not needed here)
+            action: "read",
             expires: Date.now() + 60 * 60 * 1000, // 1 hour
           });
 
-          // We return the new signed URL for the UI to use, but we don't necessarily need to update the DB
-          // unless we want to persist it. For now, just returning it is enough for the UI session.
+          console.log("[getScanItems] Signed URL generated successfully");
           return { ...item, image_url: newUrl };
         } catch (e) {
-          console.error("Failed to refresh URL", e);
+          console.error("[getScanItems] Failed to refresh URL for path:", item.image_url, "Error:", e);
           return item;
         }
       }
