@@ -586,27 +586,38 @@ export default function BatchUploadPage() {
   // --- Action: Analyze ---
 
   const handleAnalyze = async () => {
-    setIsProcessing(true);
+    // Immediately update items to "analyzing" status BEFORE the API call
+    // This ensures the button stays disabled throughout the entire process
+    setItems((prev) =>
+      prev.map((item) =>
+        item.status === "uploaded" ? { ...item, status: "analyzing" } : item
+      )
+    );
+
     try {
       const currentSessionId = await ensureSession();
       if (!currentSessionId) {
+        // Revert items back to uploaded on error
+        setItems((prev) =>
+          prev.map((item) =>
+            item.status === "analyzing" ? { ...item, status: "uploaded" } : item
+          )
+        );
         throw new Error("No active session found");
       }
 
       await startScanSessionAnalysis(currentSessionId);
 
-      setItems((prev) =>
-        prev.map((item) =>
-          item.status === "uploaded" ? { ...item, status: "analyzing" } : item
-        )
-      );
-
       refreshItemsFromServer();
     } catch (e) {
       console.error("Failed to queue analysis", e);
+      // Revert items back to uploaded on error
+      setItems((prev) =>
+        prev.map((item) =>
+          item.status === "analyzing" ? { ...item, status: "uploaded" } : item
+        )
+      );
       alert("Failed to start analysis job. Please try again.");
-    } finally {
-      setIsProcessing(false);
     }
   };
 
