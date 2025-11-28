@@ -260,31 +260,13 @@ export async function getSubjectLogs(subjectId: string) {
 
   if (error) throw error;
 
-  // Refresh signed URLs
-  const { bucket } = getGcs();
-  const bucketName = bucket.name;
-  const prefix = `https://storage.googleapis.com/${bucketName}/`;
-
-  const updatedLogs = await Promise.all(
-    data.map(async (log) => {
-      if (log.image_url && log.image_url.includes(prefix)) {
-        try {
-          const objectPath = log.image_url.split(prefix)[1].split("?")[0];
-          const file = bucket.file(objectPath);
-          const [newUrl] = await file.getSignedUrl({
-            version: "v4",
-            action: "read",
-            expires: Date.now() + 60 * 60 * 1000, // 1 hour
-          });
-          return { ...log, image_url: newUrl };
-        } catch (e) {
-          console.error("Failed to refresh URL for log", log.id, e);
-          return log;
-        }
-      }
-      return log;
-    })
-  );
+  // Bucket is public - just strip any query params from old signed URLs
+  const updatedLogs = data.map((log) => {
+    if (log.image_url) {
+      return { ...log, image_url: log.image_url.split("?")[0] };
+    }
+    return log;
+  });
 
   return updatedLogs;
 }
@@ -378,33 +360,14 @@ export async function getScanItems(sessionId: string) {
   const bucketName = bucket.name;
   const prefix = `https://storage.googleapis.com/${bucketName}/`;
 
-  const updatedItems = await Promise.all(
-    data.map(async (item) => {
-      // Only refresh if it looks like a GCS URL
-      if (item.image_url && item.image_url.includes(prefix)) {
-        try {
-          const objectPath = item.image_url.split(prefix)[1];
-          // Remove query params if any (signed urls have them)
-          const cleanPath = objectPath.split("?")[0];
-          console.log("[getScanItems] Signing URL for path:", cleanPath);
-
-          const file = bucket.file(cleanPath);
-          const [newUrl] = await file.getSignedUrl({
-            version: "v4",
-            action: "read",
-            expires: Date.now() + 60 * 60 * 1000, // 1 hour
-          });
-
-          console.log("[getScanItems] Signed URL generated successfully");
-          return { ...item, image_url: newUrl };
-        } catch (e) {
-          console.error("[getScanItems] Failed to refresh URL for path:", item.image_url, "Error:", e);
-          return item;
-        }
-      }
-      return item;
-    })
-  );
+  // Bucket is public - just strip any existing query params (old signed URLs) and return clean public URLs
+  const updatedItems = data.map((item) => {
+    if (item.image_url && item.image_url.includes(prefix)) {
+      const cleanUrl = item.image_url.split("?")[0];
+      return { ...item, image_url: cleanUrl };
+    }
+    return item;
+  });
 
   return updatedItems;
 }
@@ -770,35 +733,10 @@ export async function getCohortLogs(cohortId: string) {
 
   if (error) throw error;
 
-  // Refresh signed URLs
-  const { bucket } = getGcs();
-  const bucketName = bucket.name;
-  const prefix = `https://storage.googleapis.com/${bucketName}/`;
-
-  const updatedData = await Promise.all(
-    data.map(async (log) => {
-      if (log.image_url && log.image_url.includes(prefix)) {
-        try {
-          const objectPath = log.image_url.split(prefix)[1].split("?")[0];
-          const file = bucket.file(objectPath);
-          const [newUrl] = await file.getSignedUrl({
-            version: "v4",
-            action: "read",
-            expires: Date.now() + 60 * 60 * 1000, // 1 hour
-          });
-          return { ...log, image_url: newUrl };
-        } catch (e) {
-          console.error("Failed to refresh URL for log", log.id, e);
-          return log;
-        }
-      }
-      return log;
-    })
-  );
-
-  // Transform to include subjectName for easier consumption
-  return updatedData.map((log) => ({
+  // Bucket is public - strip query params from old signed URLs and add subjectName
+  return data.map((log) => ({
     ...log,
+    image_url: log.image_url?.split("?")[0] || log.image_url,
     subjectName: log.mice?.name || "Unknown",
   }));
 }
@@ -968,48 +906,28 @@ export async function getDashboardStats(): Promise<DashboardStats> {
 
   if (logsError) throw logsError;
 
-  // Refresh URLs for recent logs
-  const { bucket } = getGcs();
-  const bucketName = bucket.name;
-  const prefix = `https://storage.googleapis.com/${bucketName}/`;
+  // Bucket is public - just strip query params from old signed URLs
+  const recentActivity = recentLogs.map((log) => {
+    const imageUrl = log.image_url?.split("?")[0] || log.image_url;
 
-  const recentActivity = await Promise.all(
-    recentLogs.map(async (log) => {
-      let imageUrl = log.image_url;
-      if (imageUrl && imageUrl.includes(prefix)) {
-        try {
-          const objectPath = imageUrl.split(prefix)[1].split("?")[0];
-          const file = bucket.file(objectPath);
-          const [newUrl] = await file.getSignedUrl({
-            version: "v4",
-            action: "read",
-            expires: Date.now() + 60 * 60 * 1000,
-          });
-          imageUrl = newUrl;
-        } catch (e) {
-          console.error("Failed to refresh URL", e);
-        }
-      }
+    // Safe access for cohorts (might be object or array depending on TS inference)
+    const cohortData = log.cohorts as unknown as
+      | { name: string }
+      | { name: string }[]
+      | null;
+    const cohortName = Array.isArray(cohortData)
+      ? cohortData[0]?.name
+      : cohortData?.name || "Unassigned";
 
-      // Safe access for cohorts (might be object or array depending on TS inference)
-      const cohortData = log.cohorts as unknown as
-        | { name: string }
-        | { name: string }[]
-        | null;
-      const cohortName = Array.isArray(cohortData)
-        ? cohortData[0]?.name
-        : cohortData?.name || "Unassigned";
-
-      return {
-        id: log.id,
-        mouseName: log.mice?.name || "Unknown",
-        cohortName,
-        stage: log.stage,
-        imageUrl,
-        time: log.created_at,
-      };
-    })
-  );
+    return {
+      id: log.id,
+      mouseName: log.mice?.name || "Unknown",
+      cohortName,
+      stage: log.stage,
+      imageUrl,
+      time: log.created_at,
+    };
+  });
 
   // 4. Stage Distribution (Last 7 days)
   const weekAgo = new Date();
@@ -1319,46 +1237,26 @@ export async function getExperimentExportData(experimentId: string) {
 
   if (error) throw error;
 
-  // Refresh URLs
-  const { bucket } = getGcs();
-  const prefix = `https://storage.googleapis.com/${bucket.name}/`;
+  // Bucket is public - just strip query params from old signed URLs
+  const rows = data.map((log) => {
+    const imageUrl = log.image_url?.split("?")[0] || "";
+    const mouse = log.mice as any;
+    const cohort = mouse?.cohorts as any;
 
-  const rows = await Promise.all(
-    data.map(async (log) => {
-      let imageUrl = log.image_url;
-      if (imageUrl && imageUrl.includes(prefix)) {
-        try {
-          const objectPath = imageUrl.split(prefix)[1].split("?")[0];
-          const file = bucket.file(objectPath);
-          const [newUrl] = await file.getSignedUrl({
-            version: "v4",
-            action: "read",
-            expires: Date.now() + 24 * 60 * 60 * 1000, // 24 hours
-          });
-          imageUrl = newUrl;
-        } catch (e) {
-          // ignore
-        }
-      }
-
-      const mouse = log.mice as any;
-      const cohort = mouse?.cohorts as any;
-
-      return {
-        LogID: log.id,
-        Date: new Date(log.created_at).toLocaleString(),
-        SubjectName: mouse?.name || "Unknown",
-        CohortName: cohort?.name || "Unknown",
-        Stage: log.stage,
-        Confidence: extractConfidenceValue(log.confidence),
-        Notes: log.notes || "",
-        ImageURL: imageUrl || "",
-        Features: JSON.stringify(log.features || {}),
-        FlexibleData: JSON.stringify(log.data || {}),
-        SubjectMetadata: JSON.stringify(mouse?.metadata || {}),
-      };
-    })
-  );
+    return {
+      LogID: log.id,
+      Date: new Date(log.created_at).toLocaleString(),
+      SubjectName: mouse?.name || "Unknown",
+      CohortName: cohort?.name || "Unknown",
+      Stage: log.stage,
+      Confidence: extractConfidenceValue(log.confidence),
+      Notes: log.notes || "",
+      ImageURL: imageUrl,
+      Features: JSON.stringify(log.features || {}),
+      FlexibleData: JSON.stringify(log.data || {}),
+      SubjectMetadata: JSON.stringify(mouse?.metadata || {}),
+    };
+  });
 
   return rows;
 }
