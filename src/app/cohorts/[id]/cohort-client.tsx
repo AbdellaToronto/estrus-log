@@ -1,16 +1,25 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useTransition } from 'react';
+import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { Plus, UploadCloud, LayoutGrid, List as ListIcon, Search, BarChart2, FlaskConical } from "lucide-react";
+import { 
+  DropdownMenu, 
+  DropdownMenuContent, 
+  DropdownMenuItem, 
+  DropdownMenuSeparator, 
+  DropdownMenuTrigger 
+} from "@/components/ui/dropdown-menu";
+import { Plus, UploadCloud, LayoutGrid, List as ListIcon, Search, BarChart2, FlaskConical, MoreVertical, Trash2, Settings, Loader2 } from "lucide-react";
 import Link from 'next/link';
 import { Badge } from "@/components/ui/badge";
 import { CohortAnalysis } from "@/components/cohort-analysis";
 import { CohortLibrary } from "@/components/cohort-library";
 import { CohortEvaluation } from "@/components/cohort-evaluation";
 import { CohortSubjectsList } from "@/components/cohort-subjects-list";
+import { deleteCohort } from "@/app/actions";
 
 export function CohortClient({ 
   cohort, 
@@ -23,7 +32,25 @@ export function CohortClient({
   initialInsights: any,
   initialSubjects: any[]
 }) {
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState("analysis");
+  const [isDeleting, startDeleteTransition] = useTransition();
+
+  const handleDelete = () => {
+    if (!confirm(`Are you sure you want to delete "${cohort.name}"? This will permanently delete all subjects, logs, and data. This cannot be undone.`)) {
+      return;
+    }
+    
+    startDeleteTransition(async () => {
+      try {
+        await deleteCohort(cohort.id);
+        router.push("/cohorts");
+      } catch (e) {
+        console.error("Failed to delete cohort:", e);
+        alert("Failed to delete cohort. Please try again.");
+      }
+    });
+  };
 
   return (
     <div className="space-y-4 sm:space-y-6 lg:space-y-8 min-h-screen pb-20 animate-in fade-in duration-500">
@@ -46,6 +73,37 @@ export function CohortClient({
               <span className="hidden xs:inline">Upload & </span>Analyze
             </Button>
           </Link>
+          
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button 
+                variant="outline" 
+                size="icon" 
+                className="rounded-full h-9 w-9 sm:h-11 sm:w-11 border-slate-200 bg-white/80 backdrop-blur-sm"
+                disabled={isDeleting}
+              >
+                {isDeleting ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <MoreVertical className="h-4 w-4" />
+                )}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuItem disabled className="text-slate-400">
+                <Settings className="mr-2 h-4 w-4" />
+                Settings (coming soon)
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem 
+                onClick={handleDelete}
+                className="text-red-600 focus:text-red-600 focus:bg-red-50"
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                Delete Cohort
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 

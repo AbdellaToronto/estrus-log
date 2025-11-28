@@ -23,8 +23,11 @@ import {
   Building2,
   Globe,
   Menu,
+  Cog,
+  ChevronRight,
 } from "lucide-react";
-import { UserButton, OrganizationSwitcher, useUser, useOrganization } from "@clerk/nextjs";
+import { UserButton, useUser, useOrganization, useOrganizationList } from "@clerk/nextjs";
+import { Badge } from "@/components/ui/badge";
 
 // Navigation items when user HAS an organization
 const ORG_NAV_ITEMS = [
@@ -46,9 +49,11 @@ export function MobileNav() {
   const pathname = usePathname();
   const { user } = useUser();
   const { organization } = useOrganization();
+  const { userMemberships } = useOrganizationList({ userMemberships: { infinite: true } });
 
   const hasOrg = !!organization;
   const navItems = hasOrg ? ORG_NAV_ITEMS : EXPLORE_NAV_ITEMS;
+  const hasMultipleOrgs = (userMemberships?.data?.length || 0) > 1;
 
   // Don't show on certain pages
   const hiddenPaths = ['/sign-in', '/sign-up'];
@@ -86,26 +91,70 @@ export function MobileNav() {
               </SheetHeader>
 
               <div className="flex flex-col h-full">
-                {/* Organization Switcher */}
+                {/* Organization Section */}
                 {hasOrg ? (
-                  <div className="p-4 border-b border-white/10">
-                    <OrganizationSwitcher 
-                      hidePersonal={true}
-                      afterCreateOrganizationUrl="/dashboard"
-                      afterSelectOrganizationUrl="/dashboard"
-                      afterSelectPersonalUrl="/onboarding"
-                      organizationProfileMode="navigation"
-                      organizationProfileUrl="/organization"
-                      appearance={{
-                        elements: {
-                          rootBox: "w-full",
-                          organizationSwitcherTrigger: "w-full flex items-center justify-between p-2 rounded-xl hover:bg-white/5 transition-colors",
-                          organizationPreviewTextContainer: "mr-auto",
-                          organizationPreviewMainIdentifier: "text-sm font-medium text-foreground",
-                          organizationPreviewSecondaryIdentifier: "text-xs text-muted-foreground"
-                        }
-                      }}
-                    />
+                  <div className="p-4 border-b border-white/10 space-y-2">
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-1 mb-2">
+                      Your Labs
+                    </p>
+                    
+                    {/* List all orgs the user is in */}
+                    {userMemberships?.data?.map((membership) => {
+                      const isActive = membership.organization.id === organization?.id;
+                      return (
+                        <button
+                          key={membership.organization.id}
+                          onClick={() => {
+                            membership.organization.id !== organization?.id && 
+                              window.location.assign(`/dashboard?__clerk_org_id=${membership.organization.id}`);
+                          }}
+                          className={cn(
+                            "w-full flex items-center gap-3 p-3 rounded-xl transition-colors text-left",
+                            isActive 
+                              ? "bg-primary/10 border border-primary/20" 
+                              : "hover:bg-white/5 border border-transparent"
+                          )}
+                        >
+                          <div className={cn(
+                            "w-9 h-9 rounded-lg flex items-center justify-center text-white font-bold text-sm",
+                            isActive 
+                              ? "bg-primary" 
+                              : "bg-gradient-to-br from-slate-500 to-slate-600"
+                          )}>
+                            {membership.organization.name?.[0] || "L"}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className={cn(
+                              "font-medium text-sm truncate",
+                              isActive && "text-primary"
+                            )}>
+                              {membership.organization.name}
+                            </p>
+                            <p className="text-xs text-muted-foreground capitalize">
+                              {membership.role.replace("org:", "")}
+                            </p>
+                          </div>
+                          {isActive && (
+                            <Badge className="bg-primary/20 text-primary text-[10px] px-1.5">
+                              Active
+                            </Badge>
+                          )}
+                        </button>
+                      );
+                    })}
+                    
+                    {/* Link to discover more labs */}
+                    <Link
+                      href="/discover"
+                      onClick={() => setOpen(false)}
+                      className="flex items-center justify-between p-3 rounded-xl text-sm text-muted-foreground hover:text-foreground hover:bg-white/5 transition-colors mt-2"
+                    >
+                      <span className="flex items-center gap-2">
+                        <Search className="w-4 h-4" />
+                        Discover & Join Labs
+                      </span>
+                      <ChevronRight className="w-4 h-4" />
+                    </Link>
                   </div>
                 ) : (
                   <div className="p-4 border-b border-white/10">
@@ -118,6 +167,14 @@ export function MobileNav() {
                         Join or create a lab to access all features
                       </p>
                     </div>
+                    <Link
+                      href="/discover"
+                      onClick={() => setOpen(false)}
+                      className="flex items-center justify-center gap-2 mt-3 p-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium transition-colors"
+                    >
+                      <Search className="w-4 h-4" />
+                      Find a Lab
+                    </Link>
                   </div>
                 )}
 

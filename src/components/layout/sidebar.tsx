@@ -95,10 +95,12 @@ export function Sidebar() {
             appearance={{
               elements: {
                 rootBox: "w-full",
-                organizationSwitcherTrigger: "w-full flex items-center justify-between p-2 rounded-xl hover:bg-white/5 transition-colors",
+                organizationSwitcherTrigger: "w-full flex items-center justify-between p-3 rounded-xl bg-white/5 hover:bg-white/10 transition-colors border border-white/10",
                 organizationPreviewTextContainer: "mr-auto",
                 organizationPreviewMainIdentifier: "text-sm font-medium text-foreground",
-                organizationPreviewSecondaryIdentifier: "text-xs text-muted-foreground"
+                organizationPreviewSecondaryIdentifier: "text-xs text-muted-foreground",
+                organizationSwitcherPopoverCard: "!z-[100]",
+                organizationSwitcherPopoverActions: "!z-[100]",
               }
             }}
           />
