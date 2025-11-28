@@ -57,7 +57,7 @@ export function MobileNav() {
   const hasMultipleOrgs = (userMemberships?.data?.length || 0) > 1;
 
   const handleSwitchOrg = async (orgId: string) => {
-    if (orgId === organization?.id || isSwitching) return;
+    if (orgId === organization?.id || isSwitching || !setActive) return;
     
     setIsSwitching(true);
     try {
