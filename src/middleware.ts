@@ -13,8 +13,8 @@ const isProtectedRoute = createRouteMatcher([
 
 const isPublicRoute = createRouteMatcher([
   "/",
-  "/sign-in(.*)",
-  "/sign-up(.*)",
+  "/sign-in",
+  "/sign-up",
   "/onboarding(.*)",
   "/api/webhooks(.*)",
 ]);
@@ -22,6 +22,15 @@ const isPublicRoute = createRouteMatcher([
 export default clerkMiddleware(async (auth, req) => {
   const { userId, orgId } = await auth();
   const url = req.nextUrl;
+
+  // Intercept Clerk's organization selection task flow
+  // Redirect to our custom onboarding instead
+  if (url.pathname.includes("/tasks/choose-organization") || 
+      url.pathname.includes("/tasks/create-organization")) {
+    if (userId) {
+      return NextResponse.redirect(new URL("/onboarding", req.url));
+    }
+  }
 
   // Allow public routes
   if (isPublicRoute(req)) {
