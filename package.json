@@ -27,7 +27,7 @@
     "@radix-ui/react-tabs": "^1.1.13",
     "@radix-ui/react-tooltip": "^1.2.8",
     "@supabase/supabase-js": "^2.84.0",
-    "@trigger.dev/sdk": "^4.1.1",
+    "@trigger.dev/sdk": "^4.1.2",
     "add": "^2.0.6",
     "ai": "^5.0.98",
     "class-variance-authority": "^0.7.1",
