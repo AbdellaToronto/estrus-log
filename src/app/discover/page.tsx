@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useUser, useOrganizationList } from "@clerk/nextjs";
 import { Button } from "@/components/ui/button";
@@ -16,9 +16,17 @@ import {
   Plus,
   CheckCircle2,
   Clock,
+  Crown,
+  Shield,
 } from "lucide-react";
 import { searchOrganizations, requestToJoinOrganization, getMyJoinRequests, type DiscoverableOrg, type JoinRequest } from "@/app/actions";
 import { cn } from "@/lib/utils";
+
+// Extended type for display that includes user's role
+type DisplayOrg = DiscoverableOrg & {
+  userRole?: string;
+  isFromClerk?: boolean;
+};
 
 export default function DiscoverPage() {
   const router = useRouter();
@@ -28,15 +36,64 @@ export default function DiscoverPage() {
   });
 
   const [searchQuery, setSearchQuery] = useState("");
-  const [organizations, setOrganizations] = useState<DiscoverableOrg[]>([]);
+  const [discoveredOrgs, setDiscoveredOrgs] = useState<DiscoverableOrg[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [myRequests, setMyRequests] = useState<(JoinRequest & { organization: DiscoverableOrg | null })[]>([]);
   const [requestingOrgId, setRequestingOrgId] = useState<string | null>(null);
 
-  // Get user's current org memberships
-  const memberOrgIds = new Set(
-    userMemberships?.data?.map((m) => m.organization.id) || []
-  );
+  // Get user's current org memberships as a map for quick lookup
+  const membershipMap = useMemo(() => {
+    const map = new Map<string, { role: string; name: string; imageUrl?: string }>();
+    userMemberships?.data?.forEach((m) => {
+      map.set(m.organization.id, {
+        role: m.role,
+        name: m.organization.name,
+        imageUrl: m.organization.imageUrl,
+      });
+    });
+    return map;
+  }, [userMemberships?.data]);
+
+  // Combine discovered orgs with user's own orgs (from Clerk)
+  const organizations: DisplayOrg[] = useMemo(() => {
+    // Start with user's own orgs from Clerk (these always show)
+    const myOrgs: DisplayOrg[] = (userMemberships?.data || []).map((m) => ({
+      id: m.organization.id, // Use Clerk org ID
+      clerk_org_id: m.organization.id,
+      name: m.organization.name,
+      institution: null,
+      department: m.organization.name,
+      description: null,
+      logo_url: m.organization.imageUrl || null,
+      member_count: m.organization.membersCount || 1,
+      created_at: m.organization.createdAt?.toISOString() || new Date().toISOString(),
+      userRole: m.role,
+      isFromClerk: true,
+    }));
+
+    // Add discovered orgs that aren't already in user's orgs
+    const myOrgClerkIds = new Set(myOrgs.map((o) => o.clerk_org_id));
+    const otherOrgs: DisplayOrg[] = discoveredOrgs
+      .filter((o) => !myOrgClerkIds.has(o.clerk_org_id))
+      .map((o) => ({
+        ...o,
+        userRole: membershipMap.get(o.clerk_org_id)?.role,
+        isFromClerk: false,
+      }));
+
+    // Filter by search query
+    const allOrgs = [...myOrgs, ...otherOrgs];
+    if (!searchQuery.trim()) return allOrgs;
+
+    const query = searchQuery.toLowerCase();
+    return allOrgs.filter(
+      (o) =>
+        o.name?.toLowerCase().includes(query) ||
+        o.institution?.toLowerCase().includes(query) ||
+        o.department?.toLowerCase().includes(query) ||
+        o.description?.toLowerCase().includes(query)
+    );
+  }, [userMemberships?.data, discoveredOrgs, membershipMap, searchQuery]);
 
   // Get pending request org IDs (using clerk_org_id from the organization)
   const pendingRequestOrgIds = new Set(
@@ -52,7 +109,7 @@ export default function DiscoverPage() {
           searchOrganizations(""),
           user ? getMyJoinRequests() : Promise.resolve([]),
         ]);
-        setOrganizations(orgs);
+        setDiscoveredOrgs(orgs);
         setMyRequests(requests);
       } catch (e) {
         console.error("Failed to load data", e);
@@ -65,22 +122,13 @@ export default function DiscoverPage() {
     }
   }, [userLoaded, user]);
 
-  // Search handler
-  const handleSearch = async (query: string) => {
+  // Search handler - just update local filter, don't re-fetch
+  const handleSearch = (query: string) => {
     setSearchQuery(query);
-    setIsSearching(true);
-    try {
-      const results = await searchOrganizations(query);
-      setOrganizations(results);
-    } catch (e) {
-      console.error("Search failed", e);
-    } finally {
-      setIsSearching(false);
-    }
   };
 
   // Request to join handler
-  const handleRequestJoin = async (org: DiscoverableOrg) => {
+  const handleRequestJoin = async (org: DisplayOrg) => {
     if (!user) {
       router.push("/sign-in");
       return;
@@ -100,14 +148,43 @@ export default function DiscoverPage() {
     }
   };
 
-  const getOrgStatus = (org: DiscoverableOrg) => {
-    if (memberOrgIds.has(org.clerk_org_id)) {
-      return "member";
+  const getOrgStatus = (org: DisplayOrg): { status: string; role?: string } => {
+    // If user has a role, they're a member
+    if (org.userRole) {
+      return { status: "member", role: org.userRole };
     }
-    if (pendingRequestOrgIds.has(org.id)) {
-      return "pending";
+    if (pendingRequestOrgIds.has(org.clerk_org_id)) {
+      return { status: "pending" };
     }
-    return "none";
+    return { status: "none" };
+  };
+
+  const getRoleBadge = (role: string) => {
+    switch (role.toLowerCase()) {
+      case "org:admin":
+      case "admin":
+        return (
+          <Badge className="bg-purple-100 text-purple-700 border-purple-200">
+            <Shield className="w-3 h-3 mr-1" />
+            Admin
+          </Badge>
+        );
+      case "org:owner":
+      case "owner":
+        return (
+          <Badge className="bg-amber-100 text-amber-700 border-amber-200">
+            <Crown className="w-3 h-3 mr-1" />
+            Owner
+          </Badge>
+        );
+      default:
+        return (
+          <Badge className="bg-green-100 text-green-700 border-green-200">
+            <CheckCircle2 className="w-3 h-3 mr-1" />
+            Member
+          </Badge>
+        );
+    }
   };
 
   return (
@@ -172,14 +249,18 @@ export default function DiscoverPage() {
             </div>
           ) : (
             organizations.map((org) => {
-              const status = getOrgStatus(org);
+              const { status, role } = getOrgStatus(org);
               return (
                 <div
-                  key={org.id}
+                  key={org.clerk_org_id}
                   className={cn(
                     "bg-white rounded-2xl border p-6 transition-all hover:shadow-lg",
                     status === "member"
-                      ? "border-green-200 bg-green-50/30"
+                      ? role?.toLowerCase().includes("owner")
+                        ? "border-amber-200 bg-amber-50/30"
+                        : role?.toLowerCase().includes("admin")
+                        ? "border-purple-200 bg-purple-50/30"
+                        : "border-green-200 bg-green-50/30"
                       : status === "pending"
                       ? "border-amber-200 bg-amber-50/30"
                       : "border-slate-200 hover:border-blue-200"
@@ -188,14 +269,25 @@ export default function DiscoverPage() {
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-3 mb-2">
-                        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold text-lg">
-                          {org.institution?.[0] || "L"}
-                        </div>
+                        {org.logo_url ? (
+                          <img
+                            src={org.logo_url}
+                            alt={org.name}
+                            className="w-12 h-12 rounded-xl object-cover"
+                          />
+                        ) : (
+                          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold text-lg">
+                            {org.name?.[0] || org.institution?.[0] || "L"}
+                          </div>
+                        )}
                         <div>
                           <h3 className="font-semibold text-lg text-slate-900">
-                            {org.institution || "Research Lab"}
+                            {org.name || org.institution || "Research Lab"}
                           </h3>
-                          {org.department && (
+                          {org.institution && org.name !== org.institution && (
+                            <p className="text-sm text-slate-500">{org.institution}</p>
+                          )}
+                          {org.department && org.name !== org.department && (
                             <p className="text-sm text-slate-500">{org.department}</p>
                           )}
                         </div>
@@ -216,13 +308,10 @@ export default function DiscoverPage() {
                     </div>
 
                     <div className="shrink-0">
-                      {status === "member" ? (
-                        <Badge className="bg-green-100 text-green-700 border-green-200">
-                          <CheckCircle2 className="w-3 h-3 mr-1" />
-                          Member
-                        </Badge>
+                      {status === "member" && role ? (
+                        getRoleBadge(role)
                       ) : status === "pending" ? (
-                        <Badge className="bg-amber-100 text-amber-700 border-amber-200">
+                        <Badge className="bg-slate-100 text-slate-700 border-slate-200">
                           <Clock className="w-3 h-3 mr-1" />
                           Pending
                         </Badge>
