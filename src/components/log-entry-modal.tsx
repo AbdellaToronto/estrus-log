@@ -87,10 +87,12 @@ export function LogEntryModal({ subjectId, onLogCreated }: { subjectId: string, 
       if (!uploadRes.ok) throw new Error('Upload failed');
       
       // 3. Create Log Entry
+      // Get the confidence score for the confirmed stage
+      const confidenceScore = result.confidence_scores[confirmedStage] ?? 0;
       await createLog({
         subjectId,
         stage: confirmedStage,
-        confidence: result.confidence_scores,
+        confidence: confidenceScore,
         features: result.features,
         imageUrl: publicUrl,
         notes

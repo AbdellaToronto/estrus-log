@@ -55,9 +55,7 @@ export async function POST(req: NextRequest) {
     const base64Image = buffer.toString('base64');
 
     const { object: result } = await generateObject({
-      model: google('gemini-2.0-flash-001', {
-        structuredOutputs: true,
-      }),
+      model: google('gemini-3-pro'),
       schema: ImageClassificationSchema,
       system: SYSTEM_PROMPT,
       messages: [

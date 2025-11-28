@@ -18,7 +18,12 @@ import {
   Bar,
   Cell,
 } from "recharts";
-import { motion } from "framer-motion";
+import { motion, type HTMLMotionProps } from "framer-motion";
+import { forwardRef } from "react";
+
+// Workaround for framer-motion + React 19 type incompatibility
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const MotionDiv = motion.div as React.FC<HTMLMotionProps<"div"> & { children?: React.ReactNode }>;
 
 type ConfidenceShape = number | Record<string, number> | null;
 
@@ -111,10 +116,12 @@ export function SubjectPageClient({
   const mostFrequentColor =
     STAGE_COLORS[mostFrequentStage] || STAGE_COLORS.Uncertain;
 
-  const getConfidence = (log: SubjectLog) => {
+  const getConfidence = (log: SubjectLog): number => {
     if (typeof log.confidence === "number") return log.confidence;
     if (log.confidence && typeof log.confidence === "object") {
-      const val = log.confidence[log.stage] ?? log.confidence.score;
+      const confidenceObj = log.confidence as Record<string, number>;
+      const val =
+        confidenceObj[log.stage] ?? (confidenceObj as { score?: number }).score;
       if (typeof val === "number") return val;
     }
     return 0;
@@ -139,7 +146,7 @@ export function SubjectPageClient({
 
       {/* Top Row: Charts & Overview */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 h-48">
-        <motion.div
+        <MotionDiv
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           className="glass-panel rounded-3xl p-5 flex flex-col justify-between border border-white/40 shadow-sm bg-white/40 backdrop-blur-xl"
@@ -175,9 +182,9 @@ export function SubjectPageClient({
               </AreaChart>
             </ResponsiveContainer>
           </div>
-        </motion.div>
+        </MotionDiv>
 
-        <motion.div
+        <MotionDiv
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
@@ -208,9 +215,9 @@ export function SubjectPageClient({
               </BarChart>
             </ResponsiveContainer>
           </div>
-        </motion.div>
+        </MotionDiv>
 
-        <motion.div
+        <MotionDiv
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2 }}
@@ -234,7 +241,7 @@ export function SubjectPageClient({
           >
             {mostFrequentStage}
           </div>
-        </motion.div>
+        </MotionDiv>
       </div>
 
       {/* Main Split View */}
@@ -331,7 +338,7 @@ export function SubjectPageClient({
                 </div>
                 {/* Progress bar */}
                 <div className="h-3 bg-slate-100 rounded-full overflow-hidden shadow-inner mb-6">
-                  <motion.div
+                  <MotionDiv
                     initial={{ width: 0 }}
                     animate={{ width: `${confidenceScore * 100}%` }}
                     transition={{ duration: 0.5, ease: "easeOut" }}
@@ -344,43 +351,45 @@ export function SubjectPageClient({
                 </div>
 
                 {/* All Scores Breakdown */}
-                {selectedLog.data?.confidence_scores && (
-                  <div className="space-y-2">
-                    <div className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-2">
-                      Full Breakdown
-                    </div>
-                    {Object.entries(selectedLog.data.confidence_scores).map(
-                      ([stage, score]) => {
-                        const val = score as number;
-                        return (
-                          <div
-                            key={stage}
-                            className="flex items-center gap-2 text-xs"
-                          >
-                            <div className="w-20 font-medium text-slate-600">
-                              {stage}
-                            </div>
-                            <div className="flex-1 h-1.5 bg-slate-50 rounded-full overflow-hidden">
-                              <div
-                                className="h-full rounded-full"
-                                style={{
-                                  width: `${val * 100}%`,
-                                  backgroundColor:
-                                    STAGE_COLORS[stage] || "#94a3b8",
-                                  opacity:
-                                    stage === selectedLog.stage ? 1 : 0.3,
-                                }}
-                              />
-                            </div>
-                            <div className="w-10 text-right text-slate-500">
-                              {Math.round(val * 100)}%
-                            </div>
+                {(() => {
+                  const scores = selectedLog.data?.confidence_scores;
+                  if (!scores || typeof scores !== "object") return null;
+                  
+                  const typedScores = scores as Record<string, number>;
+                  
+                  return (
+                    <div className="space-y-2">
+                      <div className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-2">
+                        Full Breakdown
+                      </div>
+                      {Object.entries(typedScores).map(([stage, score]) => (
+                        <div
+                          key={stage}
+                          className="flex items-center gap-2 text-xs"
+                        >
+                          <div className="w-20 font-medium text-slate-600">
+                            {stage}
                           </div>
-                        );
-                      }
-                    )}
-                  </div>
-                )}
+                          <div className="flex-1 h-1.5 bg-slate-50 rounded-full overflow-hidden">
+                            <div
+                              className="h-full rounded-full"
+                              style={{
+                                width: `${score * 100}%`,
+                                backgroundColor:
+                                  STAGE_COLORS[stage] || "#94a3b8",
+                                opacity:
+                                  stage === selectedLog.stage ? 1 : 0.3,
+                              }}
+                            />
+                          </div>
+                          <div className="w-10 text-right text-slate-500">
+                            {Math.round(score * 100)}%
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
 
                 {/* Legacy Support: Fallback if data.confidence_scores is missing but confidence is an object */}
                 {!selectedLog.data?.confidence_scores &&

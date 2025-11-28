@@ -63,7 +63,7 @@ async function fetchImageAsBlob(url: string): Promise<Blob> {
     const [buffer] = await file.download();
     const [metadata] = await file.getMetadata();
     const contentType = metadata?.contentType || "image/jpeg";
-    return new Blob([buffer as unknown as Uint8Array], { type: contentType });
+    return new Blob([new Uint8Array(buffer)], { type: contentType });
   }
 }
 
