@@ -7,8 +7,10 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { DashboardStats as DashboardStatsComponent } from "@/components/dashboard/dashboard-stats";
 import { RecentActivity } from "@/components/dashboard/recent-activity";
 import { CohortList } from "@/components/dashboard/cohort-list";
+import { BatchUploadCard } from "@/components/dashboard/batch-upload-card";
 import { OnboardingFlow } from "@/components/onboarding";
 import type { DashboardStats } from "@/app/actions";
+import { useUser } from "@clerk/nextjs";
 
 export function DashboardClient({ 
   initialCohorts, 
@@ -21,6 +23,7 @@ export function DashboardClient({
 }) {
   const [search, setSearch] = useState('');
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const { user } = useUser();
 
   // Show onboarding if user has no cohorts
   useEffect(() => {
@@ -58,8 +61,11 @@ export function DashboardClient({
             />
           </div>
           <Avatar className="h-9 w-9 border-2 border-white/20">
-            <AvatarImage src="https://github.com/shadcn.png" />
-            <AvatarFallback>LW</AvatarFallback>
+            <AvatarImage src={user?.imageUrl} />
+            <AvatarFallback>
+              {user?.firstName?.[0]}
+              {user?.lastName?.[0]}
+            </AvatarFallback>
           </Avatar>
         </div>
       </div>
@@ -76,8 +82,9 @@ export function DashboardClient({
         {/* Left Column: Recent Activity */}
         <RecentActivity activities={stats.recentActivity} />
 
-        {/* Right Column: Cohorts & Quick Links */}
+        {/* Right Column: Actions & Cohorts */}
         <div className="space-y-6">
+          <BatchUploadCard cohorts={initialCohorts} />
           <CohortList cohorts={initialCohorts} />
         </div>
       </div>

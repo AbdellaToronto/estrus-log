@@ -10,12 +10,16 @@ import {
   Library, 
   Settings, 
   FlaskConical,
-  LogOut,
-  TestTube
+  TestTube,
+  Search,
+  Building2,
+  Globe,
+  UserPlus,
 } from "lucide-react";
-import { UserButton, OrganizationSwitcher, useUser } from "@clerk/nextjs";
+import { UserButton, OrganizationSwitcher, useUser, useOrganization } from "@clerk/nextjs";
 
-const NAV_ITEMS = [
+// Navigation items when user HAS an organization
+const ORG_NAV_ITEMS = [
   { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { label: 'Cohorts', href: '/cohorts', icon: Users },
   { label: 'Experiments', href: '/experiments', icon: TestTube },
@@ -23,48 +27,86 @@ const NAV_ITEMS = [
   { label: 'Settings', href: '/settings', icon: Settings },
 ];
 
+// Navigation items when user has NO organization (exploring)
+const EXPLORE_NAV_ITEMS = [
+  { label: 'Find a Lab', href: '/onboarding', icon: Search },
+  { label: 'Browse Research', href: '/explore', icon: Globe },
+];
+
 export function Sidebar() {
   const pathname = usePathname();
   const { user } = useUser();
+  const { organization } = useOrganization();
+
+  const hasOrg = !!organization;
+  const navItems = hasOrg ? ORG_NAV_ITEMS : EXPLORE_NAV_ITEMS;
+
+  // Don't show sidebar on certain pages
+  const hiddenPaths = ['/sign-in', '/sign-up'];
+  if (hiddenPaths.some(path => pathname.startsWith(path))) {
+    return null;
+  }
 
   return (
     <aside className="fixed left-4 top-4 bottom-4 w-64 rounded-3xl glass-panel flex flex-col p-6 z-50">
       {/* Logo */}
-      <div className="flex items-center gap-3 mb-10 px-2">
+      <div className="flex items-center gap-3 mb-8 px-2">
         <div className="w-10 h-10 rounded-xl bg-primary/20 flex items-center justify-center text-primary">
           <FlaskConical className="w-6 h-6" />
         </div>
         <div>
           <h1 className="font-bold text-lg leading-none">Estrus Log</h1>
-          <p className="text-xs text-muted-foreground">Research Tool</p>
+          <p className="text-xs text-muted-foreground">Research Platform</p>
         </div>
       </div>
       
-      {/* Organization Switcher */}
-      <div className="mb-6 px-2">
-         <OrganizationSwitcher 
-           hidePersonal={false}
-           afterCreateOrganizationUrl="/dashboard"
-           afterSelectOrganizationUrl="/dashboard"
-           afterSelectPersonalUrl="/onboarding"
-           organizationProfileMode="navigation"
-           organizationProfileUrl="/organization"
-           appearance={{
-             elements: {
-               rootBox: "w-full",
-               organizationSwitcherTrigger: "w-full flex items-center justify-between p-2 rounded-xl hover:bg-white/5 transition-colors",
-               organizationPreviewTextContainer: "mr-auto",
-               organizationPreviewMainIdentifier: "text-sm font-medium text-foreground",
-               organizationPreviewSecondaryIdentifier: "text-xs text-muted-foreground"
-             }
-           }}
-         />
-      </div>
+      {/* Organization Switcher - only show if user has orgs */}
+      {hasOrg ? (
+        <div className="mb-6 px-2">
+          <OrganizationSwitcher 
+            hidePersonal={true}
+            afterCreateOrganizationUrl="/dashboard"
+            afterSelectOrganizationUrl="/dashboard"
+            afterSelectPersonalUrl="/onboarding"
+            organizationProfileMode="navigation"
+            organizationProfileUrl="/organization"
+            appearance={{
+              elements: {
+                rootBox: "w-full",
+                organizationSwitcherTrigger: "w-full flex items-center justify-between p-2 rounded-xl hover:bg-white/5 transition-colors",
+                organizationPreviewTextContainer: "mr-auto",
+                organizationPreviewMainIdentifier: "text-sm font-medium text-foreground",
+                organizationPreviewSecondaryIdentifier: "text-xs text-muted-foreground"
+              }
+            }}
+          />
+        </div>
+      ) : (
+        <div className="mb-6 px-2">
+          <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20">
+            <div className="flex items-center gap-2 text-amber-600 mb-1">
+              <Building2 className="w-4 h-4" />
+              <span className="text-sm font-medium">No Lab Selected</span>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Join or create a lab to access all features
+            </p>
+          </div>
+        </div>
+      )}
 
-      {/* Navigation */}
-      <nav className="flex-1 space-y-2">
-        {NAV_ITEMS.map((item) => {
-          const isActive = pathname.startsWith(item.href);
+      {/* Main Navigation */}
+      <nav className="flex-1 space-y-1">
+        {/* Section Label */}
+        <div className="px-4 py-2">
+          <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+            {hasOrg ? 'Lab Tools' : 'Explore'}
+          </span>
+        </div>
+        
+        {navItems.map((item) => {
+          const isActive = pathname === item.href || 
+            (item.href !== '/' && pathname.startsWith(item.href));
           return (
             <Link
               key={item.href}
@@ -87,6 +129,48 @@ export function Sidebar() {
             </Link>
           );
         })}
+
+        {/* Divider and secondary nav for users with orgs */}
+        {hasOrg && (
+          <>
+            <div className="my-4 mx-4 border-t border-white/10" />
+            <div className="px-4 py-2">
+              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                Community
+              </span>
+            </div>
+            <Link
+              href="/onboarding"
+              className={cn(
+                "flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group",
+                pathname === '/onboarding'
+                  ? "bg-primary text-primary-foreground shadow-lg shadow-primary/25" 
+                  : "text-muted-foreground hover:text-foreground hover:bg-white/5"
+              )}
+            >
+              <Search className={cn(
+                "w-5 h-5 transition-colors",
+                pathname === '/onboarding' ? "text-primary-foreground" : "text-muted-foreground group-hover:text-primary"
+              )} />
+              <span className="font-medium">Discover Labs</span>
+            </Link>
+            <Link
+              href="/explore"
+              className={cn(
+                "flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group",
+                pathname === '/explore'
+                  ? "bg-primary text-primary-foreground shadow-lg shadow-primary/25" 
+                  : "text-muted-foreground hover:text-foreground hover:bg-white/5"
+              )}
+            >
+              <Globe className={cn(
+                "w-5 h-5 transition-colors",
+                pathname === '/explore' ? "text-primary-foreground" : "text-muted-foreground group-hover:text-primary"
+              )} />
+              <span className="font-medium">Public Research</span>
+            </Link>
+          </>
+        )}
       </nav>
 
       {/* User Profile */}
