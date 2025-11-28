@@ -66,23 +66,22 @@ function isValidUUID(id: string) {
 // --- Cohorts ---
 
 export async function getCohorts() {
-  const { userId, orgId, getToken } = await auth();
+  const { userId, orgId } = await auth();
   if (!userId) throw new Error("Unauthorized");
 
-  const token = await getToken();
-  const supabase = createServerClient(configFromEnv(), token || undefined);
+  // Use service role to bypass RLS - we handle auth filtering manually
+  const supabase = createServerClient(configFromEnv());
 
   // If user is in an org, get cohorts for that org
-  // Also include any "orphaned" cohorts the user created before orgs were set up
   if (orgId) {
     const { data, error } = await supabase
       .from("cohorts")
       .select("*")
-      .or(`org_id.eq.${orgId},and(org_id.is.null,user_id.eq.${userId})`)
+      .eq("org_id", orgId)
       .order("created_at", { ascending: false });
 
     if (error) throw error;
-    return data;
+    return data || [];
   } else {
     // If no org, show user's personal cohorts (org_id is null)
     const { data, error } = await supabase
@@ -93,7 +92,7 @@ export async function getCohorts() {
       .order("created_at", { ascending: false });
 
     if (error) throw error;
-    return data;
+    return data || [];
   }
 }
 
