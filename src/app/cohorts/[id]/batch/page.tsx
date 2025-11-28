@@ -37,7 +37,7 @@ import {
 import { CycleWheel, ConfidenceBars } from "@/components/analysis";
 import Link from "next/link";
 import {
-  getUploadUrls,
+  uploadToGcs,
   batchSaveLogs,
   createScanSession,
   createScanItemsBulk,
@@ -515,6 +515,16 @@ export default function BatchUploadPage() {
 
   // --- Action: Upload ---
 
+  // Helper to convert File to base64 data URL
+  const fileToDataUrl = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  };
+
   const handleUpload = async () => {
     setIsProcessing(true);
     try {
@@ -523,50 +533,36 @@ export default function BatchUploadPage() {
       );
       if (pendingItems.length === 0) return;
 
-      // Batch get signed URLs
-      const fileMetas = pendingItems.map((i) => ({
-        filename: i.filename,
-        contentType: i.file!.type,
-      }));
-      const uploadUrls = await getUploadUrls(fileMetas, cohortId);
-
-      // Map filename to url
-      const urlMap = new Map(uploadUrls.map((u) => [u.filename, u]));
-
-      // Upload in chunks (concurrency: 5)
-      const chunkSize = 5;
+      // Upload in chunks (concurrency: 3 to avoid overwhelming the server)
+      const chunkSize = 3;
       for (let i = 0; i < pendingItems.length; i += chunkSize) {
         const chunk = pendingItems.slice(i, i + chunkSize);
 
         await Promise.all(
           chunk.map(async (item) => {
-            const urlData = urlMap.get(item.filename);
-            if (!urlData) return;
-
             updateItemState(item.id, "uploading");
 
             try {
-              const response = await fetch(urlData.url, {
-                method: "PUT",
-                body: item.file,
-                headers: { "Content-Type": item.file!.type },
-              });
-
-              if (!response.ok) {
-                console.error(`Upload failed for ${item.filename}: ${response.status} ${response.statusText}`);
-                updateItemState(item.id, "error");
-                return;
-              }
+              // Convert file to base64 data URL
+              const dataUrl = await fileToDataUrl(item.file!);
+              
+              // Upload via server action (server-side upload to GCS)
+              const result = await uploadToGcs(
+                item.filename,
+                item.file!.type,
+                dataUrl,
+                cohortId
+              );
 
               updateItemState(item.id, "uploaded", { 
-                gcsUrl: urlData.publicUrl,
-                previewUrl: urlData.publicUrl, // Switch from blob URL to public GCS URL
+                gcsUrl: result.publicUrl,
+                previewUrl: result.publicUrl,
               });
 
               if (item.scanItemId) {
                 updateScanItem(item.scanItemId, {
                   status: "uploaded",
-                  imageUrl: urlData.publicUrl,
+                  imageUrl: result.publicUrl,
                 });
               }
             } catch (uploadError) {

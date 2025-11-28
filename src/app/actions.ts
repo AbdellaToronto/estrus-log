@@ -555,6 +555,109 @@ export async function updateScanItem(
 
 // --- GCS Upload & Batch ---
 
+/**
+ * Upload a file directly to GCS (server-side upload).
+ * This is more reliable than signed URLs as it doesn't require
+ * the service account to have signBlob permissions.
+ */
+export async function uploadToGcs(
+  filename: string,
+  contentType: string,
+  data: string | Buffer, // base64 data URL or raw buffer
+  cohortId?: string
+) {
+  const { userId, orgId } = await auth();
+  if (!userId) throw new Error("Unauthorized");
+
+  const { bucket } = getGcs();
+
+  // Organize by Org/User -> Cohort -> Logs
+  const rootPath = orgId ? `orgs/${orgId}` : `users/${userId}`;
+  const subPath = cohortId ? `${cohortId}/logs` : "uploads";
+
+  const path = `${rootPath}/${subPath}/${Date.now()}-${filename}`;
+  const file = bucket.file(path);
+
+  // Convert data URL to buffer if needed
+  let buffer: Buffer;
+  if (typeof data === "string") {
+    if (data.startsWith("data:")) {
+      const base64 = data.replace(/^data:[^;]+;base64,/, "");
+      buffer = Buffer.from(base64, "base64");
+    } else {
+      // Assume it's already base64
+      buffer = Buffer.from(data, "base64");
+    }
+  } else {
+    buffer = data;
+  }
+
+  // Upload directly to GCS
+  await file.save(buffer, {
+    metadata: {
+      contentType,
+    },
+    resumable: false,
+  });
+
+  const publicUrl = `https://storage.googleapis.com/${bucket.name}/${path}`;
+
+  return {
+    path,
+    publicUrl,
+  };
+}
+
+/**
+ * Batch upload multiple files to GCS (server-side).
+ */
+export async function uploadFilesToGcs(
+  files: { filename: string; contentType: string; data: string }[],
+  cohortId: string
+) {
+  const { userId, orgId } = await auth();
+  if (!userId) throw new Error("Unauthorized");
+
+  const { bucket } = getGcs();
+  const rootPath = orgId ? `orgs/${orgId}` : `users/${userId}`;
+  const subPath = cohortId ? `${cohortId}/logs` : "uploads";
+
+  const results = await Promise.all(
+    files.map(async (f) => {
+      const path = `${rootPath}/${subPath}/${Date.now()}-${f.filename}`;
+      const file = bucket.file(path);
+
+      // Convert data URL to buffer
+      let buffer: Buffer;
+      if (f.data.startsWith("data:")) {
+        const base64 = f.data.replace(/^data:[^;]+;base64,/, "");
+        buffer = Buffer.from(base64, "base64");
+      } else {
+        buffer = Buffer.from(f.data, "base64");
+      }
+
+      // Upload directly
+      await file.save(buffer, {
+        metadata: {
+          contentType: f.contentType,
+        },
+        resumable: false,
+      });
+
+      return {
+        filename: f.filename,
+        path,
+        publicUrl: `https://storage.googleapis.com/${bucket.name}/${path}`,
+      };
+    })
+  );
+
+  return results;
+}
+
+// Keep the old signed URL functions for backward compatibility but they may not work
+// depending on service account permissions
+
 export async function getUploadUrl(
   filename: string,
   contentType: string,
