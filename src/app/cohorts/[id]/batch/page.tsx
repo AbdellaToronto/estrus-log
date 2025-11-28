@@ -967,6 +967,7 @@ export default function BatchUploadPage() {
                               alt=""
                               fill
                               className="object-cover"
+                              unoptimized={item.previewUrl.includes('storage.googleapis.com')}
                             />
 
                             {/* Selection Border (Inner) */}
@@ -1080,6 +1081,7 @@ export default function BatchUploadPage() {
                         "object-contain p-8",
                         showCroppedImage && selectedItem.croppedImageUrl && "bg-black"
                       )}
+                      unoptimized
                     />
                   </motion.div>
                 </AnimatePresence>
