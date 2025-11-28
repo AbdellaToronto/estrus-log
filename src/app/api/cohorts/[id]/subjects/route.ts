@@ -1,7 +1,6 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextRequest, NextResponse } from "next/server";
-import { createServerClient } from "@/lib/supabase";
-import { configFromEnv } from "@/lib/supabase-config";
+import { createServerClient, configFromEnv } from "@/lib/supabase";
 
 export async function GET(
   request: NextRequest,
