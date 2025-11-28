@@ -253,7 +253,7 @@ export const analyzeScanItemTask = task({
       
       try {
         const geminiResponse = await generateObject({
-          model: google("gemini-1.5-pro-latest"),
+          model: google("gemini-3-pro-preview"),
           schema: GeminiClassificationSchema,
           messages: [
             {
