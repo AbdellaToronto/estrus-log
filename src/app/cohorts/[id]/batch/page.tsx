@@ -545,22 +545,33 @@ export default function BatchUploadPage() {
 
             updateItemState(item.id, "uploading");
 
-            await fetch(urlData.url, {
-              method: "PUT",
-              body: item.file,
-              headers: { "Content-Type": item.file!.type },
-            });
-
-            updateItemState(item.id, "uploaded", { 
-              gcsUrl: urlData.publicUrl,
-              previewUrl: urlData.publicUrl, // Switch from blob URL to public GCS URL
-            });
-
-            if (item.scanItemId) {
-              updateScanItem(item.scanItemId, {
-                status: "uploaded",
-                imageUrl: urlData.publicUrl,
+            try {
+              const response = await fetch(urlData.url, {
+                method: "PUT",
+                body: item.file,
+                headers: { "Content-Type": item.file!.type },
               });
+
+              if (!response.ok) {
+                console.error(`Upload failed for ${item.filename}: ${response.status} ${response.statusText}`);
+                updateItemState(item.id, "error");
+                return;
+              }
+
+              updateItemState(item.id, "uploaded", { 
+                gcsUrl: urlData.publicUrl,
+                previewUrl: urlData.publicUrl, // Switch from blob URL to public GCS URL
+              });
+
+              if (item.scanItemId) {
+                updateScanItem(item.scanItemId, {
+                  status: "uploaded",
+                  imageUrl: urlData.publicUrl,
+                });
+              }
+            } catch (uploadError) {
+              console.error(`Upload error for ${item.filename}:`, uploadError);
+              updateItemState(item.id, "error");
             }
           })
         );
