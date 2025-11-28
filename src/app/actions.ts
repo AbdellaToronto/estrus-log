@@ -97,11 +97,10 @@ export async function getCohorts() {
 }
 
 export async function createCohort(formData: FormData) {
-  const { userId, orgId, getToken } = await auth();
+  const { userId, orgId } = await auth();
   if (!userId) throw new Error("Unauthorized");
 
-  const token = await getToken();
-  const supabase = createServerClient(configFromEnv(), token || undefined);
+  const supabase = createServerClient(configFromEnv());
 
   // -- SAFETY CHECK: Ensure user exists in Supabase before creating foreign key ref --
   const user = await currentUser();
@@ -154,15 +153,14 @@ export async function createCohort(formData: FormData) {
 }
 
 export async function getCohort(id: string) {
-  const { userId, getToken } = await auth();
+  const { userId } = await auth();
   if (!userId) throw new Error("Unauthorized");
 
   if (!isValidUUID(id)) {
     return null;
   }
 
-  const token = await getToken();
-  const supabase = createServerClient(configFromEnv(), token || undefined);
+  const supabase = createServerClient(configFromEnv());
 
   const { data, error } = await supabase
     .from("cohorts")
@@ -175,15 +173,14 @@ export async function getCohort(id: string) {
 }
 
 export async function deleteCohort(id: string) {
-  const { userId, getToken } = await auth();
+  const { userId } = await auth();
   if (!userId) throw new Error("Unauthorized");
 
   if (!isValidUUID(id)) {
     throw new Error("Invalid cohort ID");
   }
 
-  const token = await getToken();
-  const supabase = createServerClient(configFromEnv(), token || undefined);
+  const supabase = createServerClient(configFromEnv());
 
   // Delete in order to respect foreign key constraints:
   // 1. scan_items (via session)
@@ -228,11 +225,10 @@ export async function deleteCohort(id: string) {
 // --- Subjects (Formerly Mice) ---
 
 export async function getSubjects() {
-  const { userId, getToken } = await auth();
+  const { userId } = await auth();
   if (!userId) throw new Error("Unauthorized");
 
-  const token = await getToken();
-  const supabase = createServerClient(configFromEnv(), token || undefined);
+  const supabase = createServerClient(configFromEnv());
 
   const { data, error } = await supabase
     .from("mice")
@@ -244,11 +240,10 @@ export async function getSubjects() {
 }
 
 export async function getCohortSubjects(cohortId: string) {
-  const { userId, getToken } = await auth();
+  const { userId } = await auth();
   if (!userId) throw new Error("Unauthorized");
 
-  const token = await getToken();
-  const supabase = createServerClient(configFromEnv(), token || undefined);
+  const supabase = createServerClient(configFromEnv());
 
   const { data, error } = await supabase
     .from("mice")
@@ -261,15 +256,14 @@ export async function getCohortSubjects(cohortId: string) {
 }
 
 export async function getSubject(id: string) {
-  const { userId, getToken } = await auth();
+  const { userId } = await auth();
   if (!userId) throw new Error("Unauthorized");
 
   if (!isValidUUID(id)) {
     return null;
   }
 
-  const token = await getToken();
-  const supabase = createServerClient(configFromEnv(), token || undefined);
+  const supabase = createServerClient(configFromEnv());
 
   const { data, error } = await supabase
     .from("mice")
@@ -282,11 +276,10 @@ export async function getSubject(id: string) {
 }
 
 export async function createSubject(formData: FormData) {
-  const { userId, orgId, getToken } = await auth();
+  const { userId, orgId } = await auth();
   if (!userId) throw new Error("Unauthorized");
 
-  const token = await getToken();
-  const supabase = createServerClient(configFromEnv(), token || undefined);
+  const supabase = createServerClient(configFromEnv());
 
   const name = formData.get("name") as string;
   const cohortId = formData.get("cohortId") as string;
@@ -315,11 +308,10 @@ export async function createSubject(formData: FormData) {
 // --- Logs ---
 
 export async function getSubjectLogs(subjectId: string) {
-  const { userId, getToken } = await auth();
+  const { userId } = await auth();
   if (!userId) throw new Error("Unauthorized");
 
-  const token = await getToken();
-  const supabase = createServerClient(configFromEnv(), token || undefined);
+  const supabase = createServerClient(configFromEnv());
 
   const { data, error } = await supabase
     .from("estrus_logs")
@@ -349,11 +341,10 @@ export async function createLog(data: {
   notes: string;
   flexibleData?: Record<string, unknown>;
 }) {
-  const { userId, getToken } = await auth();
+  const { userId } = await auth();
   if (!userId) throw new Error("Unauthorized");
 
-  const token = await getToken();
-  const supabase = createServerClient(configFromEnv(), token || undefined);
+  const supabase = createServerClient(configFromEnv());
 
   const { error } = await supabase.from("estrus_logs").insert({
     mouse_id: data.subjectId,
@@ -372,11 +363,10 @@ export async function createLog(data: {
 // --- Scan Sessions (Batch) ---
 
 export async function getScanSession(cohortId: string) {
-  const { userId, getToken } = await auth();
+  const { userId } = await auth();
   if (!userId) throw new Error("Unauthorized");
 
-  const token = await getToken();
-  const supabase = createServerClient(configFromEnv(), token || undefined);
+  const supabase = createServerClient(configFromEnv());
 
   // Find the most recent 'pending' session for this user/cohort
   const { data, error } = await supabase
@@ -394,11 +384,10 @@ export async function getScanSession(cohortId: string) {
 }
 
 export async function getScanItems(sessionId: string) {
-  const { userId, getToken } = await auth();
+  const { userId } = await auth();
   if (!userId) throw new Error("Unauthorized");
 
-  const token = await getToken();
-  const supabase = createServerClient(configFromEnv(), token || undefined);
+  const supabase = createServerClient(configFromEnv());
 
   const { data, error } = await supabase
     .from("scan_items")
@@ -442,11 +431,10 @@ export async function getScanItems(sessionId: string) {
 }
 
 export async function startScanSessionAnalysis(sessionId: string) {
-  const { userId, getToken } = await auth();
+  const { userId } = await auth();
   if (!userId) throw new Error("Unauthorized");
 
-  const token = await getToken();
-  const supabase = createServerClient(configFromEnv(), token || undefined);
+  const supabase = createServerClient(configFromEnv());
 
   const { data: session, error } = await supabase
     .from("scan_sessions")
@@ -465,11 +453,10 @@ export async function startScanSessionAnalysis(sessionId: string) {
 }
 
 export async function createScanSession(cohortId: string, name?: string) {
-  const { userId, getToken } = await auth();
+  const { userId } = await auth();
   if (!userId) throw new Error("Unauthorized");
 
-  const token = await getToken();
-  const supabase = createServerClient(configFromEnv(), token || undefined);
+  const supabase = createServerClient(configFromEnv());
 
   const { data, error } = await supabase
     .from("scan_sessions")
@@ -487,10 +474,9 @@ export async function createScanSession(cohortId: string, name?: string) {
 }
 
 export async function createScanItem(sessionId: string, imageUrl: string) {
-  const { userId, getToken } = await auth();
+  const { userId } = await auth();
   if (!userId) throw new Error("Unauthorized");
-  const token = await getToken();
-  const supabase = createServerClient(configFromEnv(), token || undefined);
+  const supabase = createServerClient(configFromEnv());
 
   const { data, error } = await supabase
     .from("scan_items")
@@ -510,10 +496,9 @@ export async function createScanItemsBulk(
   sessionId: string,
   items: { imageUrl: string }[]
 ) {
-  const { userId, getToken } = await auth();
+  const { userId } = await auth();
   if (!userId) throw new Error("Unauthorized");
-  const token = await getToken();
-  const supabase = createServerClient(configFromEnv(), token || undefined);
+  const supabase = createServerClient(configFromEnv());
 
   const rows = items.map((item) => ({
     session_id: sessionId,
@@ -539,10 +524,9 @@ export async function updateScanItem(
     imageUrl?: string;
   }
 ) {
-  const { userId, getToken } = await auth();
+  const { userId } = await auth();
   if (!userId) throw new Error("Unauthorized");
-  const token = await getToken();
-  const supabase = createServerClient(configFromEnv(), token || undefined);
+  const supabase = createServerClient(configFromEnv());
 
   const payload: {
     status: string;
@@ -779,11 +763,10 @@ export async function batchSaveLogs(
   items: BatchLogItem[],
   sessionId?: string
 ) {
-  const { userId, orgId, getToken } = await auth();
+  const { userId, orgId } = await auth();
   if (!userId) throw new Error("Unauthorized");
 
-  const token = await getToken();
-  const supabase = createServerClient(configFromEnv(), token || undefined);
+  const supabase = createServerClient(configFromEnv());
 
   // 1. Get existing subjects to match filenames
   const { data: existingSubjects } = await supabase
@@ -935,11 +918,10 @@ export async function batchSaveLogs(
 }
 
 export async function getCohortLogs(cohortId: string) {
-  const { userId, getToken } = await auth();
+  const { userId } = await auth();
   if (!userId) throw new Error("Unauthorized");
 
-  const token = await getToken();
-  const supabase = createServerClient(configFromEnv(), token || undefined);
+  const supabase = createServerClient(configFromEnv());
 
   const { data, error } = await supabase
     .from("estrus_logs")
@@ -960,11 +942,10 @@ export async function getCohortLogs(cohortId: string) {
 export async function getCohortInsights(
   cohortId: string
 ): Promise<CohortInsights> {
-  const { userId, getToken } = await auth();
+  const { userId } = await auth();
   if (!userId) throw new Error("Unauthorized");
 
-  const token = await getToken();
-  const supabase = createServerClient(configFromEnv(), token || undefined);
+  const supabase = createServerClient(configFromEnv());
 
   const { data: logs, error } = await supabase
     .from("estrus_logs")
@@ -1090,11 +1071,10 @@ export type DashboardStats = {
 };
 
 export async function getDashboardStats(): Promise<DashboardStats> {
-  const { userId, getToken } = await auth();
+  const { userId } = await auth();
   if (!userId) throw new Error("Unauthorized");
 
-  const token = await getToken();
-  const supabase = createServerClient(configFromEnv(), token || undefined);
+  const supabase = createServerClient(configFromEnv());
 
   // 1. Total Subjects
   const { count: totalSubjects, error: subjectsError } = await supabase
@@ -1177,11 +1157,10 @@ export async function getDashboardStats(): Promise<DashboardStats> {
 // --- Experiments ---
 
 export async function getExperiments() {
-  const { userId, getToken } = await auth();
+  const { userId } = await auth();
   if (!userId) throw new Error("Unauthorized");
 
-  const token = await getToken();
-  const supabase = createServerClient(configFromEnv(), token || undefined);
+  const supabase = createServerClient(configFromEnv());
 
   const { data, error } = await supabase
     .from("experiments")
@@ -1193,11 +1172,10 @@ export async function getExperiments() {
 }
 
 export async function createExperiment(formData: FormData) {
-  const { userId, orgId, getToken } = await auth();
+  const { userId, orgId } = await auth();
   if (!userId) throw new Error("Unauthorized");
 
-  const token = await getToken();
-  const supabase = createServerClient(configFromEnv(), token || undefined);
+  const supabase = createServerClient(configFromEnv());
 
   const name = formData.get("name") as string;
   const description = formData.get("description") as string;
@@ -1219,7 +1197,7 @@ export async function createExperiment(formData: FormData) {
 }
 
 export async function getExperiment(id: string) {
-  const { userId, getToken } = await auth();
+  const { userId } = await auth();
   if (!userId) throw new Error("Unauthorized");
 
   if (!isValidUUID(id)) {
@@ -1228,8 +1206,7 @@ export async function getExperiment(id: string) {
     return null;
   }
 
-  const token = await getToken();
-  const supabase = createServerClient(configFromEnv(), token || undefined);
+  const supabase = createServerClient(configFromEnv());
 
   const { data, error } = await supabase
     .from("experiments")
@@ -1250,11 +1227,10 @@ export async function getExperiment(id: string) {
 }
 
 export async function deleteExperiment(id: string) {
-  const { userId, getToken } = await auth();
+  const { userId } = await auth();
   if (!userId) throw new Error("Unauthorized");
 
-  const token = await getToken();
-  const supabase = createServerClient(configFromEnv(), token || undefined);
+  const supabase = createServerClient(configFromEnv());
 
   const { error } = await supabase.from("experiments").delete().eq("id", id);
 
@@ -1266,11 +1242,10 @@ export async function addCohortToExperiment(
   experimentId: string,
   cohortId: string
 ) {
-  const { userId, getToken } = await auth();
+  const { userId } = await auth();
   if (!userId) throw new Error("Unauthorized");
 
-  const token = await getToken();
-  const supabase = createServerClient(configFromEnv(), token || undefined);
+  const supabase = createServerClient(configFromEnv());
 
   const { error } = await supabase.from("experiment_cohorts").insert({
     experiment_id: experimentId,
@@ -1285,11 +1260,10 @@ export async function removeCohortFromExperiment(
   experimentId: string,
   cohortId: string
 ) {
-  const { userId, getToken } = await auth();
+  const { userId } = await auth();
   if (!userId) throw new Error("Unauthorized");
 
-  const token = await getToken();
-  const supabase = createServerClient(configFromEnv(), token || undefined);
+  const supabase = createServerClient(configFromEnv());
 
   const { error } = await supabase
     .from("experiment_cohorts")
@@ -1319,10 +1293,9 @@ export type ExperimentInsights = {
 export async function getExperimentInsights(
   experimentId: string
 ): Promise<ExperimentInsights> {
-  const { userId, getToken } = await auth();
+  const { userId } = await auth();
   if (!userId) throw new Error("Unauthorized");
-  const token = await getToken();
-  const supabase = createServerClient(configFromEnv(), token || undefined);
+  const supabase = createServerClient(configFromEnv());
 
   // 1. Get Cohorts in Experiment
   const { data: experimentCohorts, error: cohortsError } = await supabase
@@ -1419,10 +1392,9 @@ export async function getExperimentInsights(
 }
 
 export async function getExperimentExportData(experimentId: string) {
-  const { userId, getToken } = await auth();
+  const { userId } = await auth();
   if (!userId) throw new Error("Unauthorized");
-  const token = await getToken();
-  const supabase = createServerClient(configFromEnv(), token || undefined);
+  const supabase = createServerClient(configFromEnv());
 
   // 1. Get Cohorts
   const { data: experimentCohorts } = await supabase
@@ -1478,10 +1450,9 @@ export async function getExperimentExportData(experimentId: string) {
 }
 
 export async function getExperimentVisualizationData(experimentId: string) {
-  const { userId, getToken } = await auth();
+  const { userId } = await auth();
   if (!userId) throw new Error("Unauthorized");
-  const token = await getToken();
-  const supabase = createServerClient(configFromEnv(), token || undefined);
+  const supabase = createServerClient(configFromEnv());
 
   // 1. Get Cohorts
   const { data: experimentCohorts, error: cohortsError } = await supabase
