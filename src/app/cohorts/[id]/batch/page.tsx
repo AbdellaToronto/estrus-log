@@ -391,6 +391,13 @@ export default function BatchUploadPage() {
     return () => clearInterval(id);
   }, [sessionId, hasActiveAnalysis, refreshItemsFromServer]);
 
+  // Reset isProcessing when analysis completes (no more items in "analyzing" state)
+  useEffect(() => {
+    if (!isAnalyzing && isProcessing) {
+      setIsProcessing(false);
+    }
+  }, [isAnalyzing, isProcessing]);
+
   const handleFiles = async (files: File[]) => {
     const currentSessionId = await ensureSession();
     if (!currentSessionId) {
@@ -586,8 +593,10 @@ export default function BatchUploadPage() {
   // --- Action: Analyze ---
 
   const handleAnalyze = async () => {
-    // Immediately update items to "analyzing" status BEFORE the API call
-    // This ensures the button stays disabled throughout the entire process
+    // IMMEDIATELY lock the button - this is synchronous and happens before any async work
+    setIsProcessing(true);
+    
+    // Also update items to "analyzing" status
     setItems((prev) =>
       prev.map((item) =>
         item.status === "uploaded" ? { ...item, status: "analyzing" } : item
@@ -603,12 +612,20 @@ export default function BatchUploadPage() {
             item.status === "analyzing" ? { ...item, status: "uploaded" } : item
           )
         );
+        setIsProcessing(false);
         throw new Error("No active session found");
       }
 
-      await startScanSessionAnalysis(currentSessionId);
+      // Fire and forget - don't wait for the background job to complete
+      startScanSessionAnalysis(currentSessionId).catch((err) => {
+        console.error("Background analysis failed to start:", err);
+      });
 
+      // Start polling for results immediately
       refreshItemsFromServer();
+      
+      // Keep isProcessing true - the polling will handle the "analyzing" state
+      // and the button will stay disabled via isAnalyzing until items complete
     } catch (e) {
       console.error("Failed to queue analysis", e);
       // Revert items back to uploaded on error
@@ -617,6 +634,7 @@ export default function BatchUploadPage() {
           item.status === "analyzing" ? { ...item, status: "uploaded" } : item
         )
       );
+      setIsProcessing(false);
       alert("Failed to start analysis job. Please try again.");
     }
   };
