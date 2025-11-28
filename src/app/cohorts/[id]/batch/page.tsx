@@ -196,6 +196,10 @@ export default function BatchUploadPage() {
       items.some((i) => i.status === "uploaded" || i.status === "analyzing"),
     [items]
   );
+  const isAnalyzing = useMemo(
+    () => items.some((i) => i.status === "analyzing"),
+    [items]
+  );
   const hasAnalyzableItems = useMemo(
     () => items.some((i) => i.status === "uploaded" || i.status === "error"),
     [items]
@@ -864,23 +868,37 @@ export default function BatchUploadPage() {
                 )}
 
                 <Button
-                  className="w-full bg-slate-900 text-white hover:bg-slate-800 shadow-xl shadow-slate-900/10 h-12 rounded-xl font-semibold text-sm transition-all hover:scale-[1.02] active:scale-[0.98]"
-                  onClick={handleAnalyze}
-                  disabled={isProcessing || !hasAnalyzableItems}
-                >
-                  {isProcessing &&
-                  !items.some((i) => i.status === "pending") ? (
-                    <Loader2 className="animate-spin mr-2 w-4 h-4" />
-                  ) : (
-                    <CloudLightning className="mr-2 w-4 h-4" />
+                  className={cn(
+                    "w-full h-12 rounded-xl font-semibold text-sm transition-all",
+                    isAnalyzing 
+                      ? "bg-purple-600 text-white hover:bg-purple-500 shadow-xl shadow-purple-600/20"
+                      : "bg-slate-900 text-white hover:bg-slate-800 shadow-xl shadow-slate-900/10 hover:scale-[1.02] active:scale-[0.98]"
                   )}
-                  Analyze Uploaded (
-                  {
-                    items.filter(
-                      (i) => i.status === "uploaded" || i.status === "error"
-                    ).length
-                  }
-                  )
+                  onClick={handleAnalyze}
+                  disabled={isProcessing || isAnalyzing || !hasAnalyzableItems}
+                >
+                  {isAnalyzing ? (
+                    <>
+                      <Loader2 className="animate-spin mr-2 w-4 h-4" />
+                      Analyzing ({items.filter((i) => i.status === "analyzing").length} in progress)
+                    </>
+                  ) : isProcessing ? (
+                    <>
+                      <Loader2 className="animate-spin mr-2 w-4 h-4" />
+                      Starting Analysis...
+                    </>
+                  ) : (
+                    <>
+                      <CloudLightning className="mr-2 w-4 h-4" />
+                      Analyze Uploaded (
+                      {
+                        items.filter(
+                          (i) => i.status === "uploaded" || i.status === "error"
+                        ).length
+                      }
+                      )
+                    </>
+                  )}
                 </Button>
 
                 {items.some((i) => i.status === "complete") && (
