@@ -17,17 +17,17 @@ export function SettingsClient() {
 
   return (
     <Tabs defaultValue="organization" className="w-full">
-      <TabsList className="w-full max-w-[400px] grid grid-cols-2">
-        <TabsTrigger value="organization">Organization</TabsTrigger>
-        <TabsTrigger value="profile">Profile</TabsTrigger>
+      <TabsList className="w-full max-w-[400px] grid grid-cols-2 h-10 sm:h-11">
+        <TabsTrigger value="organization" className="text-sm sm:text-base">Organization</TabsTrigger>
+        <TabsTrigger value="profile" className="text-sm sm:text-base">Profile</TabsTrigger>
       </TabsList>
 
-      <TabsContent value="organization" className="mt-6">
+      <TabsContent value="organization" className="mt-4 sm:mt-6">
         {showCreateOrg ? (
-           <div className="glass-panel rounded-3xl p-6 flex justify-center items-center min-h-[600px]">
+           <div className="glass-panel rounded-2xl sm:rounded-3xl p-4 sm:p-6 flex justify-center items-center min-h-[400px] sm:min-h-[600px]">
              <div className="w-full max-w-[480px]">
                 <div className="mb-4">
-                  <Button variant="ghost" onClick={() => setShowCreateOrg(false)}>
+                  <Button variant="ghost" onClick={() => setShowCreateOrg(false)} className="text-sm">
                     ← Back to Settings
                   </Button>
                 </div>
@@ -55,12 +55,12 @@ export function SettingsClient() {
             </CardContent>
           </Card>
         ) : (
-          <div className="glass-panel rounded-3xl p-6 min-h-[600px] flex justify-center">
+          <div className="glass-panel rounded-2xl sm:rounded-3xl p-4 sm:p-6 min-h-[400px] sm:min-h-[600px] flex justify-center overflow-x-auto">
             <OrganizationProfile
               routing="hash"
               appearance={{
                 elements: {
-                  rootBox: "w-full h-full",
+                  rootBox: "w-full h-full max-w-full",
                   card: "shadow-none border-0 bg-transparent w-full h-full",
                   scrollBox: "shadow-none border-0 bg-transparent w-full h-full",
                   navbar: "hidden md:flex",
@@ -71,13 +71,13 @@ export function SettingsClient() {
         )}
       </TabsContent>
 
-      <TabsContent value="profile" className="mt-6">
-        <div className="glass-panel rounded-3xl p-6 min-h-[600px] flex justify-center">
+      <TabsContent value="profile" className="mt-4 sm:mt-6">
+        <div className="glass-panel rounded-2xl sm:rounded-3xl p-4 sm:p-6 min-h-[400px] sm:min-h-[600px] flex justify-center overflow-x-auto">
           <UserProfile
             routing="hash"
             appearance={{
               elements: {
-                rootBox: "w-full h-full",
+                rootBox: "w-full h-full max-w-full",
                 card: "shadow-none border-0 bg-transparent w-full h-full",
                 scrollBox: "shadow-none border-0 bg-transparent w-full h-full",
                 navbar: "hidden md:flex",

@@ -54,7 +54,7 @@ export function Sidebar() {
   }
 
   return (
-    <aside className="fixed left-4 top-4 bottom-4 w-64 rounded-3xl glass-panel flex flex-col p-6 z-50">
+    <aside className="hidden lg:flex fixed left-4 top-4 bottom-4 w-64 rounded-3xl glass-panel flex-col p-6 z-50">
       {/* Logo */}
       <div className="flex items-center gap-3 mb-8 px-2">
         <div className="w-10 h-10 rounded-xl bg-primary/20 flex items-center justify-center text-primary">

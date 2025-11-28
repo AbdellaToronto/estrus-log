@@ -103,20 +103,20 @@ export function OnboardingFlow({ onComplete }: { onComplete?: () => void }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-gradient-to-br from-slate-50 via-blue-50/30 to-purple-50/30 flex items-center justify-center p-4 overflow-auto">
+    <div className="fixed inset-0 z-50 bg-gradient-to-br from-slate-50 via-blue-50/30 to-purple-50/30 flex items-center justify-center p-3 sm:p-4 overflow-auto">
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
         className="w-full max-w-4xl"
       >
         {/* Progress indicator */}
-        <div className="flex justify-center mb-8">
-          <div className="flex items-center gap-2">
+        <div className="flex justify-center mb-4 sm:mb-8">
+          <div className="flex items-center gap-1 sm:gap-2">
             {(['welcome', 'preset', 'details', 'ready'] as Step[]).map((s, i) => (
               <div key={s} className="flex items-center">
                 <motion.div
                   className={cn(
-                    "w-3 h-3 rounded-full transition-colors",
+                    "w-2 h-2 sm:w-3 sm:h-3 rounded-full transition-colors",
                     step === s ? "bg-primary scale-125" : 
                     (['welcome', 'preset', 'details', 'ready'].indexOf(step) > i) ? "bg-primary/50" : "bg-slate-200"
                   )}
@@ -124,7 +124,7 @@ export function OnboardingFlow({ onComplete }: { onComplete?: () => void }) {
                 />
                 {i < 3 && (
                   <div className={cn(
-                    "w-12 h-0.5 mx-1",
+                    "w-6 sm:w-12 h-0.5 mx-0.5 sm:mx-1",
                     (['welcome', 'preset', 'details', 'ready'].indexOf(step) > i) ? "bg-primary/50" : "bg-slate-200"
                   )} />
                 )}
@@ -146,21 +146,21 @@ export function OnboardingFlow({ onComplete }: { onComplete?: () => void }) {
                 initial={{ scale: 0 }}
                 animate={{ scale: 1 }}
                 transition={{ type: "spring", delay: 0.2 }}
-                className="w-24 h-24 bg-gradient-to-br from-primary/20 to-purple-500/20 rounded-3xl flex items-center justify-center mx-auto mb-8 shadow-lg shadow-primary/10"
+                className="w-16 h-16 sm:w-24 sm:h-24 bg-gradient-to-br from-primary/20 to-purple-500/20 rounded-2xl sm:rounded-3xl flex items-center justify-center mx-auto mb-4 sm:mb-8 shadow-lg shadow-primary/10"
               >
-                <FlaskConical className="w-12 h-12 text-primary" />
+                <FlaskConical className="w-8 h-8 sm:w-12 sm:h-12 text-primary" />
               </motion.div>
               
-              <h1 className="text-4xl md:text-5xl font-bold text-slate-900 mb-4 tracking-tight">
+              <h1 className="text-2xl sm:text-4xl md:text-5xl font-bold text-slate-900 mb-3 sm:mb-4 tracking-tight">
                 Welcome to <span className="text-primary">Estrus Log</span>
               </h1>
-              <p className="text-xl text-slate-500 mb-12 max-w-lg mx-auto">
+              <p className="text-base sm:text-xl text-slate-500 mb-6 sm:mb-12 max-w-lg mx-auto px-2">
                 AI-powered image classification for biological research. 
                 Let&apos;s set up your first project in under a minute.
               </p>
 
               {/* Feature highlights */}
-              <div className="grid md:grid-cols-3 gap-6 mb-12 max-w-2xl mx-auto">
+              <div className="grid grid-cols-3 gap-2 sm:gap-6 mb-6 sm:mb-12 max-w-2xl mx-auto">
                 {[
                   { icon: Upload, title: 'Batch Upload', desc: 'Drop images or ZIPs' },
                   { icon: Zap, title: 'AI Classification', desc: 'Instant analysis' },
@@ -171,11 +171,11 @@ export function OnboardingFlow({ onComplete }: { onComplete?: () => void }) {
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: 0.3 + i * 0.1 }}
-                    className="bg-white/60 backdrop-blur-sm rounded-2xl p-4 border border-white/50 shadow-sm"
+                    className="bg-white/60 backdrop-blur-sm rounded-xl sm:rounded-2xl p-2 sm:p-4 border border-white/50 shadow-sm"
                   >
-                    <feature.icon className="w-8 h-8 text-primary/70 mb-2 mx-auto" />
-                    <h3 className="font-semibold text-slate-800">{feature.title}</h3>
-                    <p className="text-sm text-slate-500">{feature.desc}</p>
+                    <feature.icon className="w-5 h-5 sm:w-8 sm:h-8 text-primary/70 mb-1 sm:mb-2 mx-auto" />
+                    <h3 className="font-semibold text-slate-800 text-xs sm:text-base">{feature.title}</h3>
+                    <p className="text-[10px] sm:text-sm text-slate-500 hidden sm:block">{feature.desc}</p>
                   </motion.div>
                 ))}
               </div>
@@ -189,16 +189,16 @@ export function OnboardingFlow({ onComplete }: { onComplete?: () => void }) {
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -20 }}
             >
-              <div className="text-center mb-8">
-                <h2 className="text-3xl font-bold text-slate-900 mb-2">
+              <div className="text-center mb-4 sm:mb-8">
+                <h2 className="text-xl sm:text-3xl font-bold text-slate-900 mb-2">
                   What are you tracking?
                 </h2>
-                <p className="text-slate-500">
+                <p className="text-sm sm:text-base text-slate-500">
                   Choose a template to get started quickly, or customize later.
                 </p>
               </div>
 
-              <div className="grid md:grid-cols-2 gap-4 mb-8">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 mb-4 sm:mb-8">
                 {PRESETS.map((preset, i) => (
                   <PresetCard
                     key={preset.type}
@@ -210,7 +210,7 @@ export function OnboardingFlow({ onComplete }: { onComplete?: () => void }) {
                 ))}
               </div>
 
-              <p className="text-center text-sm text-slate-400">
+              <p className="text-center text-xs sm:text-sm text-slate-400">
                 Don&apos;t see what you need? You can fully customize stages and fields later.
               </p>
             </motion.div>
@@ -329,45 +329,48 @@ export function OnboardingFlow({ onComplete }: { onComplete?: () => void }) {
         </AnimatePresence>
 
         {/* Navigation */}
-        <div className="flex justify-between items-center mt-8">
+        <div className="flex justify-between items-center mt-4 sm:mt-8">
           <Button
             variant="ghost"
             onClick={handleBack}
             disabled={step === 'welcome'}
             className={cn(
-              "gap-2 text-slate-500 hover:text-slate-700",
+              "gap-1 sm:gap-2 text-slate-500 hover:text-slate-700 text-sm sm:text-base",
               step === 'welcome' && "invisible"
             )}
           >
-            <ArrowLeft className="w-4 h-4" />
-            Back
+            <ArrowLeft className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+            <span className="hidden sm:inline">Back</span>
           </Button>
 
           <Button
             onClick={handleNext}
             disabled={!canProceed() || isCreating}
-            size="lg"
-            className="gap-2 px-8 rounded-full shadow-lg shadow-primary/20 hover:shadow-primary/30 transition-all hover:scale-105 active:scale-95"
+            size="default"
+            className="gap-1.5 sm:gap-2 px-4 sm:px-8 rounded-full shadow-lg shadow-primary/20 hover:shadow-primary/30 transition-all hover:scale-105 active:scale-95 text-sm sm:text-base"
           >
             {isCreating ? (
               <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Creating...
+                <Loader2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 animate-spin" />
+                <span className="hidden sm:inline">Creating...</span>
+                <span className="sm:hidden">...</span>
               </>
             ) : step === 'ready' ? (
               <>
-                Start Uploading
-                <ArrowRight className="w-4 h-4" />
+                <span className="hidden sm:inline">Start Uploading</span>
+                <span className="sm:hidden">Start</span>
+                <ArrowRight className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               </>
             ) : step === 'details' ? (
               <>
-                Create Cohort
-                <Sparkles className="w-4 h-4" />
+                <span className="hidden sm:inline">Create Cohort</span>
+                <span className="sm:hidden">Create</span>
+                <Sparkles className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               </>
             ) : (
               <>
                 Continue
-                <ArrowRight className="w-4 h-4" />
+                <ArrowRight className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               </>
             )}
           </Button>

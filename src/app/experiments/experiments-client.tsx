@@ -80,27 +80,31 @@ export function ExperimentsClient({
   };
 
   return (
-    <div className="container py-8 space-y-8">
-      <div className="flex items-center justify-between">
+    <div className="space-y-4 sm:space-y-6 lg:space-y-8">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Experiments</h1>
-          <p className="text-muted-foreground mt-2">
+          <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold tracking-tight">Experiments</h1>
+          <p className="text-sm sm:text-base text-muted-foreground mt-1 sm:mt-2">
             Manage and track your research experiments.
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-shrink-0">
           <Button
             variant="outline"
             onClick={handleGenerateMock}
             disabled={generating}
+            className="text-xs sm:text-sm h-9 sm:h-10"
           >
-            <Sparkles className="mr-2 h-4 w-4" />
-            {generating ? "Generating..." : "Mock Data"}
+            <Sparkles className="mr-1.5 sm:mr-2 h-3.5 sm:h-4 w-3.5 sm:w-4" />
+            <span className="hidden sm:inline">{generating ? "Generating..." : "Mock Data"}</span>
+            <span className="sm:hidden">{generating ? "..." : "Mock"}</span>
           </Button>
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
-              <Button>
-                <Plus className="mr-2 h-4 w-4" /> New Experiment
+              <Button className="text-xs sm:text-sm h-9 sm:h-10">
+                <Plus className="mr-1 sm:mr-2 h-3.5 sm:h-4 w-3.5 sm:w-4" />
+                <span className="hidden sm:inline">New Experiment</span>
+                <span className="sm:hidden">New</span>
               </Button>
             </DialogTrigger>
             <DialogContent>
@@ -144,12 +148,12 @@ export function ExperimentsClient({
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
         {initialExperiments.map((experiment) => (
           <Link
             key={experiment.id}
             href={`/experiments/${experiment.id}`}
-            className="group block relative space-y-3 p-5 rounded-xl border bg-card text-card-foreground hover:border-primary/50 hover:shadow-md transition-all"
+            className="group block relative space-y-2 sm:space-y-3 p-4 sm:p-5 rounded-xl border bg-card text-card-foreground hover:border-primary/50 hover:shadow-md transition-all"
           >
             <div className="flex items-start justify-between">
               <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
@@ -207,15 +211,15 @@ export function ExperimentsClient({
         ))}
 
         {initialExperiments.length === 0 && (
-          <div className="col-span-full flex flex-col items-center justify-center p-12 text-center border-2 border-dashed rounded-xl bg-muted/20">
-            <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center mb-4">
-              <TestTube className="h-6 w-6 text-muted-foreground" />
+          <div className="col-span-full flex flex-col items-center justify-center p-8 sm:p-12 text-center border-2 border-dashed rounded-xl bg-muted/20">
+            <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-muted flex items-center justify-center mb-3 sm:mb-4">
+              <TestTube className="h-5 w-5 sm:h-6 sm:w-6 text-muted-foreground" />
             </div>
-            <h3 className="text-lg font-medium">No experiments yet</h3>
-            <p className="text-muted-foreground mt-1 mb-4">
+            <h3 className="text-base sm:text-lg font-medium">No experiments yet</h3>
+            <p className="text-sm sm:text-base text-muted-foreground mt-1 mb-4">
               Create your first experiment to start tracking cohorts.
             </p>
-            <Button onClick={() => setOpen(true)} variant="outline">
+            <Button onClick={() => setOpen(true)} variant="outline" className="text-sm">
               Create Experiment
             </Button>
           </div>

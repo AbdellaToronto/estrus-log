@@ -19,10 +19,8 @@ import {
   Cell,
 } from "recharts";
 import { motion, type HTMLMotionProps } from "framer-motion";
-import { forwardRef } from "react";
 
 // Workaround for framer-motion + React 19 type incompatibility
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const MotionDiv = motion.div as React.FC<
   HTMLMotionProps<"div"> & { children?: React.ReactNode }
 >;
@@ -132,13 +130,13 @@ export function SubjectPageClient({
   const confidenceScore = selectedLog ? getConfidence(selectedLog) : 0;
 
   return (
-    <div className="space-y-8 pb-8">
+    <div className="space-y-4 sm:space-y-6 md:space-y-8 pb-8">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-foreground/80">
-          Analysis View: {subject.name}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+        <h1 className="text-lg sm:text-xl md:text-2xl font-bold text-foreground/80 line-clamp-2">
+          Analysis: {subject.name}
         </h1>
-        <div className="flex items-center gap-4">
+        <div className="hidden sm:flex items-center gap-4">
           <Avatar className="h-9 w-9 border-2 border-white/20 shadow-sm">
             <AvatarImage src="https://github.com/shadcn.png" />
             <AvatarFallback>LW</AvatarFallback>
@@ -147,16 +145,16 @@ export function SubjectPageClient({
       </div>
 
       {/* Top Row: Charts & Overview */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 h-48">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
         <MotionDiv
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
-          className="glass-panel rounded-3xl p-5 flex flex-col justify-between border border-white/40 shadow-sm bg-white/40 backdrop-blur-xl"
+          className="glass-panel rounded-2xl sm:rounded-3xl p-4 sm:p-5 flex flex-col justify-between border border-white/40 shadow-sm bg-white/40 backdrop-blur-xl min-h-[160px] sm:min-h-[180px]"
         >
           <h3 className="text-xs font-bold uppercase text-muted-foreground tracking-wider">
             Activity Trend
           </h3>
-          <div className="flex-1 mt-2 min-h-0">
+          <div className="flex-1 mt-2 min-h-0 h-24 sm:h-auto">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={timelineData}>
                 <defs>
@@ -190,12 +188,12 @@ export function SubjectPageClient({
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
-          className="glass-panel rounded-3xl p-5 flex flex-col justify-between border border-white/40 shadow-sm bg-white/40 backdrop-blur-xl"
+          className="glass-panel rounded-2xl sm:rounded-3xl p-4 sm:p-5 flex flex-col justify-between border border-white/40 shadow-sm bg-white/40 backdrop-blur-xl min-h-[160px] sm:min-h-[180px]"
         >
           <h3 className="text-xs font-bold uppercase text-muted-foreground tracking-wider">
             Stage Distribution
           </h3>
-          <div className="flex-1 mt-2 min-h-0">
+          <div className="flex-1 mt-2 min-h-0 h-24 sm:h-auto">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={distributionData}>
                 <Tooltip
@@ -223,70 +221,76 @@ export function SubjectPageClient({
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2 }}
-          className="glass-panel rounded-3xl p-5 flex flex-col gap-2 justify-center items-start border border-white/40 shadow-sm bg-white/40 backdrop-blur-xl"
+          className="glass-panel rounded-2xl sm:rounded-3xl p-4 sm:p-5 flex flex-col gap-2 justify-center items-start border border-white/40 shadow-sm bg-white/40 backdrop-blur-xl min-h-[160px] sm:min-h-[180px] sm:col-span-2 lg:col-span-1"
         >
-          <div className="text-muted-foreground text-xs font-bold uppercase tracking-wider">
-            Total Scans
-          </div>
-          <div className="text-5xl font-bold text-slate-800 tracking-tight">
-            {logs.length}
-          </div>
+          <div className="flex w-full gap-4 sm:flex-col sm:gap-2">
+            <div className="flex-1 sm:flex-none">
+              <div className="text-muted-foreground text-xs font-bold uppercase tracking-wider">
+                Total Scans
+              </div>
+              <div className="text-3xl sm:text-5xl font-bold text-slate-800 tracking-tight">
+                {logs.length}
+              </div>
+            </div>
 
-          <div className="w-full h-px bg-slate-200/50 my-2" />
+            <div className="hidden sm:block w-full h-px bg-slate-200/50 my-2" />
 
-          <div className="text-muted-foreground text-xs font-bold uppercase tracking-wider">
-            Most Frequent
-          </div>
-          <div
-            className="text-2xl font-semibold"
-            style={{ color: mostFrequentColor }}
-          >
-            {mostFrequentStage}
+            <div className="flex-1 sm:flex-none">
+              <div className="text-muted-foreground text-xs font-bold uppercase tracking-wider">
+                Most Frequent
+              </div>
+              <div
+                className="text-xl sm:text-2xl font-semibold"
+                style={{ color: mostFrequentColor }}
+              >
+                {mostFrequentStage}
+              </div>
+            </div>
           </div>
         </MotionDiv>
       </div>
 
       {/* Main Split View */}
-      <div className="grid lg:grid-cols-[1fr_400px] gap-8 h-[600px]">
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] xl:grid-cols-[1fr_400px] gap-4 sm:gap-6 lg:gap-8">
         {/* Left: Image Viewer */}
-        <div className="glass-panel rounded-3xl p-4 relative flex flex-col overflow-hidden border border-white/40 shadow-sm bg-white/60 backdrop-blur-xl">
-          <div className="absolute top-6 left-6 z-10 flex flex-col gap-2">
+        <div className="glass-panel rounded-2xl sm:rounded-3xl p-3 sm:p-4 relative flex flex-col overflow-hidden border border-white/40 shadow-sm bg-white/60 backdrop-blur-xl min-h-[300px] sm:min-h-[400px] lg:min-h-[600px]">
+          <div className="absolute top-3 sm:top-6 left-3 sm:left-6 z-10 flex flex-col gap-1.5 sm:gap-2">
             <Button
               variant="secondary"
               size="icon"
-              className="h-10 w-10 rounded-xl bg-white/80 backdrop-blur shadow-sm hover:bg-white border border-white/50"
+              className="h-8 w-8 sm:h-10 sm:w-10 rounded-lg sm:rounded-xl bg-white/80 backdrop-blur shadow-sm hover:bg-white border border-white/50"
             >
-              <ZoomIn className="h-5 w-5 text-slate-700" />
+              <ZoomIn className="h-4 w-4 sm:h-5 sm:w-5 text-slate-700" />
             </Button>
             <Button
               variant="secondary"
               size="icon"
-              className="h-10 w-10 rounded-xl bg-white/80 backdrop-blur shadow-sm hover:bg-white border border-white/50"
+              className="h-8 w-8 sm:h-10 sm:w-10 rounded-lg sm:rounded-xl bg-white/80 backdrop-blur shadow-sm hover:bg-white border border-white/50"
             >
-              <ZoomOut className="h-5 w-5 text-slate-700" />
+              <ZoomOut className="h-4 w-4 sm:h-5 sm:w-5 text-slate-700" />
             </Button>
             <Button
               variant="secondary"
               size="icon"
-              className="h-10 w-10 rounded-xl bg-white/80 backdrop-blur shadow-sm hover:bg-white border border-white/50"
+              className="h-8 w-8 sm:h-10 sm:w-10 rounded-lg sm:rounded-xl bg-white/80 backdrop-blur shadow-sm hover:bg-white border border-white/50"
             >
-              <Maximize2 className="h-5 w-5 text-slate-700" />
+              <Maximize2 className="h-4 w-4 sm:h-5 sm:w-5 text-slate-700" />
             </Button>
           </div>
 
           {selectedLog && (
-            <div className="absolute top-6 right-6 z-10">
+            <div className="absolute top-3 sm:top-6 right-3 sm:right-6 z-10">
               <Badge
                 variant="secondary"
-                className="bg-white/90 backdrop-blur-xl text-slate-800 px-3 py-1.5 rounded-lg shadow-sm border border-white/50"
+                className="bg-white/90 backdrop-blur-xl text-slate-800 px-2 sm:px-3 py-1 sm:py-1.5 rounded-md sm:rounded-lg shadow-sm border border-white/50 text-xs sm:text-sm"
               >
-                <span className="mr-2">✨</span> AI Detected
+                <span className="mr-1 sm:mr-2">✨</span> AI Detected
               </Badge>
             </div>
           )}
 
           {/* Main Image Area */}
-          <div className="flex-1 bg-slate-50/50 rounded-2xl flex items-center justify-center overflow-hidden relative border border-slate-100/50">
+          <div className="flex-1 bg-slate-50/50 rounded-xl sm:rounded-2xl flex items-center justify-center overflow-hidden relative border border-slate-100/50">
             {selectedLog ? (
               <div className="relative h-full w-full">
                 {selectedLog.image_url ? (
@@ -294,7 +298,7 @@ export function SubjectPageClient({
                     src={selectedLog.image_url}
                     alt={`${selectedLog.stage} scan`}
                     fill
-                    sizes="(max-width: 1024px) 90vw, 60vw"
+                    sizes="(max-width: 768px) 95vw, (max-width: 1024px) 90vw, 60vw"
                     className="object-contain rounded-lg shadow-lg"
                   />
                 ) : (
@@ -304,30 +308,32 @@ export function SubjectPageClient({
                 )}
               </div>
             ) : (
-              <div className="text-slate-400 flex flex-col items-center gap-2">
-                <div className="bg-white p-4 rounded-full shadow-sm">
-                  <Search className="w-8 h-8 text-slate-300" />
+              <div className="text-slate-400 flex flex-col items-center gap-2 p-4 text-center">
+                <div className="bg-white p-3 sm:p-4 rounded-full shadow-sm">
+                  <Search className="w-6 h-6 sm:w-8 sm:h-8 text-slate-300" />
                 </div>
-                <p>Select a log to view details</p>
+                <p className="text-sm sm:text-base">
+                  Select a log to view details
+                </p>
               </div>
             )}
           </div>
         </div>
 
         {/* Right: Analysis Panel */}
-        <div className="flex flex-col gap-6">
+        <div className="flex flex-col gap-4 sm:gap-6">
           {/* Result Card */}
           {selectedLog ? (
-            <div className="glass-panel rounded-3xl p-6 space-y-6 border border-white/40 shadow-sm bg-white/60 backdrop-blur-xl">
+            <div className="glass-panel rounded-2xl sm:rounded-3xl p-4 sm:p-6 space-y-4 sm:space-y-6 border border-white/40 shadow-sm bg-white/60 backdrop-blur-xl">
               <div>
-                <div className="text-xs font-bold uppercase text-slate-400 tracking-wider mb-2">
+                <div className="text-xs font-bold uppercase text-slate-400 tracking-wider mb-1 sm:mb-2">
                   Estrus Stage
                 </div>
-                <div className="text-4xl font-bold text-slate-900 tracking-tight">
+                <div className="text-2xl sm:text-4xl font-bold text-slate-900 tracking-tight">
                   {selectedLog.stage}
                 </div>
 
-                <div className="flex justify-between text-sm mt-4 mb-2">
+                <div className="flex justify-between text-sm mt-3 sm:mt-4 mb-2">
                   <span className="text-slate-500 font-medium">
                     Confidence Score
                   </span>
@@ -339,7 +345,7 @@ export function SubjectPageClient({
                   </span>
                 </div>
                 {/* Progress bar */}
-                <div className="h-3 bg-slate-100 rounded-full overflow-hidden shadow-inner mb-6">
+                <div className="h-2.5 sm:h-3 bg-slate-100 rounded-full overflow-hidden shadow-inner mb-4 sm:mb-6">
                   <MotionDiv
                     initial={{ width: 0 }}
                     animate={{ width: `${confidenceScore * 100}%` }}
@@ -436,18 +442,18 @@ export function SubjectPageClient({
                   )}
               </div>
 
-              <div className="space-y-3 pt-4 border-t border-slate-100">
+              <div className="space-y-2 sm:space-y-3 pt-3 sm:pt-4 border-t border-slate-100">
                 <div className="text-xs font-bold uppercase text-slate-400 tracking-wider">
                   Analysis Notes
                 </div>
-                <div className="text-sm text-slate-600 leading-relaxed bg-white/50 p-4 rounded-xl border border-white/50">
+                <div className="text-sm text-slate-600 leading-relaxed bg-white/50 p-3 sm:p-4 rounded-lg sm:rounded-xl border border-white/50">
                   {selectedLog.notes || "No notes available for this scan."}
                 </div>
               </div>
             </div>
           ) : (
-            <div className="glass-panel rounded-3xl p-8 flex flex-col items-center justify-center text-center text-slate-400 border border-white/40 shadow-sm bg-white/60 backdrop-blur-xl h-full">
-              <p>No scan selected</p>
+            <div className="glass-panel rounded-2xl sm:rounded-3xl p-6 sm:p-8 flex flex-col items-center justify-center text-center text-slate-400 border border-white/40 shadow-sm bg-white/60 backdrop-blur-xl min-h-[200px] lg:h-full">
+              <p className="text-sm sm:text-base">No scan selected</p>
             </div>
           )}
 
@@ -459,36 +465,40 @@ export function SubjectPageClient({
       </div>
 
       {/* Bottom: Data Library */}
-      <div className="glass-panel rounded-3xl p-8 flex flex-col gap-6 border border-white/40 shadow-sm bg-white/60 backdrop-blur-xl">
-        <div className="flex items-center justify-between">
+      <div className="glass-panel rounded-2xl sm:rounded-3xl p-4 sm:p-6 lg:p-8 flex flex-col gap-4 sm:gap-6 border border-white/40 shadow-sm bg-white/60 backdrop-blur-xl">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
             <div className="text-xs font-bold uppercase text-slate-400 tracking-wider mb-1">
               Project: {subject.cohorts?.name || "Unassigned"}
             </div>
-            <h2 className="text-2xl font-bold text-slate-900">Data Library</h2>
+            <h2 className="text-xl sm:text-2xl font-bold text-slate-900">
+              Data Library
+            </h2>
           </div>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
             <Input
               placeholder="Search scans..."
-              className="pl-10 bg-white/70 border-slate-200 rounded-full w-72 focus:bg-white transition-all shadow-sm"
+              className="pl-10 bg-white/70 border-slate-200 rounded-full w-full sm:w-72 focus:bg-white transition-all shadow-sm"
             />
           </div>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4 lg:gap-6">
           {logs.map((log) => (
             <div
               key={log.id}
               className={`group cursor-pointer transition-all duration-200 ${
-                selectedLog?.id === log.id ? "scale-105" : "hover:scale-102"
+                selectedLog?.id === log.id
+                  ? "scale-[1.02] sm:scale-105"
+                  : "hover:scale-[1.01] sm:hover:scale-102"
               }`}
               onClick={() => setSelectedLog(log)}
             >
               <div
-                className={`aspect-video rounded-2xl bg-slate-100 overflow-hidden relative mb-2 border shadow-sm transition-all ${
+                className={`aspect-video rounded-lg sm:rounded-2xl bg-slate-100 overflow-hidden relative mb-1.5 sm:mb-2 border shadow-sm transition-all ${
                   selectedLog?.id === log.id
-                    ? "ring-2 ring-offset-2 ring-primary border-primary"
+                    ? "ring-2 ring-offset-1 sm:ring-offset-2 ring-primary border-primary"
                     : "border-white/50 group-hover:shadow-md"
                 }`}
               >
@@ -497,20 +507,20 @@ export function SubjectPageClient({
                     src={log.image_url}
                     alt={log.stage}
                     fill
-                    sizes="(max-width: 768px) 50vw, (max-width: 1024px) 25vw, 15vw"
+                    sizes="(max-width: 640px) 50vw, (max-width: 768px) 33vw, (max-width: 1024px) 25vw, 15vw"
                     className="object-cover"
                   />
                 ) : (
-                  <div className="absolute inset-0 flex items-center justify-center text-slate-400 text-xs">
+                  <div className="absolute inset-0 flex items-center justify-center text-slate-400 text-[10px] sm:text-xs">
                     No preview
                   </div>
                 )}
                 <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
 
-                <div className="absolute top-2 right-2">
+                <div className="absolute top-1.5 sm:top-2 right-1.5 sm:right-2">
                   <Badge
                     className={`
-                    text-[10px] px-2 py-0.5 h-5 backdrop-blur-md border-0 shadow-sm
+                    text-[9px] sm:text-[10px] px-1.5 sm:px-2 py-0.5 h-4 sm:h-5 backdrop-blur-md border-0 shadow-sm
                     ${
                       log.stage === "Proestrus"
                         ? "bg-pink-500/90 text-white"
@@ -528,9 +538,9 @@ export function SubjectPageClient({
                   </Badge>
                 </div>
               </div>
-              <div className="flex justify-between items-center px-1 mt-2">
+              <div className="flex justify-between items-center px-0.5 sm:px-1 mt-1 sm:mt-2">
                 <span
-                  className={`text-xs font-medium ${
+                  className={`text-[10px] sm:text-xs font-medium ${
                     selectedLog?.id === log.id
                       ? "text-primary"
                       : "text-slate-500"

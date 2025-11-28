@@ -17,7 +17,7 @@ type RecentActivityItem = {
 
 export function RecentActivity({ activities }: { activities: RecentActivityItem[] }) {
   return (
-    <Card className="col-span-4 md:col-span-2 lg:col-span-2">
+    <Card className="col-span-1 lg:col-span-2">
       <CardHeader>
         <CardTitle>Recent Activity</CardTitle>
       </CardHeader>

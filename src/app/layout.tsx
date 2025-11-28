@@ -19,6 +19,7 @@ export const metadata: Metadata = {
 
 import { ClerkProvider } from '@clerk/nextjs'
 import { Sidebar } from "@/components/layout/sidebar";
+import { MobileNav } from "@/components/layout/mobile-nav";
 
 export default function RootLayout({
   children,
@@ -36,7 +37,8 @@ export default function RootLayout({
           className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-screen`}
         >
           <Sidebar />
-          <main className="pl-72 pr-4 py-4 min-h-screen">
+          <MobileNav />
+          <main className="px-4 py-4 pt-20 lg:pt-4 lg:pl-72 lg:pr-4 min-h-screen">
             {children}
           </main>
         </body>

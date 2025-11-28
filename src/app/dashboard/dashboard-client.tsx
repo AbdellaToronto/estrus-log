@@ -46,21 +46,21 @@ export function DashboardClient({
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6 md:space-y-8">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-foreground/80">Dashboard</h1>
-        <div className="flex items-center gap-4">
-          <div className="relative hidden md:block">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <h1 className="text-xl sm:text-2xl font-bold text-foreground/80">Dashboard</h1>
+        <div className="flex items-center gap-3">
+          <div className="relative flex-1 sm:flex-none">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input 
               placeholder="Search subjects..." 
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="pl-9 bg-white/40 border-white/20 rounded-full w-64 focus-visible:ring-0 focus-visible:bg-white/60 transition-all"
+              className="pl-9 bg-white/40 border-white/20 rounded-full w-full sm:w-64 focus-visible:ring-0 focus-visible:bg-white/60 transition-all"
             />
           </div>
-          <Avatar className="h-9 w-9 border-2 border-white/20">
+          <Avatar className="h-9 w-9 border-2 border-white/20 flex-shrink-0 hidden sm:flex">
             <AvatarImage src={user?.imageUrl} />
             <AvatarFallback>
               {user?.firstName?.[0]}
@@ -78,7 +78,7 @@ export function DashboardClient({
       />
 
       {/* Main Content Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left Column: Recent Activity */}
         <RecentActivity activities={stats.recentActivity} />
 

@@ -17,12 +17,12 @@ export function CohortsPageClient({ initialCohorts }: { initialCohorts: any[] })
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-4 sm:space-y-6 lg:space-y-8">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-foreground/80">Cohorts</h1>
+        <h1 className="text-xl sm:text-2xl font-bold text-foreground/80">Cohorts</h1>
       </div>
       
-      <div className="glass-panel rounded-3xl p-6">
+      <div className="glass-panel rounded-2xl sm:rounded-3xl p-4 sm:p-6">
          <CohortManager 
           cohorts={cohorts} 
           onAddCohort={handleAddCohort} 

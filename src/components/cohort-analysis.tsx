@@ -53,16 +53,16 @@ const AnalyticsCard = ({
   <motion.div
     {...motionConfig}
     className={cn(
-      "bg-white/70 border border-white/50 rounded-3xl p-6 shadow-lg shadow-slate-900/5 backdrop-blur-xl",
+      "bg-white/70 border border-white/50 rounded-2xl sm:rounded-3xl p-4 sm:p-6 shadow-lg shadow-slate-900/5 backdrop-blur-xl",
       className
     )}
   >
-    <div className="flex items-center justify-between mb-6">
+    <div className="flex items-center justify-between mb-4 sm:mb-6">
       <div>
-        <p className="text-xs uppercase tracking-[0.2em] text-slate-400 font-semibold">
+        <p className="text-[10px] sm:text-xs uppercase tracking-[0.2em] text-slate-400 font-semibold">
           {title}
         </p>
-        {subtitle && <p className="text-sm text-slate-500 mt-1">{subtitle}</p>}
+        {subtitle && <p className="text-xs sm:text-sm text-slate-500 mt-1">{subtitle}</p>}
       </div>
     </div>
     {children}
@@ -96,13 +96,13 @@ export function CohortAnalysis({ insights }: { insights: CohortInsights }) {
   }));
 
   return (
-    <div className="space-y-8">
-      <div className="grid gap-6 lg:grid-cols-3">
+    <div className="space-y-4 sm:space-y-6 lg:space-y-8">
+      <div className="grid gap-4 sm:gap-6 grid-cols-1 lg:grid-cols-3">
         <AnalyticsCard
           title="Stage Mix"
           subtitle={`${insights.totalLogs} total logs`}
         >
-          <div className="h-64">
+          <div className="h-48 sm:h-64">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie
@@ -130,11 +130,11 @@ export function CohortAnalysis({ insights }: { insights: CohortInsights }) {
               </PieChart>
             </ResponsiveContainer>
           </div>
-          <div className="mt-4 flex flex-wrap gap-3">
+          <div className="mt-3 sm:mt-4 flex flex-wrap gap-2 sm:gap-3">
             {stageData.map((entry) => (
               <div
                 key={entry.stage}
-                className="flex items-center gap-2 text-sm font-medium text-slate-600"
+                className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm font-medium text-slate-600"
               >
                 <span
                   className="w-2.5 h-2.5 rounded-full"
@@ -154,7 +154,7 @@ export function CohortAnalysis({ insights }: { insights: CohortInsights }) {
           subtitle="Average AI confidence"
           className="lg:col-span-2"
         >
-          <div className="h-64">
+          <div className="h-48 sm:h-64">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={confidenceData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
@@ -185,13 +185,13 @@ export function CohortAnalysis({ insights }: { insights: CohortInsights }) {
         </AnalyticsCard>
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-3">
+      <div className="grid gap-4 sm:gap-6 grid-cols-1 xl:grid-cols-3">
         <AnalyticsCard
           title="Activity Timeline"
           subtitle="Last 14 days"
           className="xl:col-span-2"
         >
-          <div className="h-72">
+          <div className="h-48 sm:h-72">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={timelineData}>
                 <defs>
