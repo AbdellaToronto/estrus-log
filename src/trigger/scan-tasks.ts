@@ -233,6 +233,12 @@ export const analyzeScanItemTask = task({
       }
 
       // 4. Voting Logic
+      // Normalize labels to Title Case for consistency
+      const normalizeLabel = (label: string): string => {
+        const lower = label.toLowerCase();
+        return lower.charAt(0).toUpperCase() + lower.slice(1);
+      };
+
       const votes: Record<string, number> = {
         Proestrus: 0,
         Estrus: 0,
@@ -241,11 +247,13 @@ export const analyzeScanItemTask = task({
       };
 
       neighbors.forEach((n) => {
-        if (votes[n.label] !== undefined) {
-          votes[n.label]++;
+        const normalizedLabel = normalizeLabel(n.label);
+        if (votes[normalizedLabel] !== undefined) {
+          votes[normalizedLabel]++;
         } else {
-          // Handle potential case mismatches or new labels
-          votes[n.label] = 1;
+          // Handle unexpected labels
+          logger.warn("Unexpected label from k-NN", { label: n.label, normalized: normalizedLabel });
+          votes[normalizedLabel] = 1;
         }
       });
 
