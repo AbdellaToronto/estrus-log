@@ -10,33 +10,15 @@ import {
   Search,
   Building2,
   Users,
-  Globe,
   FlaskConical,
   ArrowRight,
   Loader2,
   Plus,
   CheckCircle2,
   Clock,
-  ExternalLink,
 } from "lucide-react";
-import { searchOrganizations, requestToJoinOrganization, getMyJoinRequests } from "@/app/actions";
+import { searchOrganizations, requestToJoinOrganization, getMyJoinRequests, type DiscoverableOrg, type JoinRequest } from "@/app/actions";
 import { cn } from "@/lib/utils";
-
-type Organization = {
-  id: string;
-  clerk_org_id: string;
-  institution: string | null;
-  department: string | null;
-  description: string | null;
-  website_url: string | null;
-  member_count: number | null;
-};
-
-type JoinRequest = {
-  id: string;
-  organization_id: string;
-  status: string;
-};
 
 export default function DiscoverPage() {
   const router = useRouter();
@@ -46,7 +28,7 @@ export default function DiscoverPage() {
   });
 
   const [searchQuery, setSearchQuery] = useState("");
-  const [organizations, setOrganizations] = useState<Organization[]>([]);
+  const [organizations, setOrganizations] = useState<DiscoverableOrg[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [myRequests, setMyRequests] = useState<JoinRequest[]>([]);
   const [requestingOrgId, setRequestingOrgId] = useState<string | null>(null);
@@ -98,7 +80,7 @@ export default function DiscoverPage() {
   };
 
   // Request to join handler
-  const handleRequestJoin = async (org: Organization) => {
+  const handleRequestJoin = async (org: DiscoverableOrg) => {
     if (!user) {
       router.push("/sign-in");
       return;
@@ -118,7 +100,7 @@ export default function DiscoverPage() {
     }
   };
 
-  const getOrgStatus = (org: Organization) => {
+  const getOrgStatus = (org: DiscoverableOrg) => {
     if (memberOrgIds.has(org.clerk_org_id)) {
       return "member";
     }
@@ -230,18 +212,6 @@ export default function DiscoverPage() {
                           <Users className="w-4 h-4" />
                           {org.member_count || 1} member{(org.member_count || 1) !== 1 ? "s" : ""}
                         </span>
-                        {org.website_url && (
-                          <a
-                            href={org.website_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex items-center gap-1 text-blue-600 hover:underline"
-                          >
-                            <Globe className="w-4 h-4" />
-                            Website
-                            <ExternalLink className="w-3 h-3" />
-                          </a>
-                        )}
                       </div>
                     </div>
 
