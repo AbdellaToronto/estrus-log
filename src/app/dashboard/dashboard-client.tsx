@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Search } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { DashboardStats as DashboardStatsComponent } from "@/components/dashboard/dashboard-stats";
+import { StageTrendChart } from "@/components/dashboard/stage-trend-chart";
 import { RecentActivity } from "@/components/dashboard/recent-activity";
 import { CohortList } from "@/components/dashboard/cohort-list";
 import { BatchUploadCard } from "@/components/dashboard/batch-upload-card";
@@ -77,16 +78,19 @@ export function DashboardClient({
         stageDistribution={stats.stageDistribution} 
       />
 
-      {/* Main Content Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left Column: Recent Activity */}
-        <RecentActivity activities={stats.recentActivity} />
+      {/* 7-Day Activity Chart - Full Width */}
+      <StageTrendChart data={stats.dailyTrend} />
 
-        {/* Right Column: Actions & Cohorts */}
-        <div className="space-y-6">
+      {/* Main Content Grid - Actions first, then Activity */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Left Column: Actions & Cohorts (prioritized) */}
+        <div className="space-y-6 lg:order-first">
           <BatchUploadCard cohorts={initialCohorts} />
           <CohortList cohorts={initialCohorts} />
         </div>
+
+        {/* Right Column: Recent Activity (less prominent) */}
+        <RecentActivity activities={stats.recentActivity} />
       </div>
     </div>
   );

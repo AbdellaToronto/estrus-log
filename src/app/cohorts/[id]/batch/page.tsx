@@ -37,7 +37,6 @@ import {
 import { CycleWheel, ConfidenceBars } from "@/components/analysis";
 import Link from "next/link";
 import {
-  uploadToGcs,
   batchSaveLogs,
   createScanSession,
   createScanItemsBulk,
@@ -447,6 +446,82 @@ export default function BatchUploadPage() {
     }
   }, [isAnalyzing, isProcessing]);
 
+  // Auto-upload and auto-analyze after files are added
+  const autoProcessFiles = useCallback(async (itemIds: string[]) => {
+    // Wait a tick for state to settle
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
+    setIsProcessing(true);
+    
+    // Get the items we need to process
+    const itemsToProcess = items.filter(i => itemIds.includes(i.id) && i.status === "pending" && i.file);
+    
+    if (itemsToProcess.length === 0) {
+      setIsProcessing(false);
+      return;
+    }
+
+    // Upload in chunks
+    const chunkSize = 3;
+    for (let i = 0; i < itemsToProcess.length; i += chunkSize) {
+      const chunk = itemsToProcess.slice(i, i + chunkSize);
+
+      await Promise.all(
+        chunk.map(async (item) => {
+          updateItemState(item.id, "uploading");
+
+          try {
+            const result = await uploadFile(item);
+            
+            if (!result) {
+              throw new Error("No file to upload");
+            }
+
+            updateItemState(item.id, "uploaded", { 
+              gcsUrl: result.publicUrl,
+              previewUrl: result.publicUrl,
+            });
+
+            if (item.scanItemId) {
+              updateScanItem(item.scanItemId, {
+                status: "uploaded",
+                imageUrl: result.publicUrl,
+              });
+            }
+          } catch (uploadError) {
+            console.error(`Upload error for ${item.filename}:`, uploadError);
+            updateItemState(item.id, "error");
+          }
+        })
+      );
+    }
+
+    // After upload completes, auto-trigger analysis
+    // Update items to "analyzing" status
+    setItems((prev) =>
+      prev.map((item) =>
+        itemIds.includes(item.id) && item.status === "uploaded" ? { ...item, status: "analyzing" } : item
+      )
+    );
+
+    try {
+      const currentSessionId = await ensureSession();
+      if (currentSessionId) {
+        // Fire and forget - don't wait for the background job to complete
+        startScanSessionAnalysis(currentSessionId).catch((err) => {
+          console.error("Background analysis failed to start:", err);
+        });
+        
+        // Start polling for results
+        refreshItemsFromServer();
+      }
+    } catch (e) {
+      console.error("Failed to start analysis:", e);
+    }
+    
+    // Keep isProcessing true - the polling will handle the "analyzing" state
+  }, [items, ensureSession, refreshItemsFromServer]);
+
   const handleFiles = async (files: File[]) => {
     const currentSessionId = await ensureSession();
     if (!currentSessionId) {
@@ -491,6 +566,8 @@ export default function BatchUploadPage() {
       status: "pending",
     }));
 
+    const newItemIds = newUIItems.map(i => i.id);
+    
     setItems((prev) => [...prev, ...newUIItems]);
     if (!selectedId && newUIItems.length > 0) setSelectedId(newUIItems[0].id);
 
@@ -625,10 +702,6 @@ export default function BatchUploadPage() {
           // Match back to UI items by index (preserved order)
           setItems((prev) => {
             const updated = [...prev];
-            // We need to find the items we just added.
-            // Since we appended, they are at the end.
-            // This is slightly risky if user added more files rapidly.
-            // Better: map newUIItems to updated ones.
             newUIItems.forEach((uiItem, idx) => {
               const match = updated.find((u) => u.id === uiItem.id);
               if (match && dbItems[idx]) {
@@ -638,6 +711,9 @@ export default function BatchUploadPage() {
             return updated;
           });
         }
+        
+        // 5. Auto-start upload and analysis after DB items are created
+        autoProcessFiles(newItemIds);
       })
       .catch(console.error);
   };
@@ -692,16 +768,26 @@ export default function BatchUploadPage() {
 
   const canSave = analyzedItems.length > 0;
 
-  // --- Action: Upload ---
+  // --- Action: Upload (via API route for larger files) ---
 
-  // Helper to convert File to base64 data URL
-  const fileToDataUrl = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
+  const uploadFile = async (item: ScanItem): Promise<{ publicUrl: string } | null> => {
+    if (!item.file) return null;
+    
+    const formData = new FormData();
+    formData.append("file", item.file);
+    formData.append("cohortId", cohortId);
+    
+    const response = await fetch("/api/upload", {
+      method: "POST",
+      body: formData,
     });
+    
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || "Upload failed");
+    }
+    
+    return response.json();
   };
 
   const handleUpload = async () => {
@@ -722,16 +808,12 @@ export default function BatchUploadPage() {
             updateItemState(item.id, "uploading");
 
             try {
-              // Convert file to base64 data URL
-              const dataUrl = await fileToDataUrl(item.file!);
+              // Upload via API route (supports larger files)
+              const result = await uploadFile(item);
               
-              // Upload via server action (server-side upload to GCS)
-              const result = await uploadToGcs(
-                item.filename,
-                item.file!.type,
-                dataUrl,
-                cohortId
-              );
+              if (!result) {
+                throw new Error("No file to upload");
+              }
 
               updateItemState(item.id, "uploaded", { 
                 gcsUrl: result.publicUrl,
@@ -921,7 +1003,7 @@ export default function BatchUploadPage() {
                 </h1>
                 <p className="text-lg text-slate-500 max-w-md mx-auto leading-relaxed">
                   Drag and drop your raw image data or ZIP archives here. <br />
-                  Gemini AI will classify and organize everything automatically.
+                  Our <span className="font-medium text-purple-600">BioCLIP</span> + <span className="font-medium text-blue-600">Gemini</span> ensemble will classify automatically.
                 </p>
 
                 <div className="mt-10">
@@ -1191,10 +1273,10 @@ export default function BatchUploadPage() {
                       </>
                     )}
                     
-                    {/* Ground truth mismatch warning */}
+                    {/* Ground truth comparison info */}
                     {groundTruthMismatches.length > 0 && (
-                      <div className="ml-auto flex items-center gap-1 text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded-full border border-amber-200">
-                        <span className="font-medium">⚠️ {groundTruthMismatches.length} prediction{groundTruthMismatches.length > 1 ? "s" : ""} differ from ground truth</span>
+                      <div className="ml-auto flex items-center gap-1 text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded-full border border-amber-200" title="Based on stage labels detected in filenames">
+                        <span className="font-medium">📊 {groundTruthMismatches.length} differ from filename labels</span>
                       </div>
                     )}
                   </div>
@@ -1644,20 +1726,36 @@ export default function BatchUploadPage() {
                             <Label className="text-xs text-slate-500 font-semibold">
                               Or create a new {subjectLabel.toLowerCase()}
                             </Label>
-                            <Input
-                              placeholder="Enter identifier e.g. 227A"
-                              value={selectedItem.newSubjectName ?? ""}
-                              onChange={(e) =>
-                                assignNewSubjectName(
-                                  selectedItem.id,
-                                  e.target.value
-                                )
-                              }
-                              className="h-11 bg-white border-slate-200 rounded-xl"
-                            />
+                            <div className="relative">
+                              <Input
+                                placeholder="Enter identifier e.g. 227A"
+                                value={selectedItem.newSubjectName ?? ""}
+                                onChange={(e) =>
+                                  assignNewSubjectName(
+                                    selectedItem.id,
+                                    e.target.value
+                                  )
+                                }
+                                className={cn(
+                                  "h-11 bg-white border-slate-200 rounded-xl pr-24",
+                                  selectedItem.parsed?.subjectId && selectedItem.newSubjectName === selectedItem.parsed.subjectId && "border-emerald-300 bg-emerald-50/50"
+                                )}
+                              />
+                              {selectedItem.parsed?.subjectId && selectedItem.newSubjectName === selectedItem.parsed.subjectId && (
+                                <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 text-[10px] text-emerald-600 bg-emerald-100 px-2 py-1 rounded-full">
+                                  <Sparkles className="w-3 h-3" />
+                                  Auto-detected
+                                </div>
+                              )}
+                            </div>
                             <p className="text-[11px] text-slate-400">
-                              New {subjectLabel.toLowerCase()}s will be created automatically when
-                              you save.
+                              {selectedItem.parsed?.subjectId && selectedItem.newSubjectName === selectedItem.parsed.subjectId ? (
+                                <span className="text-emerald-600">
+                                  ✓ Detected from filename "{selectedItem.filename}"
+                                </span>
+                              ) : (
+                                <>New {subjectLabel.toLowerCase()}s will be created automatically when you save.</>
+                              )}
                             </p>
                           </div>
                         </div>
@@ -1766,15 +1864,35 @@ export default function BatchUploadPage() {
                         <h3 className="font-medium text-slate-900 mb-1">
                           {selectedItem.status === "analyzing"
                             ? "Analyzing Image"
+                            : selectedItem.status === "uploading"
+                            ? "Uploading..."
                             : "Waiting for Input"}
                         </h3>
-                        <p className="text-sm text-slate-500 max-w-[200px]">
-                          {selectedItem.status === "analyzing"
-                            ? "Gemini is currently processing this image..."
-                            : selectedItem.status === "uploaded"
-                            ? "Ready to be analyzed"
-                            : "Upload this file to begin analysis"}
+                        <p className="text-sm text-slate-500 max-w-[240px]">
+                          {selectedItem.status === "analyzing" ? (
+                            <>
+                              Running <span className="font-semibold text-purple-600">BioCLIP k-NN</span> + <span className="font-semibold text-blue-600">Gemini 2.5</span> ensemble...
+                            </>
+                          ) : selectedItem.status === "uploading" ? (
+                            "Uploading to cloud storage..."
+                          ) : selectedItem.status === "uploaded" ? (
+                            "Ready to be analyzed"
+                          ) : (
+                            "Upload this file to begin analysis"
+                          )}
                         </p>
+                        {selectedItem.status === "analyzing" && (
+                          <div className="mt-4 flex items-center gap-3 text-xs text-slate-400">
+                            <div className="flex items-center gap-1.5">
+                              <div className="w-2 h-2 rounded-full bg-purple-500 animate-pulse" />
+                              <span>k-NN matching</span>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" style={{ animationDelay: '0.5s' }} />
+                              <span>Vision AI</span>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )}
                   </motion.div>

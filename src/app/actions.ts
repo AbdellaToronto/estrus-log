@@ -1068,35 +1068,74 @@ export type DashboardStats = {
     imageUrl: string | null;
     time: string;
   }[];
+  dailyTrend: {
+    date: string;
+    Proestrus: number;
+    Estrus: number;
+    Metestrus: number;
+    Diestrus: number;
+  }[];
 };
 
 export async function getDashboardStats(): Promise<DashboardStats> {
-  const { userId } = await auth();
+  const { userId, orgId } = await auth();
   if (!userId) throw new Error("Unauthorized");
 
   const supabase = createServerClient(configFromEnv());
 
-  // 1. Total Subjects
+  // Get cohorts for this org first (to filter all other queries)
+  let cohortIds: string[] = [];
+  if (orgId) {
+    const { data: orgCohorts } = await supabase
+      .from("cohorts")
+      .select("id")
+      .eq("org_id", orgId);
+    cohortIds = orgCohorts?.map(c => c.id) || [];
+  } else {
+    // Fallback to user's personal cohorts
+    const { data: userCohorts } = await supabase
+      .from("cohorts")
+      .select("id")
+      .eq("user_id", userId)
+      .is("org_id", null);
+    cohortIds = userCohorts?.map(c => c.id) || [];
+  }
+
+  // If no cohorts, return empty stats
+  if (cohortIds.length === 0) {
+    return {
+      totalSubjects: 0,
+      todaysScans: 0,
+      stageDistribution: [],
+      recentActivity: [],
+      dailyTrend: [],
+    };
+  }
+
+  // 1. Total Subjects (only in this org's cohorts)
   const { count: totalSubjects, error: subjectsError } = await supabase
     .from("mice")
-    .select("*", { count: "exact", head: true });
+    .select("*", { count: "exact", head: true })
+    .in("cohort_id", cohortIds);
 
   if (subjectsError) throw subjectsError;
 
-  // 2. Today's Scans
+  // 2. Today's Scans (only in this org's cohorts)
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const { count: todaysScans, error: scansError } = await supabase
     .from("estrus_logs")
     .select("*", { count: "exact", head: true })
+    .in("cohort_id", cohortIds)
     .gte("created_at", today.toISOString());
 
   if (scansError) throw scansError;
 
-  // 3. Recent Activity (Last 10 logs across all cohorts)
+  // 3. Recent Activity (Last 10 logs in this org's cohorts)
   const { data: recentLogs, error: logsError } = await supabase
     .from("estrus_logs")
     .select("*, mice(name, cohort_id), cohorts(name)")
+    .in("cohort_id", cohortIds)
     .order("created_at", { ascending: false })
     .limit(10);
 
@@ -1106,32 +1145,33 @@ export async function getDashboardStats(): Promise<DashboardStats> {
   const recentActivity = recentLogs.map((log) => {
     const imageUrl = log.image_url?.split("?")[0] || log.image_url;
 
-      // Safe access for cohorts (might be object or array depending on TS inference)
-      const cohortData = log.cohorts as unknown as
-        | { name: string }
-        | { name: string }[]
-        | null;
-      const cohortName = Array.isArray(cohortData)
-        ? cohortData[0]?.name
-        : cohortData?.name || "Unassigned";
+    // Safe access for cohorts (might be object or array depending on TS inference)
+    const cohortData = log.cohorts as unknown as
+      | { name: string }
+      | { name: string }[]
+      | null;
+    const cohortName = Array.isArray(cohortData)
+      ? cohortData[0]?.name
+      : cohortData?.name || "Unassigned";
 
-      return {
-        id: log.id,
-        mouseName: log.mice?.name || "Unknown",
-        cohortName,
-        stage: log.stage,
-        imageUrl,
-        time: log.created_at,
-      };
+    return {
+      id: log.id,
+      mouseName: log.mice?.name || "Unknown",
+      cohortName,
+      stage: log.stage,
+      imageUrl,
+      time: log.created_at,
+    };
   });
 
-  // 4. Stage Distribution (Last 7 days)
+  // 4. Stage Distribution (Last 7 days, only in this org's cohorts)
   const weekAgo = new Date();
   weekAgo.setDate(weekAgo.getDate() - 7);
 
   const { data: distributionData, error: distError } = await supabase
     .from("estrus_logs")
-    .select("stage")
+    .select("stage, created_at")
+    .in("cohort_id", cohortIds)
     .gte("created_at", weekAgo.toISOString());
 
   if (distError) throw distError;
@@ -1146,11 +1186,40 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     .map(([stage, value]) => ({ stage, value }))
     .sort((a, b) => b.value - a.value);
 
+  // 5. Daily Trend (for chart) - last 7 days broken down by day and stage
+  const dailyTrend: { date: string; Proestrus: number; Estrus: number; Metestrus: number; Diestrus: number }[] = [];
+  
+  for (let i = 6; i >= 0; i--) {
+    const date = new Date();
+    date.setDate(date.getDate() - i);
+    const dateStr = date.toISOString().split('T')[0];
+    
+    dailyTrend.push({
+      date: dateStr,
+      Proestrus: 0,
+      Estrus: 0,
+      Metestrus: 0,
+      Diestrus: 0,
+    });
+  }
+
+  distributionData?.forEach((log) => {
+    const logDate = new Date(log.created_at).toISOString().split('T')[0];
+    const dayData = dailyTrend.find(d => d.date === logDate);
+    if (dayData) {
+      const stage = log.stage as keyof typeof dayData;
+      if (stage in dayData && typeof dayData[stage] === 'number') {
+        (dayData[stage] as number)++;
+      }
+    }
+  });
+
   return {
     totalSubjects: totalSubjects || 0,
     todaysScans: todaysScans || 0,
     stageDistribution,
     recentActivity,
+    dailyTrend,
   };
 }
 
