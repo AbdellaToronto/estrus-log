@@ -494,34 +494,124 @@ export default function BatchUploadPage() {
     setItems((prev) => [...prev, ...newUIItems]);
     if (!selectedId && newUIItems.length > 0) setSelectedId(newUIItems[0].id);
 
-    // 3. Parse filenames with LLM (async, updates items when done)
-    const filenames = filesToProcess.map((f) => f.name);
+    // 3. Parse filenames - first with regex (instant), then LLM for uncertain ones
     setIsParsing(true);
-    parseFilenamesWithLLM(filenames)
-      .then((parseResults) => {
-        // Create a map for quick lookup
-        const parseMap = new Map(parseResults.map((r) => [r.filename, r.parsed]));
+    
+    // Helper: regex-based extraction (same logic as server-side)
+    const extractWithRegex = (filename: string): ParsedFilename => {
+      // Get just the base filename (remove folder path like "MPP/")
+      const baseName = filename.split("/").pop() || filename;
+      const nameWithoutExt = baseName.replace(/\.(jpg|jpeg|png|webp|gif)$/i, "");
+      const cleanFilename = nameWithoutExt.replace(/^\d{10,}-/, ""); // Remove timestamp prefix
+      
+      // Split by common delimiters
+      const parts = cleanFilename.split(/[_\-\s]+/);
+      
+      // Known stage names
+      const stageMap: Record<string, string> = {
+        proestrus: "Proestrus", pro: "Proestrus",
+        estrus: "Estrus", est: "Estrus",
+        metestrus: "Metestrus", met: "Metestrus",
+        diestrus: "Diestrus", di: "Diestrus",
+      };
+      
+      let subjectId: string | null = null;
+      let groundTruthStage: string | null = null;
+      let date: string | null = null;
+      const dateParts: string[] = [];
+      
+      for (const part of parts) {
+        const lower = part.toLowerCase();
         
-        // Update items with parsed info
-        setItems((prev) =>
-          prev.map((item) => {
-            const parsed = parseMap.get(item.filename);
-            if (parsed) {
-              return {
-                ...item,
-                parsed,
-                // Auto-fill the newSubjectName if we have high confidence
-                newSubjectName: parsed.subjectId && parsed.confidence >= 0.7 
-                  ? parsed.subjectId 
-                  : item.newSubjectName,
-              };
-            }
-            return item;
-          })
-        );
+        // Check for stage
+        if (stageMap[lower]) {
+          groundTruthStage = stageMap[lower];
+          continue;
+        }
+        
+        // Check for date-like (1-2 digit numbers)
+        if (/^\d{1,2}$/.test(part)) {
+          dateParts.push(part);
+          continue;
+        }
+        
+        // Check for year (skip)
+        if (/^20\d{2}$/.test(part)) continue;
+        
+        // First valid part is likely the subject ID
+        if (!subjectId && part.length >= 2) {
+          subjectId = part;
+        }
+      }
+      
+      // Construct date from parts
+      if (dateParts.length >= 2) {
+        date = dateParts.slice(0, 2).join("_");
+      }
+      
+      // Confidence based on what we found
+      const confidence = subjectId && groundTruthStage ? 0.95 : subjectId ? 0.8 : 0.1;
+      
+      return { subjectId, groundTruthStage, date, confidence };
+    };
+    
+    // First pass: regex extraction
+    const regexResults = new Map<string, ParsedFilename>();
+    const needsLlm: string[] = [];
+    
+    for (const file of filesToProcess) {
+      const parsed = extractWithRegex(file.name);
+      regexResults.set(file.name, parsed);
+      
+      // If low confidence, queue for LLM
+      if (parsed.confidence < 0.5) {
+        needsLlm.push(file.name);
+      }
+    }
+    
+    // Immediately update items with regex results
+    setItems((prev) =>
+      prev.map((item) => {
+        const parsed = regexResults.get(item.filename);
+        if (parsed && parsed.confidence >= 0.5) {
+          return {
+            ...item,
+            parsed,
+            newSubjectName: parsed.subjectId || item.newSubjectName,
+          };
+        }
+        return item;
       })
-      .catch((err) => console.error("Failed to parse filenames:", err))
-      .finally(() => setIsParsing(false));
+    );
+    
+    // If some files need LLM parsing, do it async
+    if (needsLlm.length > 0) {
+      parseFilenamesWithLLM(needsLlm)
+        .then((llmResults) => {
+          const llmMap = new Map(llmResults.map((r) => [r.filename, r.parsed]));
+          
+          setItems((prev) =>
+            prev.map((item) => {
+              // Only update if this item needed LLM parsing
+              const llmParsed = llmMap.get(item.filename);
+              if (llmParsed && llmParsed.confidence > (item.parsed?.confidence || 0)) {
+                return {
+                  ...item,
+                  parsed: llmParsed,
+                  newSubjectName: llmParsed.subjectId && llmParsed.confidence >= 0.7
+                    ? llmParsed.subjectId
+                    : item.newSubjectName,
+                };
+              }
+              return item;
+            })
+          );
+        })
+        .catch((err) => console.error("LLM parsing failed:", err))
+        .finally(() => setIsParsing(false));
+    } else {
+      setIsParsing(false);
+    }
 
     // 4. Bulk Create DB Items
     // We use a temporary path "pending/filename"

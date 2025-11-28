@@ -784,10 +784,40 @@ export async function batchSaveLogs(
   const scanItemsToUpdate = [];
 
   // Helper to extract subject name from filename like "FCONPL57_10_22_ESTRUS.jpg"
+  // or "MPP/229B_10_16_METESTRUS.jpg"
   const extractSubjectFromFilename = (filename: string): string | null => {
-    // Remove timestamp prefix if present (e.g., "1732123456789-")
-    const cleanFilename = filename.replace(/^\d+-/, "");
-    // Extract first part before underscore (e.g., "FCONPL57" from "FCONPL57_10_22_ESTRUS.jpg")
+    // 1. Get just the base filename (remove folder path like "MPP/")
+    const baseName = filename.split("/").pop() || filename;
+    
+    // 2. Remove file extension
+    const nameWithoutExt = baseName.replace(/\.(jpg|jpeg|png|webp|gif)$/i, "");
+    
+    // 3. Remove timestamp prefix if present (e.g., "1732123456789-")
+    const cleanFilename = nameWithoutExt.replace(/^\d{10,}-/, "");
+    
+    // 4. Split by common delimiters (underscore, dash, space)
+    const parts = cleanFilename.split(/[_\-\s]+/);
+    
+    // 5. Filter out known stage names and date-like patterns
+    const stageNames = ["proestrus", "estrus", "metestrus", "diestrus", "pro", "est", "met", "di"];
+    const filteredParts = parts.filter((part) => {
+      const lower = part.toLowerCase();
+      // Skip if it's a stage name
+      if (stageNames.includes(lower)) return false;
+      // Skip if it looks like a date (all digits, 1-2 chars)
+      if (/^\d{1,2}$/.test(part)) return false;
+      // Skip if it looks like a year
+      if (/^20\d{2}$/.test(part)) return false;
+      // Keep it
+      return true;
+    });
+    
+    // 6. The first remaining part is likely the subject ID
+    if (filteredParts.length > 0 && filteredParts[0].length >= 2) {
+      return filteredParts[0];
+    }
+    
+    // Fallback: just take the first alphanumeric chunk
     const match = cleanFilename.match(/^([A-Za-z0-9]+)/);
     return match ? match[1] : null;
   };
@@ -1892,18 +1922,35 @@ Common filename patterns:
 Parse these filenames:
 ${filenames.map((f, i) => `${i + 1}. "${f}"`).join("\n")}
 
-Return results in the same order as the input filenames.`,
+Return results in the same order as the input filenames. IMPORTANT: Return exactly ${filenames.length} results.`,
     });
 
-    return object.results.map((r) => ({
-      filename: r.filename,
-      parsed: {
-        subjectId: r.subjectId,
-        groundTruthStage: r.groundTruthStage,
-        date: r.date,
-        confidence: r.confidence,
-      },
-    }));
+    // Use index-based matching (LLM is asked to return in same order)
+    // This avoids issues where LLM might return slightly different filenames
+    return filenames.map((filename, idx) => {
+      const llmResult = object.results[idx];
+      if (llmResult) {
+        return {
+          filename, // Use our original filename, not LLM's version
+          parsed: {
+            subjectId: llmResult.subjectId,
+            groundTruthStage: llmResult.groundTruthStage,
+            date: llmResult.date,
+            confidence: llmResult.confidence,
+          },
+        };
+      }
+      // Fallback if LLM didn't return enough results
+      return {
+        filename,
+        parsed: {
+          subjectId: null,
+          groundTruthStage: null,
+          date: null,
+          confidence: 0,
+        },
+      };
+    });
   } catch (error) {
     console.error("Failed to parse filenames with LLM:", error);
     // Return empty parsed results on error
