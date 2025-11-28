@@ -1260,12 +1260,16 @@ export async function getExperimentInsights(
     }
   });
 
-  const cohortStats = experimentCohorts.map((ec) => ({
-    id: ec.cohort_id,
-    name: ec.cohorts?.name || "Unknown",
-    subjectCount: cohortSubjectCounts.get(ec.cohort_id) || 0,
-    logCount: cohortLogCounts.get(ec.cohort_id) || 0,
-  }));
+  const cohortStats = experimentCohorts.map((ec) => {
+    // cohorts can be an array or single object depending on Supabase typing
+    const cohortData = Array.isArray(ec.cohorts) ? ec.cohorts[0] : ec.cohorts;
+    return {
+      id: ec.cohort_id,
+      name: cohortData?.name || "Unknown",
+      subjectCount: cohortSubjectCounts.get(ec.cohort_id) || 0,
+      logCount: cohortLogCounts.get(ec.cohort_id) || 0,
+    };
+  });
 
   return {
     totalLogs: logs.length,
