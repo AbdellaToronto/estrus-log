@@ -46,7 +46,9 @@ export function Sidebar() {
            hidePersonal={false}
            afterCreateOrganizationUrl="/dashboard"
            afterSelectOrganizationUrl="/dashboard"
-           afterSelectPersonalUrl="/dashboard"
+           afterSelectPersonalUrl="/onboarding"
+           organizationProfileMode="navigation"
+           organizationProfileUrl="/organization"
            appearance={{
              elements: {
                rootBox: "w-full",

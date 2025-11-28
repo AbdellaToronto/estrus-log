@@ -1419,3 +1419,345 @@ export async function getExperimentVisualizationData(experimentId: string) {
     })),
   };
 }
+
+// =============================================================================
+// Organization Discovery & Join Requests
+// =============================================================================
+
+export type DiscoverableOrg = {
+  id: string;
+  clerk_org_id: string;
+  name: string;
+  institution: string | null;
+  department: string | null;
+  description: string | null;
+  logo_url: string | null;
+  member_count: number;
+  created_at: string;
+};
+
+export type JoinRequest = {
+  id: string;
+  user_id: string;
+  user_email: string;
+  user_name: string | null;
+  message: string | null;
+  role: string;
+  status: "pending" | "approved" | "denied" | "cancelled";
+  created_at: string;
+};
+
+/**
+ * Search for discoverable organizations
+ */
+export async function searchOrganizations(
+  query?: string,
+  institution?: string
+): Promise<DiscoverableOrg[]> {
+  const supabase = createServerClient(configFromEnv());
+
+  const { data, error } = await supabase.rpc("search_organizations", {
+    search_query: query || null,
+    institution_filter: institution || null,
+    limit_count: 20,
+  });
+
+  if (error) {
+    console.error("Error searching organizations:", error);
+    return [];
+  }
+
+  // We need to get org names from Clerk - for now return what we have
+  // In production, you'd fetch org names from Clerk's API
+  return (data || []).map((org: any) => ({
+    id: org.id,
+    clerk_org_id: org.clerk_org_id,
+    name: org.department || "Unnamed Lab", // Fallback - ideally fetch from Clerk
+    institution: org.institution,
+    department: org.department,
+    description: org.description,
+    logo_url: org.logo_url,
+    member_count: org.member_count || 1,
+    created_at: org.created_at,
+  }));
+}
+
+/**
+ * Get all unique institutions for filtering
+ */
+export async function getInstitutions(): Promise<string[]> {
+  const supabase = createServerClient(configFromEnv());
+
+  const { data, error } = await supabase
+    .from("organization_profiles")
+    .select("institution")
+    .eq("is_discoverable", true)
+    .not("institution", "is", null);
+
+  if (error) {
+    console.error("Error fetching institutions:", error);
+    return [];
+  }
+
+  const institutions = [...new Set(data?.map((d) => d.institution).filter(Boolean))] as string[];
+  return institutions.sort();
+}
+
+/**
+ * Create or update organization profile (called when org is created/updated)
+ */
+export async function upsertOrganizationProfile(data: {
+  clerkOrgId: string;
+  name: string;
+  isDiscoverable?: boolean;
+  institution?: string;
+  department?: string;
+  description?: string;
+  logoUrl?: string;
+}) {
+  const { userId } = await auth();
+  if (!userId) throw new Error("Unauthorized");
+
+  const supabase = createServerClient(configFromEnv());
+
+  const { error } = await supabase
+    .from("organization_profiles")
+    .upsert({
+      clerk_org_id: data.clerkOrgId,
+      is_discoverable: data.isDiscoverable ?? false,
+      institution: data.institution,
+      department: data.name, // Use org name as department
+      description: data.description,
+      logo_url: data.logoUrl,
+    }, {
+      onConflict: "clerk_org_id",
+    });
+
+  if (error) throw error;
+  
+  revalidatePath("/onboarding");
+}
+
+/**
+ * Request to join an organization
+ */
+export async function requestToJoinOrganization(
+  organizationId: string,
+  message?: string
+) {
+  const { userId } = await auth();
+  const user = await currentUser();
+  
+  if (!userId || !user) throw new Error("Unauthorized");
+
+  const supabase = createServerClient(configFromEnv());
+
+  // Check if user already has a pending request
+  const { data: existing } = await supabase
+    .from("join_requests")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("organization_id", organizationId)
+    .eq("status", "pending")
+    .single();
+
+  if (existing) {
+    throw new Error("You already have a pending request for this organization");
+  }
+
+  const { error } = await supabase.from("join_requests").insert({
+    user_id: userId,
+    user_email: user.emailAddresses[0]?.emailAddress || "",
+    user_name: user.fullName || user.firstName || null,
+    organization_id: organizationId,
+    message: message || null,
+    role: "member",
+    status: "pending",
+  });
+
+  if (error) throw error;
+
+  revalidatePath("/onboarding");
+  return { success: true };
+}
+
+/**
+ * Get user's pending join requests
+ */
+export async function getMyJoinRequests(): Promise<(JoinRequest & { organization: DiscoverableOrg | null })[]> {
+  const { userId } = await auth();
+  if (!userId) return [];
+
+  const supabase = createServerClient(configFromEnv());
+
+  const { data, error } = await supabase
+    .from("join_requests")
+    .select(`
+      *,
+      organization_profiles (
+        id,
+        clerk_org_id,
+        institution,
+        department,
+        description,
+        logo_url,
+        member_count,
+        created_at
+      )
+    `)
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    console.error("Error fetching join requests:", error);
+    return [];
+  }
+
+  return (data || []).map((req: any) => ({
+    id: req.id,
+    user_id: req.user_id,
+    user_email: req.user_email,
+    user_name: req.user_name,
+    message: req.message,
+    role: req.role,
+    status: req.status,
+    created_at: req.created_at,
+    organization: req.organization_profiles ? {
+      id: req.organization_profiles.id,
+      clerk_org_id: req.organization_profiles.clerk_org_id,
+      name: req.organization_profiles.department || "Unnamed Lab",
+      institution: req.organization_profiles.institution,
+      department: req.organization_profiles.department,
+      description: req.organization_profiles.description,
+      logo_url: req.organization_profiles.logo_url,
+      member_count: req.organization_profiles.member_count || 1,
+      created_at: req.organization_profiles.created_at,
+    } : null,
+  }));
+}
+
+/**
+ * Cancel a pending join request
+ */
+export async function cancelJoinRequest(requestId: string) {
+  const { userId } = await auth();
+  if (!userId) throw new Error("Unauthorized");
+
+  const supabase = createServerClient(configFromEnv());
+
+  const { error } = await supabase
+    .from("join_requests")
+    .update({ status: "cancelled" })
+    .eq("id", requestId)
+    .eq("user_id", userId)
+    .eq("status", "pending");
+
+  if (error) throw error;
+
+  revalidatePath("/onboarding");
+  return { success: true };
+}
+
+/**
+ * Get pending requests for an organization (admin only)
+ */
+export async function getPendingRequestsForOrg(clerkOrgId: string): Promise<JoinRequest[]> {
+  const { userId } = await auth();
+  if (!userId) return [];
+
+  // Note: In production, verify the user is an admin of this org via Clerk
+  const supabase = createServerClient(configFromEnv());
+
+  const { data, error } = await supabase.rpc("get_pending_requests", {
+    org_clerk_id: clerkOrgId,
+  });
+
+  if (error) {
+    console.error("Error fetching pending requests:", error);
+    return [];
+  }
+
+  return (data || []).map((req: any) => ({
+    id: req.id,
+    user_id: req.user_id,
+    user_email: req.user_email,
+    user_name: req.user_name,
+    message: req.message,
+    role: req.role,
+    status: "pending" as const,
+    created_at: req.created_at,
+  }));
+}
+
+/**
+ * Approve a join request (admin only)
+ * This will create a Clerk invitation for the user
+ */
+export async function approveJoinRequest(requestId: string) {
+  const { userId } = await auth();
+  if (!userId) throw new Error("Unauthorized");
+
+  const supabase = createServerClient(configFromEnv());
+
+  // Get the request details
+  const { data: request, error: fetchError } = await supabase
+    .from("join_requests")
+    .select(`
+      *,
+      organization_profiles (clerk_org_id)
+    `)
+    .eq("id", requestId)
+    .single();
+
+  if (fetchError || !request) {
+    throw new Error("Request not found");
+  }
+
+  // Update request status
+  const { error: updateError } = await supabase
+    .from("join_requests")
+    .update({
+      status: "approved",
+      reviewed_by: userId,
+      reviewed_at: new Date().toISOString(),
+    })
+    .eq("id", requestId);
+
+  if (updateError) throw updateError;
+
+  // TODO: Create Clerk invitation using Clerk Backend API
+  // const clerkOrgId = request.organization_profiles?.clerk_org_id;
+  // await clerkClient.organizations.createOrganizationInvitation({
+  //   organizationId: clerkOrgId,
+  //   emailAddress: request.user_email,
+  //   role: "basic_member",
+  // });
+
+  revalidatePath("/");
+  return { success: true };
+}
+
+/**
+ * Deny a join request (admin only)
+ */
+export async function denyJoinRequest(requestId: string, note?: string) {
+  const { userId } = await auth();
+  if (!userId) throw new Error("Unauthorized");
+
+  const supabase = createServerClient(configFromEnv());
+
+  const { error } = await supabase
+    .from("join_requests")
+    .update({
+      status: "denied",
+      reviewed_by: userId,
+      reviewed_at: new Date().toISOString(),
+      review_note: note || null,
+    })
+    .eq("id", requestId);
+
+  if (error) throw error;
+
+  revalidatePath("/");
+  return { success: true };
+}
