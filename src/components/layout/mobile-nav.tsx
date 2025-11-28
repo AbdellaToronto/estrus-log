@@ -46,14 +46,32 @@ const EXPLORE_NAV_ITEMS = [
 
 export function MobileNav() {
   const [open, setOpen] = useState(false);
+  const [isSwitching, setIsSwitching] = useState(false);
   const pathname = usePathname();
   const { user } = useUser();
   const { organization } = useOrganization();
-  const { userMemberships } = useOrganizationList({ userMemberships: { infinite: true } });
+  const { userMemberships, setActive } = useOrganizationList({ userMemberships: { infinite: true } });
 
   const hasOrg = !!organization;
   const navItems = hasOrg ? ORG_NAV_ITEMS : EXPLORE_NAV_ITEMS;
   const hasMultipleOrgs = (userMemberships?.data?.length || 0) > 1;
+
+  const handleSwitchOrg = async (orgId: string) => {
+    if (orgId === organization?.id || isSwitching) return;
+    
+    setIsSwitching(true);
+    try {
+      await setActive({ organization: orgId });
+      setOpen(false);
+      // Refresh the page to load new org's data
+      window.location.href = "/dashboard";
+    } catch (error) {
+      console.error("Failed to switch organization:", error);
+      alert("Failed to switch lab. Please try again.");
+    } finally {
+      setIsSwitching(false);
+    }
+  };
 
   // Don't show on certain pages
   const hiddenPaths = ['/sign-in', '/sign-up'];
@@ -104,10 +122,8 @@ export function MobileNav() {
                       return (
                         <button
                           key={membership.organization.id}
-                          onClick={() => {
-                            membership.organization.id !== organization?.id && 
-                              window.location.assign(`/dashboard?__clerk_org_id=${membership.organization.id}`);
-                          }}
+                          onClick={() => handleSwitchOrg(membership.organization.id)}
+                          disabled={isSwitching}
                           className={cn(
                             "w-full flex items-center gap-3 p-3 rounded-xl transition-colors text-left",
                             isActive 
