@@ -1,28 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { Storage } from "@google-cloud/storage";
+import { getGcs } from "@/lib/gcs";
 
 // Configure for larger uploads - Vercel allows up to 4.5MB for serverless, 
 // but we can stream larger files
 export const runtime = "nodejs";
 export const maxDuration = 60; // 60 seconds timeout
-
-function getGcs() {
-  const projectId = process.env.GCP_PROJECT_ID;
-  const bucketName = process.env.GCS_BUCKET_NAME;
-  const credentials = process.env.GCP_SERVICE_ACCOUNT_KEY;
-
-  if (!projectId || !bucketName || !credentials) {
-    throw new Error("Missing GCS configuration");
-  }
-
-  const storage = new Storage({
-    projectId,
-    credentials: JSON.parse(credentials),
-  });
-
-  return { storage, bucket: storage.bucket(bucketName) };
-}
 
 export async function POST(request: NextRequest) {
   try {
