@@ -44,7 +44,8 @@ type BatchChildRun = {
   error?: unknown;
 };
 
-const gcs = getGcs();
+// Note: getGcs() is called lazily inside task functions to avoid import-time errors
+// during Trigger.dev indexing (when env vars aren't available)
 
 async function fetchImageAsBlob(url: string): Promise<Blob> {
   try {
@@ -54,6 +55,8 @@ async function fetchImageAsBlob(url: string): Promise<Blob> {
     }
     return await response.blob();
   } catch (networkError) {
+    // Lazily initialize GCS only when needed for fallback
+    const gcs = getGcs();
     const prefix = `https://storage.googleapis.com/${gcs.bucket.name}/`;
     if (!url.startsWith(prefix)) {
       throw networkError;
@@ -159,7 +162,8 @@ export const analyzeScanItemTask = task({
             format: string;
           };
 
-          // Upload cropped image to GCS
+          // Upload cropped image to GCS (lazy init)
+          const gcs = getGcs();
           const croppedBuffer = Buffer.from(sam3Result.image, "base64");
           const croppedFileName = `scans/${typedScanItem.session_id}/${scanItemId}_cropped.${sam3Result.format}`;
           const croppedFile = gcs.bucket.file(croppedFileName);
