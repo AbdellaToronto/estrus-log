@@ -156,6 +156,57 @@ export async function getCohort(id: string) {
   return data;
 }
 
+export async function deleteCohort(id: string) {
+  const { userId, getToken } = await auth();
+  if (!userId) throw new Error("Unauthorized");
+
+  if (!isValidUUID(id)) {
+    throw new Error("Invalid cohort ID");
+  }
+
+  const token = await getToken();
+  const supabase = createServerClient(configFromEnv(), token || undefined);
+
+  // Delete in order to respect foreign key constraints:
+  // 1. scan_items (via session)
+  // 2. scan_sessions
+  // 3. estrus_logs (via mice)
+  // 4. mice
+  // 5. cohort
+
+  // Get session IDs first
+  const { data: sessions } = await supabase
+    .from("scan_sessions")
+    .select("id")
+    .eq("cohort_id", id);
+
+  if (sessions && sessions.length > 0) {
+    const sessionIds = sessions.map((s) => s.id);
+    await supabase.from("scan_items").delete().in("session_id", sessionIds);
+    await supabase.from("scan_sessions").delete().eq("cohort_id", id);
+  }
+
+  // Get mice IDs
+  const { data: mice } = await supabase
+    .from("mice")
+    .select("id")
+    .eq("cohort_id", id);
+
+  if (mice && mice.length > 0) {
+    const miceIds = mice.map((m) => m.id);
+    await supabase.from("estrus_logs").delete().in("mouse_id", miceIds);
+    await supabase.from("mice").delete().eq("cohort_id", id);
+  }
+
+  // Finally delete the cohort
+  const { error } = await supabase.from("cohorts").delete().eq("id", id);
+
+  if (error) throw error;
+
+  revalidatePath("/cohorts");
+  revalidatePath("/dashboard");
+}
+
 // --- Subjects (Formerly Mice) ---
 
 export async function getSubjects() {

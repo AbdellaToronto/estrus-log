@@ -46,6 +46,7 @@ import {
   getScanItems,
   startScanSessionAnalysis,
   getCohort,
+  deleteCohort,
 } from "@/app/actions";
 import { useParams, useRouter } from "next/navigation";
 import Image from "next/image";
@@ -650,6 +651,21 @@ export default function BatchUploadPage() {
     loadSubjects,
     toFeaturePayload,
   ]);
+
+  // --- Action: Discard ---
+  const handleDiscard = useCallback(async () => {
+    if (!confirm("Are you sure you want to discard this batch and delete the cohort? This cannot be undone.")) {
+      return;
+    }
+    
+    try {
+      await deleteCohort(cohortId);
+      router.push("/cohorts");
+    } catch (e) {
+      console.error("Failed to delete cohort", e);
+      alert("Failed to delete cohort. Check console.");
+    }
+  }, [cohortId, router]);
 
   const updateItemState = (
     id: string,
@@ -1484,6 +1500,7 @@ export default function BatchUploadPage() {
                 <div className="grid grid-cols-2 gap-3">
                   <Button
                     variant="outline"
+                    onClick={handleDiscard}
                     className="h-12 rounded-xl border-slate-200 hover:bg-red-50 hover:text-red-600 hover:border-red-100 font-medium transition-colors"
                   >
                     <Trash2 className="w-4 h-4 mr-2" /> Discard
