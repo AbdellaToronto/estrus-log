@@ -194,6 +194,7 @@ export function CohortLibrary({
                     alt=""
                     fill
                     className="object-cover transition-transform duration-500 group-hover:scale-105"
+                    unoptimized={log.image_url.startsWith("http")}
                   />
                 ) : (
                   <div className="w-full h-full flex items-center justify-center bg-slate-50 text-slate-300">

@@ -272,6 +272,7 @@ export function CohortEvaluation({ logs }: { logs: any[] }) {
                       alt=""
                       fill
                       className="object-cover"
+                      unoptimized={log.image_url.startsWith("http")}
                     />
                   </div>
                 </TableCell>
