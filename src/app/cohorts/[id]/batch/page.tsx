@@ -33,6 +33,7 @@ import {
   Brain,
   Eye,
   EyeOff,
+  AlertTriangle,
 } from "lucide-react";
 import { CycleWheel, ConfidenceBars } from "@/components/analysis";
 import Link from "next/link";
@@ -175,6 +176,7 @@ export default function BatchUploadPage() {
   const [subjectsLoading, setSubjectsLoading] = useState(false);
   const [subjectsError, setSubjectsError] = useState<string | null>(null);
   const [showCroppedImage, setShowCroppedImage] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const [cohort, setCohort] = useState<{
     type?: string | null;
     log_config?: unknown;
@@ -439,12 +441,18 @@ export default function BatchUploadPage() {
     return () => clearInterval(id);
   }, [sessionId, hasActiveAnalysis, refreshItemsFromServer]);
 
-  // Reset isProcessing when analysis completes (no more items in "analyzing" state)
+  // Reset isProcessing when analysis completes (no more items in "analyzing" or "uploading" state)
+  // BUT only if we have completed items (to avoid resetting on initial load)
+  const hasCompletedItems = items.some((i) => i.status === "complete" || i.status === "saved");
+  const hasActiveWork = items.some((i) => i.status === "analyzing" || i.status === "uploading");
+  
   useEffect(() => {
-    if (!isAnalyzing && isProcessing) {
+    // Only reset if we're processing, have no active work, AND have some completed items
+    // This prevents resetting during the initial "starting analysis" phase
+    if (isProcessing && !hasActiveWork && hasCompletedItems) {
       setIsProcessing(false);
     }
-  }, [isAnalyzing, isProcessing]);
+  }, [isProcessing, hasActiveWork, hasCompletedItems]);
 
   // Auto-upload and auto-analyze after files are added
   const autoProcessFiles = useCallback(async (itemIds: string[]) => {
@@ -452,6 +460,7 @@ export default function BatchUploadPage() {
     await new Promise(resolve => setTimeout(resolve, 100));
     
     setIsProcessing(true);
+    setUploadError(null);
     
     // Get the items we need to process
     const itemsToProcess = items.filter(i => itemIds.includes(i.id) && i.status === "pending" && i.file);
@@ -460,6 +469,9 @@ export default function BatchUploadPage() {
       setIsProcessing(false);
       return;
     }
+
+    let uploadErrors = 0;
+    let uploadedCount = 0;
 
     // Upload in chunks
     const chunkSize = 3;
@@ -488,12 +500,26 @@ export default function BatchUploadPage() {
                 imageUrl: result.publicUrl,
               });
             }
-          } catch (uploadError) {
-            console.error(`Upload error for ${item.filename}:`, uploadError);
+            uploadedCount++;
+          } catch (err) {
+            const errorMsg = err instanceof Error ? err.message : "Upload failed";
+            console.error(`Upload error for ${item.filename}:`, errorMsg);
             updateItemState(item.id, "error");
+            uploadErrors++;
           }
         })
       );
+    }
+
+    // Show error summary if any uploads failed
+    if (uploadErrors > 0) {
+      setUploadError(`${uploadErrors} file${uploadErrors > 1 ? 's' : ''} failed to upload. Check file size (max 10MB) and format.`);
+    }
+
+    // Only proceed to analysis if we have uploaded items
+    if (uploadedCount === 0) {
+      setIsProcessing(false);
+      return;
     }
 
     // After upload completes, auto-trigger analysis
@@ -510,6 +536,7 @@ export default function BatchUploadPage() {
         // Fire and forget - don't wait for the background job to complete
         startScanSessionAnalysis(currentSessionId).catch((err) => {
           console.error("Background analysis failed to start:", err);
+          setUploadError("Analysis failed to start. Please try again.");
         });
         
         // Start polling for results
@@ -517,6 +544,7 @@ export default function BatchUploadPage() {
       }
     } catch (e) {
       console.error("Failed to start analysis:", e);
+      setUploadError("Failed to start analysis. Please try again.");
     }
     
     // Keep isProcessing true - the polling will handle the "analyzing" state
@@ -1279,6 +1307,20 @@ export default function BatchUploadPage() {
                         <span className="font-medium">📊 {groundTruthMismatches.length} differ from filename labels</span>
                       </div>
                     )}
+                  </div>
+                )}
+                
+                {/* Error Banner */}
+                {uploadError && (
+                  <div className="mx-8 mb-3 flex items-center gap-2 text-sm text-red-700 bg-red-50 px-4 py-3 rounded-xl border border-red-200">
+                    <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                    <span className="flex-1">{uploadError}</span>
+                    <button 
+                      onClick={() => setUploadError(null)}
+                      className="text-red-500 hover:text-red-700 p-1"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
                   </div>
                 )}
               </div>
