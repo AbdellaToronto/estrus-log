@@ -780,65 +780,79 @@ export async function batchSaveLogs(
   const logsToInsert = [];
   const scanItemsToUpdate = [];
 
+  // Helper to extract subject name from filename like "FCONPL57_10_22_ESTRUS.jpg"
+  const extractSubjectFromFilename = (filename: string): string | null => {
+    // Remove timestamp prefix if present (e.g., "1732123456789-")
+    const cleanFilename = filename.replace(/^\d+-/, "");
+    // Extract first part before underscore (e.g., "FCONPL57" from "FCONPL57_10_22_ESTRUS.jpg")
+    const match = cleanFilename.match(/^([A-Za-z0-9]+)/);
+    return match ? match[1] : null;
+  };
+
+  // Helper to get or create a subject
+  const getOrCreateSubject = async (name: string): Promise<string | null> => {
+    const lowerName = name.toLowerCase();
+    let subjectId = subjectMap.get(lowerName);
+    
+    if (!subjectId) {
+      // Create the subject
+      const { data: createdSubject } = await supabase
+        .from("mice")
+        .insert({
+          user_id: userId,
+          org_id: orgId || null,
+          cohort_id: cohortId,
+          name: name,
+          status: "Active",
+        })
+        .select("id")
+        .single();
+
+      if (createdSubject) {
+        subjectId = createdSubject.id;
+        subjectMap.set(lowerName, subjectId);
+      }
+    }
+    return subjectId || null;
+  };
+
   for (const item of items) {
     let subjectId = item.subjectId;
 
-    // If no explicit ID, try to find by new name or fallback to filename matching
+    // If no explicit ID, try to find or create by name
     if (!subjectId) {
       // 1. Try explicit new name (e.g. user typed "227A" in UI)
       if (item.newSubjectName) {
-        const lowerName = item.newSubjectName.toLowerCase();
-        subjectId = subjectMap.get(lowerName); // Check if exists first
-
-        if (!subjectId) {
-          // Create it
-          const { data: createdSubject } = await supabase
-            .from("mice")
-            .insert({
-              user_id: userId,
-              org_id: orgId || null,
-              cohort_id: cohortId,
-              name: item.newSubjectName,
-              status: "Active",
-            })
-            .select("id")
-            .single();
-
-          if (createdSubject) {
-            subjectId = createdSubject.id;
-            subjectMap.set(lowerName, subjectId);
-          }
-        }
+        subjectId = await getOrCreateSubject(item.newSubjectName);
       }
-      // 2. Fallback to Filename heuristic (only if desired/legacy)
+      // 2. Try to extract from filename (e.g., "FCONPL57_10_22_ESTRUS.jpg" -> "FCONPL57")
       else {
-        const cleanFilename = item.filename.replace(/^\d+-/, "");
-        const potentialName = cleanFilename.split(/[_\s.-]/)[0];
-        if (potentialName) {
-          subjectId = subjectMap.get(potentialName.toLowerCase());
+        const extractedName = extractSubjectFromFilename(item.filename);
+        if (extractedName) {
+          subjectId = await getOrCreateSubject(extractedName);
         }
       }
     }
 
-    if (subjectId) {
-      logsToInsert.push({
-        mouse_id: subjectId,
-        stage: item.stage,
-        confidence:
-          typeof item.confidence === "number" ? item.confidence : 0.95,
-        features: item.features ?? {},
-        image_url: item.imageUrl,
-        notes: item.reasoning,
-        data: item.flexibleData ?? item.features ?? {},
-      });
+    // Always save the log - subject is optional
+    logsToInsert.push({
+      mouse_id: subjectId || null,
+      cohort_id: cohortId,
+      stage: item.stage,
+      confidence:
+        typeof item.confidence === "number" ? item.confidence : 0.95,
+      features: item.features ?? {},
+      image_url: item.imageUrl,
+      notes: item.reasoning,
+      data: item.flexibleData ?? item.features ?? {},
+    });
 
-      if (item.scanItemId) {
-        scanItemsToUpdate.push({
-          id: item.scanItemId,
-          mouse_id: subjectId,
-          status: "completed",
-        });
-      }
+    if (item.scanItemId) {
+      scanItemsToUpdate.push({
+        id: item.scanItemId,
+        mouse_id: subjectId || null,
+        status: "saved",
+      });
     }
   }
 
