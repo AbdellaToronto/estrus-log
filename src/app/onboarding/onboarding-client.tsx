@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -33,12 +34,15 @@ import {
   FlaskConical,
   Mail,
   ArrowRight,
+  Loader2,
 } from "lucide-react";
-import { CreateOrganization } from "@clerk/nextjs";
+import { useOrganizationList } from "@clerk/nextjs";
+import { useRouter } from "next/navigation";
 import {
   searchOrganizations,
   requestToJoinOrganization,
   cancelJoinRequest,
+  upsertOrganizationProfile,
   type DiscoverableOrg,
   type JoinRequest,
 } from "@/app/actions";
@@ -57,6 +61,9 @@ export function OnboardingClient({
   institutions,
   myRequests,
 }: OnboardingClientProps) {
+  const router = useRouter();
+  const { isLoaded, createOrganization, setActive } = useOrganizationList();
+  
   const [organizations, setOrganizations] =
     useState<DiscoverableOrg[]>(initialOrganizations);
   const [searchQuery, setSearchQuery] = useState("");
@@ -68,6 +75,13 @@ export function OnboardingClient({
   const [showJoinRequest, setShowJoinRequest] = useState(false);
   const [selectedOrg, setSelectedOrg] = useState<DiscoverableOrg | null>(null);
   const [joinMessage, setJoinMessage] = useState("");
+
+  // Create org form state
+  const [newOrgName, setNewOrgName] = useState("");
+  const [newOrgInstitution, setNewOrgInstitution] = useState("");
+  const [newOrgDescription, setNewOrgDescription] = useState("");
+  const [isDiscoverable, setIsDiscoverable] = useState(true);
+  const [isCreating, setIsCreating] = useState(false);
 
   // Pending requests
   const pendingRequests = myRequests.filter((r) => r.status === "pending");
@@ -114,6 +128,36 @@ export function OnboardingClient({
         console.error("Error cancelling request:", error);
       }
     });
+  };
+
+  const handleCreateOrganization = async () => {
+    if (!isLoaded || !newOrgName.trim()) return;
+
+    setIsCreating(true);
+    try {
+      // Create the organization in Clerk
+      const org = await createOrganization({ name: newOrgName.trim() });
+      
+      // Set it as the active organization
+      await setActive({ organization: org.id });
+
+      // Create the organization profile in our database
+      await upsertOrganizationProfile({
+        clerkOrgId: org.id,
+        name: newOrgName.trim(),
+        isDiscoverable,
+        institution: newOrgInstitution.trim() || undefined,
+        description: newOrgDescription.trim() || undefined,
+      });
+
+      // Redirect to dashboard
+      router.push("/dashboard");
+    } catch (error) {
+      console.error("Error creating organization:", error);
+      alert("Failed to create lab. Please try again.");
+    } finally {
+      setIsCreating(false);
+    }
   };
 
   return (
@@ -393,15 +437,82 @@ export function OnboardingClient({
           <DialogHeader>
             <DialogTitle>Create Your Lab</DialogTitle>
             <DialogDescription>
-              Set up your research lab and invite team members.
+              Set up your research lab. You can invite team members after creation.
             </DialogDescription>
           </DialogHeader>
-          <div className="py-4">
-            <CreateOrganization
-              afterCreateOrganizationUrl="/dashboard"
-              skipInvitationScreen={false}
-            />
+          <div className="py-4 space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="lab-name">Lab Name *</Label>
+              <Input
+                id="lab-name"
+                placeholder="e.g., Smith Reproductive Biology Lab"
+                value={newOrgName}
+                onChange={(e) => setNewOrgName(e.target.value)}
+                className="rounded-xl"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="institution">Institution</Label>
+              <Input
+                id="institution"
+                placeholder="e.g., UC Davis, Stanford University"
+                value={newOrgInstitution}
+                onChange={(e) => setNewOrgInstitution(e.target.value)}
+                className="rounded-xl"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="description">Description</Label>
+              <Textarea
+                id="description"
+                placeholder="What does your lab research?"
+                value={newOrgDescription}
+                onChange={(e) => setNewOrgDescription(e.target.value)}
+                rows={3}
+                className="rounded-xl"
+              />
+            </div>
+            <div className="flex items-center gap-3 p-4 bg-slate-50 rounded-xl">
+              <input
+                type="checkbox"
+                id="discoverable"
+                checked={isDiscoverable}
+                onChange={(e) => setIsDiscoverable(e.target.checked)}
+                className="w-4 h-4 rounded border-slate-300"
+              />
+              <div>
+                <Label htmlFor="discoverable" className="font-medium cursor-pointer">
+                  Make lab discoverable
+                </Label>
+                <p className="text-sm text-slate-500">
+                  Allow other researchers to find and request to join your lab
+                </p>
+              </div>
+            </div>
           </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShowCreateOrg(false)}
+              className="rounded-xl"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleCreateOrganization}
+              disabled={isCreating || !newOrgName.trim()}
+              className="rounded-xl bg-rose-500 hover:bg-rose-600"
+            >
+              {isCreating ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Creating...
+                </>
+              ) : (
+                "Create Lab"
+              )}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
