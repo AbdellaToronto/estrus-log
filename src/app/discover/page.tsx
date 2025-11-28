@@ -30,7 +30,7 @@ export default function DiscoverPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [organizations, setOrganizations] = useState<DiscoverableOrg[]>([]);
   const [isSearching, setIsSearching] = useState(false);
-  const [myRequests, setMyRequests] = useState<JoinRequest[]>([]);
+  const [myRequests, setMyRequests] = useState<(JoinRequest & { organization: DiscoverableOrg | null })[]>([]);
   const [requestingOrgId, setRequestingOrgId] = useState<string | null>(null);
 
   // Get user's current org memberships
@@ -38,9 +38,9 @@ export default function DiscoverPage() {
     userMemberships?.data?.map((m) => m.organization.id) || []
   );
 
-  // Get pending request org IDs
+  // Get pending request org IDs (using clerk_org_id from the organization)
   const pendingRequestOrgIds = new Set(
-    myRequests.filter((r) => r.status === "pending").map((r) => r.organization_id)
+    myRequests.filter((r) => r.status === "pending").map((r) => r.organization?.clerk_org_id).filter(Boolean)
   );
 
   // Load initial data
