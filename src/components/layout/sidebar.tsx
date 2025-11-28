@@ -26,21 +26,14 @@ import { getPendingRequestsForOrg } from "@/app/actions";
 const ORG_NAV_ITEMS = [
   { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { label: 'Cohorts', href: '/cohorts', icon: Users },
-  { label: 'Experiments', href: '/experiments', icon: TestTube },
-  { label: 'Library', href: '/library', icon: Library },
+  // { label: 'Experiments', href: '/experiments', icon: TestTube }, // Coming soon
+  // { label: 'Library', href: '/library', icon: Library }, // Coming soon
   { label: 'Settings', href: '/settings', icon: Settings },
-];
-
-// Secondary navigation (always visible)
-const SECONDARY_NAV_ITEMS = [
-  { label: 'Discover Labs', href: '/discover', icon: Search },
-  { label: 'Browse Research', href: '/explore', icon: Globe },
 ];
 
 // Navigation items when user has NO organization (exploring)
 const EXPLORE_NAV_ITEMS = [
   { label: 'Find a Lab', href: '/discover', icon: Search },
-  { label: 'Browse Research', href: '/explore', icon: Globe },
 ];
 
 export function Sidebar() {
@@ -211,21 +204,6 @@ export function Sidebar() {
                 pathname === '/discover' ? "text-primary-foreground" : "text-muted-foreground group-hover:text-primary"
               )} />
               <span className="font-medium">Discover Labs</span>
-            </Link>
-            <Link
-              href="/explore"
-              className={cn(
-                "flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group",
-                pathname === '/explore'
-                  ? "bg-primary text-primary-foreground shadow-lg shadow-primary/25" 
-                  : "text-muted-foreground hover:text-foreground hover:bg-white/5"
-              )}
-            >
-              <Globe className={cn(
-                "w-5 h-5 transition-colors",
-                pathname === '/explore' ? "text-primary-foreground" : "text-muted-foreground group-hover:text-primary"
-              )} />
-              <span className="font-medium">Public Research</span>
             </Link>
           </>
         )}

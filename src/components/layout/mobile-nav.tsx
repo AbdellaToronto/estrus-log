@@ -33,15 +33,14 @@ import { Badge } from "@/components/ui/badge";
 const ORG_NAV_ITEMS = [
   { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { label: 'Cohorts', href: '/cohorts', icon: Users },
-  { label: 'Experiments', href: '/experiments', icon: TestTube },
-  { label: 'Library', href: '/library', icon: Library },
+  // { label: 'Experiments', href: '/experiments', icon: TestTube }, // Coming soon
+  // { label: 'Library', href: '/library', icon: Library }, // Coming soon
   { label: 'Settings', href: '/settings', icon: Settings },
 ];
 
 // Navigation items when user has NO organization (exploring)
 const EXPLORE_NAV_ITEMS = [
   { label: 'Find a Lab', href: '/discover', icon: Search },
-  { label: 'Browse Research', href: '/explore', icon: Globe },
 ];
 
 export function MobileNav() {
@@ -247,19 +246,6 @@ export function MobileNav() {
                       >
                         <Search className="w-5 h-5" />
                         <span className="font-medium">Discover Labs</span>
-                      </Link>
-                      <Link
-                        href="/explore"
-                        onClick={() => setOpen(false)}
-                        className={cn(
-                          "flex items-center gap-3 px-3 py-3 rounded-xl transition-all duration-200",
-                          pathname === '/explore'
-                            ? "bg-primary text-primary-foreground shadow-lg shadow-primary/25" 
-                            : "text-muted-foreground hover:text-foreground hover:bg-white/10"
-                        )}
-                      >
-                        <Globe className="w-5 h-5" />
-                        <span className="font-medium">Public Research</span>
                       </Link>
                     </>
                   )}

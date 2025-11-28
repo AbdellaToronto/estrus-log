@@ -300,6 +300,7 @@ export function SubjectPageClient({
                     fill
                     sizes="(max-width: 768px) 95vw, (max-width: 1024px) 90vw, 60vw"
                     className="object-contain rounded-lg shadow-lg"
+                    unoptimized={selectedLog.image_url.startsWith("http")}
                   />
                 ) : (
                   <div className="flex h-full w-full items-center justify-center text-slate-400">
@@ -509,6 +510,7 @@ export function SubjectPageClient({
                     fill
                     sizes="(max-width: 640px) 50vw, (max-width: 768px) 33vw, (max-width: 1024px) 25vw, 15vw"
                     className="object-cover"
+                    unoptimized={log.image_url.startsWith("http")}
                   />
                 ) : (
                   <div className="absolute inset-0 flex items-center justify-center text-slate-400 text-[10px] sm:text-xs">
