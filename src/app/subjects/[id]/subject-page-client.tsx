@@ -23,7 +23,9 @@ import { forwardRef } from "react";
 
 // Workaround for framer-motion + React 19 type incompatibility
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const MotionDiv = motion.div as React.FC<HTMLMotionProps<"div"> & { children?: React.ReactNode }>;
+const MotionDiv = motion.div as React.FC<
+  HTMLMotionProps<"div"> & { children?: React.ReactNode }
+>;
 
 type ConfidenceShape = number | Record<string, number> | null;
 
@@ -354,9 +356,9 @@ export function SubjectPageClient({
                 {(() => {
                   const scores = selectedLog.data?.confidence_scores;
                   if (!scores || typeof scores !== "object") return null;
-                  
+
                   const typedScores = scores as Record<string, number>;
-                  
+
                   return (
                     <div className="space-y-2">
                       <div className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-2">
@@ -377,8 +379,7 @@ export function SubjectPageClient({
                                 width: `${score * 100}%`,
                                 backgroundColor:
                                   STAGE_COLORS[stage] || "#94a3b8",
-                                opacity:
-                                  stage === selectedLog.stage ? 1 : 0.3,
+                                opacity: stage === selectedLog.stage ? 1 : 0.3,
                               }}
                             />
                           </div>
