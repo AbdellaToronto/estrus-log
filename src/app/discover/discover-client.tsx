@@ -46,7 +46,7 @@ import {
 } from "@/app/actions";
 
 // Workaround for framer-motion + React 19
-const MotionDiv = motion.div as any;
+const MotionDiv = motion.div as typeof motion.div;
 
 interface DiscoverClientProps {
   initialOrganizations: DiscoverableOrg[];

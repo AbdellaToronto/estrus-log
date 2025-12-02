@@ -11,6 +11,7 @@ import { CohortList } from "@/components/dashboard/cohort-list";
 import { BatchUploadCard } from "@/components/dashboard/batch-upload-card";
 import { OnboardingFlow } from "@/components/onboarding";
 import type { DashboardStats } from "@/app/actions";
+import type { Cohort, SubjectDisplay } from "@/lib/types";
 import { useUser } from "@clerk/nextjs";
 
 export function DashboardClient({ 
@@ -18,9 +19,9 @@ export function DashboardClient({
   initialSubjects,
   stats 
 }: { 
-  initialCohorts: any[], 
-  initialSubjects: any[],
-  stats: DashboardStats
+  initialCohorts: Cohort[];
+  initialSubjects: SubjectDisplay[];
+  stats: DashboardStats;
 }) {
   const [search, setSearch] = useState('');
   const [showOnboarding, setShowOnboarding] = useState(false);

@@ -4,10 +4,9 @@ import { useState, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutGrid,
+  ArrowUpDown,
   Search,
   Filter,
-  Calendar as CalendarIcon,
-  ArrowUpDown,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import {
@@ -22,21 +21,12 @@ import { Badge } from "@/components/ui/badge";
 import Image from "next/image";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
+import type { LogDisplay, SubjectDisplay } from "@/lib/types";
 
-type Log = {
-  id: string;
-  stage: string;
-  confidence: number | { score: number };
-  created_at: string;
-  image_url: string | null;
+interface Log extends LogDisplay {
   subjectName?: string;
   mice?: { name: string } | null;
-};
-
-type Subject = {
-  id: string;
-  name: string;
-};
+}
 
 const STAGES = ["Proestrus", "Estrus", "Metestrus", "Diestrus", "Uncertain"];
 
@@ -44,8 +34,8 @@ export function CohortLibrary({
   logs,
   subjects,
 }: {
-  logs: any[];
-  subjects: any[];
+  logs: Log[];
+  subjects: SubjectDisplay[];
 }) {
   const [search, setSearch] = useState("");
   const [stageFilter, setStageFilter] = useState("all");
@@ -54,9 +44,13 @@ export function CohortLibrary({
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
 
   // Helper to extract numeric confidence
-  const getConfidence = (log: any) => {
+  const getConfidence = (log: Log) => {
     const c = log.confidence;
-    return typeof c === "number" ? c : c?.score || 0;
+    if (typeof c === "number") return c;
+    if (c && typeof c === "object" && "score" in c) {
+      return (c as { score: number }).score;
+    }
+    return 0;
   };
 
   const filteredLogs = useMemo(() => {

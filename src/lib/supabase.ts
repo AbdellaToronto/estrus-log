@@ -61,7 +61,10 @@ export function createAdminClient(): SupabaseClient {
 export function createServerClient(config: SupabaseConfig, accessToken?: string) {
   const key = accessToken ? config.anonKey : (config.serviceRoleKey ?? config.anonKey)
   
-  const options: any = {
+  const options: {
+    auth: { persistSession: boolean; autoRefreshToken: boolean; detectSessionInUrl: boolean };
+    global?: { headers: { Authorization: string } };
+  } = {
     auth: {
       persistSession: false,
       autoRefreshToken: false,

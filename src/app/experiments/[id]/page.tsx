@@ -19,15 +19,12 @@ export default async function ExperimentDetailPage({ params }: { params: Promise
     );
   }
 
-  // We need to cast the experiment type because the join query structure 
-  // might not be perfectly inferred by the client component type definition
-  // without a shared type library.
   return (
     <ExperimentDetailClient 
-      experiment={experiment as any} 
-      allCohorts={allCohorts as any[]} 
+      experiment={experiment} 
+      allCohorts={allCohorts} 
       insights={insights} 
-      visualizationData={visualizationData as any}
+      visualizationData={visualizationData}
     />
   );
 }

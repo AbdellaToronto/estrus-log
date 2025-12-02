@@ -23,16 +23,17 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useState } from "react";
 
-type Subject = {
+interface Subject {
   id: string;
   name: string;
   created_at: string;
-  dob: string | null;
-  metadata: Record<string, any> | null;
-  notes: string | null;
-};
+  dob?: string | null;
+  metadata?: Record<string, unknown> | null;
+  notes?: string | null;
+  status?: string | null;
+}
 
-export function CohortSubjectsList({ subjects }: { subjects: any[] }) {
+export function CohortSubjectsList({ subjects }: { subjects: Subject[] }) {
   const [search, setSearch] = useState("");
 
   const filteredSubjects = subjects.filter((subject) =>

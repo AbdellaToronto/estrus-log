@@ -4,25 +4,50 @@ import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { Plus, UploadCloud, LayoutGrid, List as ListIcon, Search, BarChart2, FlaskConical, History } from "lucide-react";
+import { UploadCloud, LayoutGrid, List as ListIcon, BarChart2, FlaskConical, History } from "lucide-react";
 import Link from 'next/link';
 import { Badge } from "@/components/ui/badge";
 import { CohortAnalysis } from "@/components/cohort-analysis";
 import { CohortLibrary } from "@/components/cohort-library";
 import { CohortEvaluation } from "@/components/cohort-evaluation";
 import { CohortSubjects } from "@/components/cohort-subjects";
+import type { Cohort } from "@/lib/types";
+import type { CohortInsights } from "@/app/actions";
+
+// Simplified log/subject types for display
+interface LogItem {
+  id: string;
+  mouse_id: string | null;
+  stage: string;
+  created_at: string;
+  image_url?: string | null;
+  confidence?: unknown;
+  features?: unknown;
+  notes?: string | null;
+  mice?: { name: string } | null;
+}
+
+interface SubjectItem {
+  id: string;
+  name: string;
+  status?: string | null;
+  created_at: string;
+  metadata?: Record<string, unknown> | null;
+}
+
+interface CohortClientProps {
+  cohort: Cohort;
+  initialLogs: LogItem[];
+  initialInsights: CohortInsights;
+  initialSubjects: SubjectItem[];
+}
 
 export function CohortClient({ 
   cohort, 
   initialLogs, 
   initialInsights,
   initialSubjects 
-}: { 
-  cohort: any, 
-  initialLogs: any[], 
-  initialInsights: any,
-  initialSubjects: any[]
-}) {
+}: CohortClientProps) {
   const [activeTab, setActiveTab] = useState("analysis");
 
   return (
@@ -123,20 +148,23 @@ export function CohortClient({
             <TabsContent value="library" className="mt-0 focus-visible:ring-0">
               <div className="glass-panel rounded-3xl p-6 min-h-[500px]">
                 <CohortLibrary 
-                  logs={initialLogs} 
-                  subjects={initialSubjects}
+                  logs={initialLogs as Parameters<typeof CohortLibrary>[0]['logs']} 
+                  subjects={initialSubjects as Parameters<typeof CohortLibrary>[0]['subjects']}
                 />
               </div>
             </TabsContent>
 
             <TabsContent value="subjects" className="mt-0 focus-visible:ring-0">
               <div className="glass-panel rounded-3xl p-6 min-h-[300px]">
-                <CohortSubjects subjects={initialSubjects} logs={initialLogs} />
+                <CohortSubjects 
+                  subjects={initialSubjects as Parameters<typeof CohortSubjects>[0]['subjects']} 
+                  logs={initialLogs as Parameters<typeof CohortSubjects>[0]['logs']} 
+                />
               </div>
             </TabsContent>
             
             <TabsContent value="evaluation" className="mt-0 focus-visible:ring-0">
-              <CohortEvaluation logs={initialLogs} />
+              <CohortEvaluation logs={initialLogs as Parameters<typeof CohortEvaluation>[0]['logs']} />
             </TabsContent>
           </motion.div>
         </AnimatePresence>

@@ -8,8 +8,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { UploadCloud, ArrowRight, Sparkles } from "lucide-react";
 import { motion } from "framer-motion";
 
+interface CohortOption {
+  id: string;
+  name: string;
+}
+
 interface BatchUploadCardProps {
-  cohorts: any[];
+  cohorts: CohortOption[];
   className?: string;
 }
 

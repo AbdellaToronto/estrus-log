@@ -72,7 +72,7 @@ interface Neighbor {
   label: string;
   similarity: number;
   image_path: string | null;
-  metadata: any;
+  metadata: Record<string, unknown>;
 }
 
 export const analyzeScanItemTask = task({

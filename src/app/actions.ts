@@ -6,7 +6,7 @@ import { getGcs } from "@/lib/gcs";
 import { revalidatePath } from "next/cache";
 import { tasks } from "@trigger.dev/sdk/v3";
 import type { analyzeScanSessionTask } from "@/trigger/scan-tasks";
-import type { Database, Json } from "@/lib/database-types";
+import type { Database } from "@/lib/database-types";
 
 // --- Types/Defaults ---
 const DEFAULT_ESTRUS_CONFIG = {
@@ -1515,7 +1515,8 @@ export async function getExperimentInsights(
     const dayKey = new Date(log.created_at).toISOString().split("T")[0];
     timelineMap.set(dayKey, (timelineMap.get(dayKey) || 0) + 1);
 
-    const cohortId = (log.mice as any)?.cohort_id;
+    const mice = log.mice as { cohort_id?: string } | null;
+    const cohortId = mice?.cohort_id;
     if (cohortId) {
       cohortLogCounts.set(cohortId, (cohortLogCounts.get(cohortId) || 0) + 1);
     }
@@ -1601,8 +1602,12 @@ export async function getExperimentExportData(experimentId: string) {
   // Bucket is public - just strip query params from old signed URLs
   const rows = data.map((log) => {
     const imageUrl = log.image_url?.split("?")[0] || "";
-    const mouse = log.mice as any;
-    const cohort = mouse?.cohorts as any;
+    const mouse = log.mice as {
+      name?: string;
+      metadata?: Record<string, unknown>;
+      cohorts?: { name?: string };
+    } | null;
+    const cohort = mouse?.cohorts;
 
     return {
       LogID: log.id,
@@ -1667,10 +1672,23 @@ export async function getExperimentVisualizationData(experimentId: string) {
   // We want to return a list of cohorts, each with their mice, and a flat list of logs (or nested)
   // Returning flat logs is usually easier for charting libraries, but nested mice is good for layout.
 
-  const cohorts = experimentCohorts.map((ec) => ({
-    ...ec.cohorts,
-    mice: mice.filter((m) => m.cohort_id === ec.cohort_id),
-  }));
+  const cohorts = experimentCohorts.map((ec) => {
+    // Handle both array and object responses from Supabase joins
+    const rawCohorts = ec.cohorts as { id: string; name: string; color: string | null } | { id: string; name: string; color: string | null }[] | null;
+    const cohortData = Array.isArray(rawCohorts) ? rawCohorts[0] : rawCohorts;
+    return {
+      id: cohortData?.id ?? ec.cohort_id,
+      name: cohortData?.name ?? "Unknown",
+      color: cohortData?.color ?? "#3b82f6",
+      mice:
+        mice
+          ?.filter((m) => m.cohort_id === ec.cohort_id)
+          .map((m) => ({
+            id: m.id,
+            name: m.name,
+          })) ?? [],
+    };
+  });
 
   return {
     cohorts,
@@ -1730,7 +1748,17 @@ export async function searchOrganizations(
 
   // We need to get org names from Clerk - for now return what we have
   // In production, you'd fetch org names from Clerk's API
-  return (data || []).map((org: any) => ({
+  type OrgResult = {
+    id: string;
+    clerk_org_id: string;
+    department: string | null;
+    institution: string | null;
+    description: string | null;
+    logo_url: string | null;
+    member_count: number | null;
+    created_at: string;
+  };
+  return ((data as OrgResult[] | null) || []).map((org) => ({
     id: org.id,
     clerk_org_id: org.clerk_org_id,
     name: org.department || "Unnamed Lab", // Fallback - ideally fetch from Clerk
@@ -1881,7 +1909,7 @@ export async function getMyJoinRequests(): Promise<
     return [];
   }
 
-  return (data || []).map((req: any) => ({
+  return (data || []).map((req) => ({
     id: req.id,
     user_id: req.user_id,
     user_email: req.user_email,
@@ -1890,7 +1918,13 @@ export async function getMyJoinRequests(): Promise<
     role: req.role,
     status: req.status,
     created_at: req.created_at,
-    organization: req.organization_profiles
+    organization: (req.organization_profiles as {
+      id: string;
+      clerk_org_id: string;
+      department: string | null;
+      institution: string | null;
+      logo_url: string | null;
+    } | null)
       ? {
           id: req.organization_profiles.id,
           clerk_org_id: req.organization_profiles.clerk_org_id,
@@ -1949,7 +1983,16 @@ export async function getPendingRequestsForOrg(
     return [];
   }
 
-  return (data || []).map((req: any) => ({
+  type ReqResult = {
+    id: string;
+    user_id: string;
+    user_email: string;
+    user_name: string | null;
+    message: string | null;
+    role: string;
+    created_at: string;
+  };
+  return ((data as ReqResult[] | null) || []).map((req) => ({
     id: req.id,
     user_id: req.user_id,
     user_email: req.user_email,
@@ -2078,7 +2121,7 @@ export async function updateOrganizationProfile(
 
   const supabase = createAdminClient();
 
-  const updateData: Record<string, any> = {
+  const updateData: Record<string, string | boolean | number | null> = {
     updated_at: new Date().toISOString(),
   };
   if (updates.isDiscoverable !== undefined)

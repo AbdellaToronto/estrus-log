@@ -7,9 +7,7 @@ import {
   Check,
   X,
   AlertTriangle,
-  Filter,
   ChevronRight,
-  ChevronDown,
   Search,
   CheckCircle2,
 } from "lucide-react";
@@ -32,6 +30,11 @@ import {
 } from "@/components/ui/select";
 import { Progress } from "@/components/ui/progress";
 import Image from "next/image";
+import type { LogDisplay } from "@/lib/types";
+
+interface EvaluationLog extends LogDisplay {
+  data?: { confidence_scores?: Record<string, number> };
+}
 
 // Helper to extract "ground truth" from filename
 // Expected format: [SubjectID]_[Stage]_[Date].jpg or similar
@@ -43,19 +46,39 @@ const STAGES_BY_LENGTH = ["Metestrus", "Proestrus", "Diestrus", "Estrus"];
 function inferGroundTruth(filename: string): string | null {
   if (!filename) return null;
   const lower = filename.toLowerCase();
-  
+
   // Check full stage names (longer first to avoid substring matches)
   for (const stage of STAGES_BY_LENGTH) {
     if (lower.includes(stage.toLowerCase())) {
       return stage;
     }
   }
-  
+
   // Common abbreviations (also check longer first)
-  if (lower.includes("_met_") || lower.includes("-met-") || lower.includes("_met.")) return "Metestrus";
-  if (lower.includes("_pro_") || lower.includes("-pro-") || lower.includes("_pro.")) return "Proestrus";
-  if (lower.includes("_die_") || lower.includes("-die-") || lower.includes("_die.")) return "Diestrus";
-  if (lower.includes("_est_") || lower.includes("-est-") || lower.includes("_est.")) return "Estrus";
+  if (
+    lower.includes("_met_") ||
+    lower.includes("-met-") ||
+    lower.includes("_met.")
+  )
+    return "Metestrus";
+  if (
+    lower.includes("_pro_") ||
+    lower.includes("-pro-") ||
+    lower.includes("_pro.")
+  )
+    return "Proestrus";
+  if (
+    lower.includes("_die_") ||
+    lower.includes("-die-") ||
+    lower.includes("_die.")
+  )
+    return "Diestrus";
+  if (
+    lower.includes("_est_") ||
+    lower.includes("-est-") ||
+    lower.includes("_est.")
+  )
+    return "Estrus";
 
   return null;
 }
@@ -63,9 +86,11 @@ function inferGroundTruth(filename: string): string | null {
 // For display purposes, use standard order
 const STAGES = ["Proestrus", "Estrus", "Metestrus", "Diestrus"];
 
-export function CohortEvaluation({ logs }: { logs: any[] }) {
+export function CohortEvaluation({ logs }: { logs: EvaluationLog[] }) {
   const [searchTerm, setSearchTerm] = useState("");
-  const [filterMatch, setFilterMatch] = useState<"all" | "correct" | "incorrect">("all");
+  const [filterMatch, setFilterMatch] = useState<
+    "all" | "correct" | "incorrect"
+  >("all");
 
   // Process logs to compare Prediction vs Ground Truth
   const evaluatedLogs = useMemo(() => {
@@ -73,7 +98,7 @@ export function CohortEvaluation({ logs }: { logs: any[] }) {
       .map((log) => {
         // Try to get filename from image_url
         // URL format: .../path/timestamp-filename.jpg
-        const urlParts = log.image_url.split("/");
+        const urlParts = (log.image_url || "").split("/");
         const rawFilename = urlParts[urlParts.length - 1] || "";
         // Remove timestamp prefix if present (usually 13 digits + dash)
         const filename = rawFilename.replace(/^\d+-/, "");
@@ -83,18 +108,24 @@ export function CohortEvaluation({ logs }: { logs: any[] }) {
         const isMatch =
           groundTruth && predicted.toLowerCase() === groundTruth.toLowerCase();
 
+        // Extract confidence value from various formats
+        const rawConf = log.confidence;
+        let confidenceValue = 0;
+        if (typeof rawConf === "number") {
+          confidenceValue = rawConf;
+        } else if (rawConf && typeof rawConf === "object" && "score" in rawConf) {
+          confidenceValue = (rawConf as { score: number }).score;
+        }
+
         return {
           ...log,
           filename,
           groundTruth,
           predicted,
           isMatch,
-          confidence:
-            typeof log.confidence === "number"
-              ? log.confidence
-              : log.confidence?.score || 0,
+          confidence: confidenceValue,
           // Access granular scores if available in flexible data
-          scores: log.data?.confidence_scores || {},
+          scores: (log.data as { confidence_scores?: Record<string, number> })?.confidence_scores || {},
         };
       })
       .filter((l) => l.groundTruth); // Only show items where we could infer truth
@@ -266,15 +297,20 @@ export function CohortEvaluation({ logs }: { logs: any[] }) {
           </TableHeader>
           <TableBody>
             {filteredLogs.map((log) => (
-              <TableRow key={log.id} className="hover:bg-slate-50/50 border-slate-100">
+              <TableRow
+                key={log.id}
+                className="hover:bg-slate-50/50 border-slate-100"
+              >
                 <TableCell>
                   <div className="relative w-12 h-12 rounded-lg overflow-hidden border border-slate-200 bg-slate-100">
-                    <Image
-                      src={log.image_url}
-                      alt=""
-                      fill
-                      className="object-cover"
-                    />
+                    {log.image_url && (
+                      <Image
+                        src={log.image_url}
+                        alt=""
+                        fill
+                        className="object-cover"
+                      />
+                    )}
                   </div>
                 </TableCell>
                 <TableCell className="font-medium text-slate-700 text-xs font-mono">
@@ -286,29 +322,40 @@ export function CohortEvaluation({ logs }: { logs: any[] }) {
                   </Badge>
                 </TableCell>
                 <TableCell>
-                   <div className="flex flex-col gap-1">
+                  <div className="flex flex-col gap-1">
                     <Badge
                       className={cn(
                         "w-fit border-0 shadow-sm",
-                        log.predicted === "Estrus" && "bg-rose-100 text-rose-700 hover:bg-rose-200",
-                        log.predicted === "Proestrus" && "bg-pink-100 text-pink-700 hover:bg-pink-200",
-                        log.predicted === "Metestrus" && "bg-sky-100 text-sky-700 hover:bg-sky-200",
-                        log.predicted === "Diestrus" && "bg-emerald-100 text-emerald-700 hover:bg-emerald-200"
+                        log.predicted === "Estrus" &&
+                          "bg-rose-100 text-rose-700 hover:bg-rose-200",
+                        log.predicted === "Proestrus" &&
+                          "bg-pink-100 text-pink-700 hover:bg-pink-200",
+                        log.predicted === "Metestrus" &&
+                          "bg-sky-100 text-sky-700 hover:bg-sky-200",
+                        log.predicted === "Diestrus" &&
+                          "bg-emerald-100 text-emerald-700 hover:bg-emerald-200"
                       )}
                     >
                       {log.predicted}
                     </Badge>
                     {/* Show other high scores if ambiguous */}
                     {log.scores && Object.keys(log.scores).length > 0 && (
-                       <div className="text-[10px] text-slate-400">
-                          {Object.entries(log.scores)
-                             .filter(([s, v]) => s !== log.predicted && (v as number) > 0.1)
-                             .map(([s, v]) => `${s.slice(0,3)}:${Math.round((v as number)*100)}%`)
-                             .join(", ")
-                          }
-                       </div>
+                      <div className="text-[10px] text-slate-400">
+                        {Object.entries(log.scores)
+                          .filter(
+                            ([s, v]) =>
+                              s !== log.predicted && (v as number) > 0.1
+                          )
+                          .map(
+                            ([s, v]) =>
+                              `${s.slice(0, 3)}:${Math.round(
+                                (v as number) * 100
+                              )}%`
+                          )
+                          .join(", ")}
+                      </div>
                     )}
-                   </div>
+                  </div>
                 </TableCell>
                 <TableCell>
                   <div className="flex items-center gap-2">
@@ -316,7 +363,9 @@ export function CohortEvaluation({ logs }: { logs: any[] }) {
                       <div
                         className={cn(
                           "h-full rounded-full",
-                          log.confidence > 0.8 ? "bg-emerald-400" : "bg-amber-400"
+                          log.confidence > 0.8
+                            ? "bg-emerald-400"
+                            : "bg-amber-400"
                         )}
                         style={{ width: `${log.confidence * 100}%` }}
                       />
@@ -347,4 +396,3 @@ export function CohortEvaluation({ logs }: { logs: any[] }) {
     </div>
   );
 }
-
