@@ -1,7 +1,7 @@
 import { Webhook } from 'svix'
 import { headers } from 'next/headers'
 import { WebhookEvent } from '@clerk/nextjs/server'
-import { createServerClient, configFromEnv } from '@/lib/supabase'
+import { createAdminClient } from '@/lib/supabase'
 
 export async function POST(req: Request) {
   const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET
@@ -38,11 +38,8 @@ export async function POST(req: Request) {
 
   const eventType = evt.type
   
-  // Use service role key to bypass RLS for admin actions
-  const supabase = createServerClient({
-    ...configFromEnv(),
-    serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY
-  })
+  // Use admin client (service role) to bypass RLS for webhook operations
+  const supabase = createAdminClient()
 
   console.log(`[Webhook] Processing event: ${eventType}`)
 

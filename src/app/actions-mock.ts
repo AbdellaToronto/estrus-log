@@ -1,7 +1,7 @@
 "use server";
 
 import { auth, currentUser } from "@clerk/nextjs/server";
-import { createServerClient, configFromEnv } from "@/lib/supabase";
+import { createAuthClient } from "@/lib/supabase";
 import { revalidatePath } from "next/cache";
 
 export async function generateMockExperiment() {
@@ -9,7 +9,9 @@ export async function generateMockExperiment() {
   if (!userId) throw new Error("Unauthorized");
 
   const token = await getToken();
-  const supabase = createServerClient(configFromEnv(), token || undefined);
+  if (!token) throw new Error("No authentication token");
+  
+  const supabase = createAuthClient(token);
 
   // 1. Create Experiment
   const { data: experiment, error: expError } = await supabase

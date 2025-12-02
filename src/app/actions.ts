@@ -1,7 +1,7 @@
 "use server";
 
 import { auth, currentUser } from "@clerk/nextjs/server";
-import { createServerClient, configFromEnv } from "@/lib/supabase";
+import { createAuthClient, createAdminClient } from "@/lib/supabase";
 import { getGcs } from "@/lib/gcs";
 import { revalidatePath } from "next/cache";
 import { tasks } from "@trigger.dev/sdk/v3";
@@ -67,7 +67,9 @@ export async function getCohorts() {
   if (!userId) throw new Error("Unauthorized");
 
   const token = await getToken();
-  const supabase = createServerClient(configFromEnv(), token || undefined);
+  if (!token) throw new Error("No authentication token");
+  
+  const supabase = createAuthClient(token);
 
   const { data, error } = await supabase
     .from("cohorts")
@@ -83,7 +85,9 @@ export async function createCohort(formData: FormData) {
   if (!userId) throw new Error("Unauthorized");
 
   const token = await getToken();
-  const supabase = createServerClient(configFromEnv(), token || undefined);
+  if (!token) throw new Error("No authentication token");
+  
+  const supabase = createAuthClient(token);
 
   // -- SAFETY CHECK: Ensure user exists in Supabase before creating foreign key ref --
   const user = await currentUser();
@@ -144,7 +148,9 @@ export async function getCohort(id: string) {
   }
 
   const token = await getToken();
-  const supabase = createServerClient(configFromEnv(), token || undefined);
+  if (!token) throw new Error("No authentication token");
+  
+  const supabase = createAuthClient(token);
 
   const { data, error } = await supabase
     .from("cohorts")
@@ -163,7 +169,9 @@ export async function getSubjects() {
   if (!userId) throw new Error("Unauthorized");
 
   const token = await getToken();
-  const supabase = createServerClient(configFromEnv(), token || undefined);
+  if (!token) throw new Error("No authentication token");
+  
+  const supabase = createAuthClient(token);
 
   const { data, error } = await supabase
     .from("mice")
@@ -179,7 +187,9 @@ export async function getCohortSubjects(cohortId: string) {
   if (!userId) throw new Error("Unauthorized");
 
   const token = await getToken();
-  const supabase = createServerClient(configFromEnv(), token || undefined);
+  if (!token) throw new Error("No authentication token");
+  
+  const supabase = createAuthClient(token);
 
   const { data, error } = await supabase
     .from("mice")
@@ -200,7 +210,9 @@ export async function getSubject(id: string) {
   }
 
   const token = await getToken();
-  const supabase = createServerClient(configFromEnv(), token || undefined);
+  if (!token) throw new Error("No authentication token");
+  
+  const supabase = createAuthClient(token);
 
   const { data, error } = await supabase
     .from("mice")
@@ -217,7 +229,9 @@ export async function createSubject(formData: FormData) {
   if (!userId) throw new Error("Unauthorized");
 
   const token = await getToken();
-  const supabase = createServerClient(configFromEnv(), token || undefined);
+  if (!token) throw new Error("No authentication token");
+  
+  const supabase = createAuthClient(token);
 
   const name = formData.get("name") as string;
   const cohortId = formData.get("cohortId") as string;
@@ -263,7 +277,9 @@ export async function getSubjectLogs(subjectId: string) {
   if (!userId) throw new Error("Unauthorized");
 
   const token = await getToken();
-  const supabase = createServerClient(configFromEnv(), token || undefined);
+  if (!token) throw new Error("No authentication token");
+  
+  const supabase = createAuthClient(token);
 
   const { data, error } = await supabase
     .from("estrus_logs")
@@ -297,7 +313,9 @@ export async function createLog(data: {
   if (!userId) throw new Error("Unauthorized");
 
   const token = await getToken();
-  const supabase = createServerClient(configFromEnv(), token || undefined);
+  if (!token) throw new Error("No authentication token");
+  
+  const supabase = createAuthClient(token);
 
   const { error } = await supabase.from("estrus_logs").insert({
     mouse_id: data.subjectId,
@@ -320,7 +338,9 @@ export async function getScanSession(cohortId: string) {
   if (!userId) throw new Error("Unauthorized");
 
   const token = await getToken();
-  const supabase = createServerClient(configFromEnv(), token || undefined);
+  if (!token) throw new Error("No authentication token");
+  
+  const supabase = createAuthClient(token);
 
   // Find the most recent 'pending' session for this user/cohort
   const { data, error } = await supabase
@@ -342,7 +362,9 @@ export async function getScanItems(sessionId: string) {
   if (!userId) throw new Error("Unauthorized");
 
   const token = await getToken();
-  const supabase = createServerClient(configFromEnv(), token || undefined);
+  if (!token) throw new Error("No authentication token");
+  
+  const supabase = createAuthClient(token);
 
   const { data, error } = await supabase
     .from("scan_items")
@@ -390,7 +412,9 @@ export async function startScanSessionAnalysis(sessionId: string) {
   if (!userId) throw new Error("Unauthorized");
 
   const token = await getToken();
-  const supabase = createServerClient(configFromEnv(), token || undefined);
+  if (!token) throw new Error("No authentication token");
+  
+  const supabase = createAuthClient(token);
 
   const { data: session, error } = await supabase
     .from("scan_sessions")
@@ -413,7 +437,9 @@ export async function createScanSession(cohortId: string, name?: string) {
   if (!userId) throw new Error("Unauthorized");
 
   const token = await getToken();
-  const supabase = createServerClient(configFromEnv(), token || undefined);
+  if (!token) throw new Error("No authentication token");
+  
+  const supabase = createAuthClient(token);
 
   const { data, error } = await supabase
     .from("scan_sessions")
@@ -434,7 +460,9 @@ export async function createScanItem(sessionId: string, imageUrl: string) {
   const { userId, getToken } = await auth();
   if (!userId) throw new Error("Unauthorized");
   const token = await getToken();
-  const supabase = createServerClient(configFromEnv(), token || undefined);
+  if (!token) throw new Error("No authentication token");
+  
+  const supabase = createAuthClient(token);
 
   const { data, error } = await supabase
     .from("scan_items")
@@ -457,7 +485,9 @@ export async function createScanItemsBulk(
   const { userId, getToken } = await auth();
   if (!userId) throw new Error("Unauthorized");
   const token = await getToken();
-  const supabase = createServerClient(configFromEnv(), token || undefined);
+  if (!token) throw new Error("No authentication token");
+  
+  const supabase = createAuthClient(token);
 
   const rows = items.map((item) => ({
     session_id: sessionId,
@@ -486,7 +516,9 @@ export async function updateScanItem(
   const { userId, getToken } = await auth();
   if (!userId) throw new Error("Unauthorized");
   const token = await getToken();
-  const supabase = createServerClient(configFromEnv(), token || undefined);
+  if (!token) throw new Error("No authentication token");
+  
+  const supabase = createAuthClient(token);
 
   const payload: {
     status: string;
@@ -624,7 +656,9 @@ export async function batchSaveLogs(
   if (!userId) throw new Error("Unauthorized");
 
   const token = await getToken();
-  const supabase = createServerClient(configFromEnv(), token || undefined);
+  if (!token) throw new Error("No authentication token");
+  
+  const supabase = createAuthClient(token);
 
   // Get the cohort's org_id to ensure new subjects inherit it
   const { data: cohort } = await supabase
@@ -745,7 +779,9 @@ export async function getCohortLogs(cohortId: string) {
   if (!userId) throw new Error("Unauthorized");
 
   const token = await getToken();
-  const supabase = createServerClient(configFromEnv(), token || undefined);
+  if (!token) throw new Error("No authentication token");
+  
+  const supabase = createAuthClient(token);
 
   const { data, error } = await supabase
     .from("estrus_logs")
@@ -770,7 +806,9 @@ export async function getCohortInsights(
   if (!userId) throw new Error("Unauthorized");
 
   const token = await getToken();
-  const supabase = createServerClient(configFromEnv(), token || undefined);
+  if (!token) throw new Error("No authentication token");
+  
+  const supabase = createAuthClient(token);
 
   const { data: logs, error } = await supabase
     .from("estrus_logs")
@@ -900,7 +938,9 @@ export async function getDashboardStats(): Promise<DashboardStats> {
   if (!userId) throw new Error("Unauthorized");
 
   const token = await getToken();
-  const supabase = createServerClient(configFromEnv(), token || undefined);
+  if (!token) throw new Error("No authentication token");
+  
+  const supabase = createAuthClient(token);
 
   // 1. Total Subjects
   const { count: totalSubjects, error: subjectsError } = await supabase
@@ -987,7 +1027,9 @@ export async function getExperiments() {
   if (!userId) throw new Error("Unauthorized");
 
   const token = await getToken();
-  const supabase = createServerClient(configFromEnv(), token || undefined);
+  if (!token) throw new Error("No authentication token");
+  
+  const supabase = createAuthClient(token);
 
   const { data, error } = await supabase
     .from("experiments")
@@ -1003,7 +1045,9 @@ export async function createExperiment(formData: FormData) {
   if (!userId) throw new Error("Unauthorized");
 
   const token = await getToken();
-  const supabase = createServerClient(configFromEnv(), token || undefined);
+  if (!token) throw new Error("No authentication token");
+  
+  const supabase = createAuthClient(token);
 
   const name = formData.get("name") as string;
   const description = formData.get("description") as string;
@@ -1035,7 +1079,9 @@ export async function getExperiment(id: string) {
   }
 
   const token = await getToken();
-  const supabase = createServerClient(configFromEnv(), token || undefined);
+  if (!token) throw new Error("No authentication token");
+  
+  const supabase = createAuthClient(token);
 
   const { data, error } = await supabase
     .from("experiments")
@@ -1060,7 +1106,9 @@ export async function deleteExperiment(id: string) {
   if (!userId) throw new Error("Unauthorized");
 
   const token = await getToken();
-  const supabase = createServerClient(configFromEnv(), token || undefined);
+  if (!token) throw new Error("No authentication token");
+  
+  const supabase = createAuthClient(token);
 
   const { error } = await supabase.from("experiments").delete().eq("id", id);
 
@@ -1076,7 +1124,9 @@ export async function addCohortToExperiment(
   if (!userId) throw new Error("Unauthorized");
 
   const token = await getToken();
-  const supabase = createServerClient(configFromEnv(), token || undefined);
+  if (!token) throw new Error("No authentication token");
+  
+  const supabase = createAuthClient(token);
 
   const { error } = await supabase.from("experiment_cohorts").insert({
     experiment_id: experimentId,
@@ -1095,7 +1145,9 @@ export async function removeCohortFromExperiment(
   if (!userId) throw new Error("Unauthorized");
 
   const token = await getToken();
-  const supabase = createServerClient(configFromEnv(), token || undefined);
+  if (!token) throw new Error("No authentication token");
+  
+  const supabase = createAuthClient(token);
 
   const { error } = await supabase
     .from("experiment_cohorts")
@@ -1128,7 +1180,9 @@ export async function getExperimentInsights(
   const { userId, getToken } = await auth();
   if (!userId) throw new Error("Unauthorized");
   const token = await getToken();
-  const supabase = createServerClient(configFromEnv(), token || undefined);
+  if (!token) throw new Error("No authentication token");
+  
+  const supabase = createAuthClient(token);
 
   // 1. Get Cohorts in Experiment
   const { data: experimentCohorts, error: cohortsError } = await supabase
@@ -1228,7 +1282,9 @@ export async function getExperimentExportData(experimentId: string) {
   const { userId, getToken } = await auth();
   if (!userId) throw new Error("Unauthorized");
   const token = await getToken();
-  const supabase = createServerClient(configFromEnv(), token || undefined);
+  if (!token) throw new Error("No authentication token");
+  
+  const supabase = createAuthClient(token);
 
   // 1. Get Cohorts
   const { data: experimentCohorts } = await supabase
@@ -1287,7 +1343,9 @@ export async function getExperimentVisualizationData(experimentId: string) {
   const { userId, getToken } = await auth();
   if (!userId) throw new Error("Unauthorized");
   const token = await getToken();
-  const supabase = createServerClient(configFromEnv(), token || undefined);
+  if (!token) throw new Error("No authentication token");
+  
+  const supabase = createAuthClient(token);
 
   // 1. Get Cohorts
   const { data: experimentCohorts, error: cohortsError } = await supabase
@@ -1374,7 +1432,7 @@ export async function searchOrganizations(
   query?: string,
   institution?: string
 ): Promise<DiscoverableOrg[]> {
-  const supabase = createServerClient(configFromEnv());
+  const supabase = createAdminClient();
 
   const { data, error } = await supabase.rpc("search_organizations", {
     search_query: query || null,
@@ -1406,7 +1464,7 @@ export async function searchOrganizations(
  * Get all unique institutions for filtering
  */
 export async function getInstitutions(): Promise<string[]> {
-  const supabase = createServerClient(configFromEnv());
+  const supabase = createAdminClient();
 
   const { data, error } = await supabase
     .from("organization_profiles")
@@ -1438,7 +1496,7 @@ export async function upsertOrganizationProfile(data: {
   const { userId } = await auth();
   if (!userId) throw new Error("Unauthorized");
 
-  const supabase = createServerClient(configFromEnv());
+  const supabase = createAdminClient();
 
   const { error } = await supabase
     .from("organization_profiles")
@@ -1470,7 +1528,7 @@ export async function requestToJoinOrganization(
   
   if (!userId || !user) throw new Error("Unauthorized");
 
-  const supabase = createServerClient(configFromEnv());
+  const supabase = createAdminClient();
 
   // Check if user already has a pending request
   const { data: existing } = await supabase
@@ -1508,7 +1566,7 @@ export async function getMyJoinRequests(): Promise<(JoinRequest & { organization
   const { userId } = await auth();
   if (!userId) return [];
 
-  const supabase = createServerClient(configFromEnv());
+  const supabase = createAdminClient();
 
   const { data, error } = await supabase
     .from("join_requests")
@@ -1563,7 +1621,7 @@ export async function cancelJoinRequest(requestId: string) {
   const { userId } = await auth();
   if (!userId) throw new Error("Unauthorized");
 
-  const supabase = createServerClient(configFromEnv());
+  const supabase = createAdminClient();
 
   const { error } = await supabase
     .from("join_requests")
@@ -1586,7 +1644,7 @@ export async function getPendingRequestsForOrg(clerkOrgId: string): Promise<Join
   if (!userId) return [];
 
   // Note: In production, verify the user is an admin of this org via Clerk
-  const supabase = createServerClient(configFromEnv());
+  const supabase = createAdminClient();
 
   const { data, error } = await supabase.rpc("get_pending_requests", {
     org_clerk_id: clerkOrgId,
@@ -1617,7 +1675,7 @@ export async function approveJoinRequest(requestId: string) {
   const { userId } = await auth();
   if (!userId) throw new Error("Unauthorized");
 
-  const supabase = createServerClient(configFromEnv());
+  const supabase = createAdminClient();
 
   // Get the request details
   const { data: request, error: fetchError } = await supabase
@@ -1664,7 +1722,7 @@ export async function denyJoinRequest(requestId: string, note?: string) {
   const { userId } = await auth();
   if (!userId) throw new Error("Unauthorized");
 
-  const supabase = createServerClient(configFromEnv());
+  const supabase = createAdminClient();
 
   const { error } = await supabase
     .from("join_requests")
@@ -1686,7 +1744,7 @@ export async function denyJoinRequest(requestId: string, note?: string) {
  * Get organization profile by Clerk org ID
  */
 export async function getOrganizationProfile(clerkOrgId: string) {
-  const supabase = createServerClient(configFromEnv());
+  const supabase = createAdminClient();
 
   const { data, error } = await supabase
     .from("organization_profiles")
@@ -1722,7 +1780,7 @@ export async function updateOrganizationProfile(
     throw new Error("You can only update your own organization");
   }
 
-  const supabase = createServerClient(configFromEnv());
+  const supabase = createAdminClient();
 
   const updateData: Record<string, any> = { updated_at: new Date().toISOString() };
   if (updates.isDiscoverable !== undefined) updateData.is_discoverable = updates.isDiscoverable;
@@ -1748,7 +1806,7 @@ export async function getUserDataSummary() {
   const { userId } = await auth();
   if (!userId) return null;
 
-  const supabase = createServerClient(configFromEnv());
+  const supabase = createAdminClient();
 
   // Get cohorts grouped by org
   const { data: cohorts } = await supabase

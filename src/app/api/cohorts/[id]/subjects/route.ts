@@ -1,6 +1,6 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextRequest, NextResponse } from "next/server";
-import { createServerClient, configFromEnv } from "@/lib/supabase";
+import { createAuthClient } from "@/lib/supabase";
 
 export async function GET(
   request: NextRequest,
@@ -14,7 +14,11 @@ export async function GET(
 
     const { id: cohortId } = await params;
     const token = await getToken();
-    const supabase = createServerClient(configFromEnv(), token || undefined);
+    if (!token) {
+      return NextResponse.json({ error: "No authentication token" }, { status: 401 });
+    }
+    
+    const supabase = createAuthClient(token);
 
     const { data, error } = await supabase
       .from("mice")
