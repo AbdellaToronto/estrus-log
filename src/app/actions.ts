@@ -586,6 +586,7 @@ export type ScanSessionDetail = ScanSessionSummary & {
 
 /**
  * Get all scan sessions for a cohort (for history view)
+ * Now queries from estrus_logs (permanent records) for accurate counts
  */
 export async function getCohortScanSessions(
   cohortId: string
@@ -608,37 +609,38 @@ export async function getCohortScanSessions(
   if (error) throw error;
   if (!sessions) return [];
 
-  // Get item counts and stage breakdowns for each session
+  // Get log counts and stage breakdowns from estrus_logs (the permanent records)
   const sessionIds = sessions.map((s) => s.id);
 
-  const { data: items } = await supabase
-    .from("scan_items")
-    .select("session_id, status, ai_result")
+  const { data: logs } = await supabase
+    .from("estrus_logs")
+    .select("session_id, stage")
     .in("session_id", sessionIds);
 
   // Aggregate by session
   const sessionStats = new Map<
     string,
-    { itemCount: number; completedCount: number; stageBreakdown: Record<string, number> }
+    {
+      itemCount: number;
+      completedCount: number;
+      stageBreakdown: Record<string, number>;
+    }
   >();
 
-  items?.forEach((item) => {
-    const stats = sessionStats.get(item.session_id) || {
+  logs?.forEach((log) => {
+    if (!log.session_id) return;
+    const stats = sessionStats.get(log.session_id) || {
       itemCount: 0,
       completedCount: 0,
       stageBreakdown: {},
     };
     stats.itemCount++;
-    if (item.status === "complete" || item.status === "completed") {
-      stats.completedCount++;
+    stats.completedCount++; // All logs are finalized
+    if (log.stage) {
+      stats.stageBreakdown[log.stage] =
+        (stats.stageBreakdown[log.stage] || 0) + 1;
     }
-    // Extract stage from ai_result
-    const result = item.ai_result as { stage?: string } | null;
-    if (result?.stage) {
-      stats.stageBreakdown[result.stage] =
-        (stats.stageBreakdown[result.stage] || 0) + 1;
-    }
-    sessionStats.set(item.session_id, stats);
+    sessionStats.set(log.session_id, stats);
   });
 
   return sessions.map((session) => ({
@@ -653,6 +655,7 @@ export async function getCohortScanSessions(
 
 /**
  * Get detailed scan session info (for receipt view)
+ * Now queries from estrus_logs (permanent records) instead of scan_items (workflow)
  */
 export async function getScanSessionDetail(
   sessionId: string
@@ -679,19 +682,19 @@ export async function getScanSessionDetail(
 
   if (sessionError || !session) return null;
 
-  // Get all items with mouse info
-  const { data: items, error: itemsError } = await supabase
-    .from("scan_items")
+  // Get logs linked to this session (the permanent records)
+  const { data: logs, error: logsError } = await supabase
+    .from("estrus_logs")
     .select(
       `
-      id, image_url, status, ai_result, mouse_id, created_at,
+      id, image_url, stage, confidence, created_at, mouse_id,
       mice (id, name)
     `
     )
     .eq("session_id", sessionId)
     .order("created_at", { ascending: true });
 
-  if (itemsError) throw itemsError;
+  if (logsError) throw logsError;
 
   // Clean up image URLs (strip query params from signed URLs)
   const { bucket } = getGcs();
@@ -699,21 +702,24 @@ export async function getScanSessionDetail(
   const prefix = `https://storage.googleapis.com/${bucketName}/`;
 
   const cleanedItems =
-    items?.map((item) => {
-      let cleanUrl = item.image_url;
+    logs?.map((log) => {
+      let cleanUrl = log.image_url;
       if (cleanUrl && cleanUrl.includes(prefix)) {
         cleanUrl = cleanUrl.split("?")[0];
       }
-      const miceData = item.mice as { id: string; name: string } | { id: string; name: string }[] | null;
+      const miceData = log.mice as
+        | { id: string; name: string }
+        | { id: string; name: string }[]
+        | null;
       const mice = Array.isArray(miceData) ? miceData[0] : miceData;
       return {
-        id: item.id,
+        id: log.id,
         image_url: cleanUrl,
-        status: item.status,
-        ai_result: item.ai_result as Record<string, unknown> | null,
-        mouse_id: item.mouse_id,
+        status: "completed" as const, // Logs are always finalized
+        ai_result: { stage: log.stage, confidence: log.confidence } as Record<string, unknown>,
+        mouse_id: log.mouse_id,
         mouse_name: mice?.name || null,
-        created_at: item.created_at,
+        created_at: log.created_at,
       };
     }) || [];
 
@@ -727,7 +733,10 @@ export async function getScanSessionDetail(
   });
 
   // Calculate subjects logged
-  const subjectCounts = new Map<string, { id: string; name: string; count: number }>();
+  const subjectCounts = new Map<
+    string,
+    { id: string; name: string; count: number }
+  >();
   cleanedItems.forEach((item) => {
     if (item.mouse_id && item.mouse_name) {
       const existing = subjectCounts.get(item.mouse_id) || {
@@ -740,8 +749,13 @@ export async function getScanSessionDetail(
     }
   });
 
-  const cohortDataRaw = session.cohorts as { id: string; name: string } | { id: string; name: string }[] | null;
-  const cohortData = Array.isArray(cohortDataRaw) ? cohortDataRaw[0] : cohortDataRaw;
+  const cohortDataRaw = session.cohorts as
+    | { id: string; name: string }
+    | { id: string; name: string }[]
+    | null;
+  const cohortData = Array.isArray(cohortDataRaw)
+    ? cohortDataRaw[0]
+    : cohortDataRaw;
 
   return {
     id: session.id,
@@ -750,9 +764,7 @@ export async function getScanSessionDetail(
     created_at: session.created_at,
     cohort: cohortData,
     itemCount: cleanedItems.length,
-    completedCount: cleanedItems.filter(
-      (i) => i.status === "complete" || i.status === "completed"
-    ).length,
+    completedCount: cleanedItems.length, // All logs are finalized
     stageBreakdown,
     items: cleanedItems,
     subjectsLogged: Array.from(subjectCounts.values()).map((s) => ({
@@ -942,6 +954,7 @@ export async function batchSaveLogs(
       logsToInsert.push({
         mouse_id: subjectId,
         cohort_id: cohortId, // Required for RLS policy
+        session_id: sessionId || null, // Link to scan session for receipts
         stage: item.stage,
         confidence:
           typeof item.confidence === "number" ? item.confidence : 0.95,

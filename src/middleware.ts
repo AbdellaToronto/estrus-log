@@ -34,8 +34,10 @@ export default clerkMiddleware(async (auth, req) => {
 
   // Intercept Clerk's organization selection task flow
   // Redirect to our custom onboarding instead
-  if (url.pathname.includes("/tasks/choose-organization") || 
-      url.pathname.includes("/tasks/create-organization")) {
+  if (
+    url.pathname.includes("/tasks/choose-organization") ||
+    url.pathname.includes("/tasks/create-organization")
+  ) {
     if (userId) {
       return NextResponse.redirect(new URL("/onboarding", req.url));
     }
