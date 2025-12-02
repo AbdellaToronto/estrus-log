@@ -5,8 +5,7 @@ import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Search, ZoomIn, ZoomOut, Maximize2, ArrowLeft } from "lucide-react";
-import Link from "next/link";
+import { Search, ZoomIn, ZoomOut, Maximize2 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { LogEntryModal } from "@/components/log-entry-modal";
 import { format } from "date-fns";
@@ -41,8 +40,7 @@ type SubjectLog = {
 type SubjectSummary = {
   id: string;
   name: string;
-  cohort_id?: string | null;
-  cohorts?: { id?: string | null; name?: string | null } | null;
+  cohorts?: { name?: string | null } | null;
 };
 
 type TimelinePoint = {
@@ -131,34 +129,13 @@ export function SubjectPageClient({
 
   const confidenceScore = selectedLog ? getConfidence(selectedLog) : 0;
 
-  // Get cohort ID for back navigation
-  const cohortId = subject.cohorts?.id || subject.cohort_id;
-
   return (
     <div className="space-y-4 sm:space-y-6 md:space-y-8 pb-8">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-        <div className="flex items-center gap-3">
-          {cohortId && (
-            <Link 
-              href={`/cohorts/${cohortId}?tab=subjects`}
-              className="p-2 -ml-2 rounded-full hover:bg-slate-100 transition-colors text-muted-foreground hover:text-foreground"
-              title="Back to subjects"
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </Link>
-          )}
-          <div>
-            <h1 className="text-lg sm:text-xl md:text-2xl font-bold text-foreground/80 line-clamp-2">
-              {subject.name}
-            </h1>
-            {subject.cohorts?.name && (
-              <p className="text-sm text-muted-foreground">
-                {subject.cohorts.name}
-              </p>
-            )}
-          </div>
-        </div>
+        <h1 className="text-lg sm:text-xl md:text-2xl font-bold text-foreground/80 line-clamp-2">
+          Analysis: {subject.name}
+        </h1>
         <div className="hidden sm:flex items-center gap-4">
           <Avatar className="h-9 w-9 border-2 border-white/20 shadow-sm">
             <AvatarImage src="https://github.com/shadcn.png" />
@@ -323,7 +300,6 @@ export function SubjectPageClient({
                     fill
                     sizes="(max-width: 768px) 95vw, (max-width: 1024px) 90vw, 60vw"
                     className="object-contain rounded-lg shadow-lg"
-                    unoptimized={selectedLog.image_url.startsWith("http")}
                   />
                 ) : (
                   <div className="flex h-full w-full items-center justify-center text-slate-400">
@@ -533,7 +509,6 @@ export function SubjectPageClient({
                     fill
                     sizes="(max-width: 640px) 50vw, (max-width: 768px) 33vw, (max-width: 1024px) 25vw, 15vw"
                     className="object-cover"
-                    unoptimized={log.image_url.startsWith("http")}
                   />
                 ) : (
                   <div className="absolute inset-0 flex items-center justify-center text-slate-400 text-[10px] sm:text-xs">

@@ -27,7 +27,7 @@ const ORG_NAV_ITEMS = [
 
 // Navigation items when user has NO organization (exploring)
 const EXPLORE_NAV_ITEMS = [
-  { label: 'Find a Lab', href: '/onboarding', icon: Search },
+  { label: 'Find a Lab', href: '/discover', icon: Search },
 ];
 
 export function Sidebar() {
@@ -137,17 +137,17 @@ export function Sidebar() {
               </span>
             </div>
             <Link
-              href="/onboarding"
+              href="/discover"
               className={cn(
                 "flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group",
-                pathname === '/onboarding'
+                pathname === '/discover'
                   ? "bg-primary text-primary-foreground shadow-lg shadow-primary/25" 
                   : "text-muted-foreground hover:text-foreground hover:bg-white/5"
               )}
             >
               <Search className={cn(
                 "w-5 h-5 transition-colors",
-                pathname === '/onboarding' ? "text-primary-foreground" : "text-muted-foreground group-hover:text-primary"
+                pathname === '/discover' ? "text-primary-foreground" : "text-muted-foreground group-hover:text-primary"
               )} />
               <span className="font-medium">Discover Labs</span>
             </Link>

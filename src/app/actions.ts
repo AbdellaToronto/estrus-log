@@ -931,6 +931,13 @@ export type DashboardStats = {
     imageUrl: string | null;
     time: string;
   }[];
+  dailyTrend: {
+    date: string;
+    Proestrus: number;
+    Estrus: number;
+    Metestrus: number;
+    Diestrus: number;
+  }[];
 };
 
 export async function getDashboardStats(): Promise<DashboardStats> {
@@ -1012,11 +1019,46 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     .map(([stage, value]) => ({ stage, value }))
     .sort((a, b) => b.value - a.value);
 
+  // 5. Daily Trend (Last 7 days breakdown by stage per day)
+  const { data: trendData, error: trendError } = await supabase
+    .from("estrus_logs")
+    .select("stage, created_at")
+    .gte("created_at", weekAgo.toISOString())
+    .order("created_at", { ascending: true });
+
+  if (trendError) throw trendError;
+
+  // Group by date
+  const dailyMap = new Map<string, { Proestrus: number; Estrus: number; Metestrus: number; Diestrus: number }>();
+  
+  // Initialize last 7 days
+  for (let i = 6; i >= 0; i--) {
+    const date = new Date();
+    date.setDate(date.getDate() - i);
+    const dateStr = date.toISOString().split('T')[0];
+    dailyMap.set(dateStr, { Proestrus: 0, Estrus: 0, Metestrus: 0, Diestrus: 0 });
+  }
+
+  // Fill in the data
+  trendData?.forEach((log) => {
+    const dateStr = new Date(log.created_at).toISOString().split('T')[0];
+    const dayData = dailyMap.get(dateStr);
+    if (dayData && log.stage in dayData) {
+      dayData[log.stage as keyof typeof dayData]++;
+    }
+  });
+
+  const dailyTrend = Array.from(dailyMap.entries()).map(([date, counts]) => ({
+    date,
+    ...counts,
+  }));
+
   return {
     totalSubjects: totalSubjects || 0,
     todaysScans: todaysScans || 0,
     stageDistribution,
     recentActivity,
+    dailyTrend,
   };
 }
 

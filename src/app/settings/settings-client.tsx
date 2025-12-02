@@ -195,7 +195,7 @@ export function SettingsClient() {
                   Create New Lab
                 </Button>
                 <Button variant="outline" asChild>
-                  <a href="/onboarding">Find a Lab</a>
+                  <a href="/discover">Find a Lab</a>
                 </Button>
               </div>
             </CardContent>

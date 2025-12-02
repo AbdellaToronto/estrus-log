@@ -38,31 +38,19 @@ import Image from "next/image";
 // We will look for stage names in the filename
 const STAGES = ["Proestrus", "Estrus", "Metestrus", "Diestrus"];
 
-// Order matters! Check longer/more specific names first to avoid false matches
-// e.g., "METESTRUS" contains "estrus", so we must check "metestrus" first
-const STAGE_PATTERNS = [
-  { pattern: "metestrus", stage: "Metestrus" },
-  { pattern: "diestrus", stage: "Diestrus" },
-  { pattern: "proestrus", stage: "Proestrus" },
-  { pattern: "estrus", stage: "Estrus" }, // Must be last - it's a substring of others
-];
-
 function inferGroundTruth(filename: string): string | null {
   if (!filename) return null;
   const lower = filename.toLowerCase();
-  
-  // Check full stage names first (order matters!)
-  for (const { pattern, stage } of STAGE_PATTERNS) {
-    if (lower.includes(pattern)) {
+  for (const stage of STAGES) {
+    if (lower.includes(stage.toLowerCase())) {
       return stage;
     }
   }
-  
-  // Common abbreviations (with delimiters to avoid false matches)
-  if (lower.includes("_met_") || lower.includes("-met-") || lower.includes("_met.")) return "Metestrus";
-  if (lower.includes("_die_") || lower.includes("-die-") || lower.includes("_die.")) return "Diestrus";
-  if (lower.includes("_pro_") || lower.includes("-pro-") || lower.includes("_pro.")) return "Proestrus";
-  if (lower.includes("_est_") || lower.includes("-est-") || lower.includes("_est.")) return "Estrus";
+  // Common abbreviations
+  if (lower.includes("_pro_") || lower.includes("-pro-")) return "Proestrus";
+  if (lower.includes("_est_") || lower.includes("-est-")) return "Estrus";
+  if (lower.includes("_met_") || lower.includes("-met-")) return "Metestrus";
+  if (lower.includes("_die_") || lower.includes("-die-")) return "Diestrus";
 
   return null;
 }
@@ -78,13 +66,7 @@ export function CohortEvaluation({ logs }: { logs: any[] }) {
         // Try to get filename from image_url
         // URL format: .../path/timestamp-filename.jpg
         const urlParts = log.image_url.split("/");
-        let rawFilename = urlParts[urlParts.length - 1] || "";
-        
-        // Remove query params
-        if (rawFilename.includes("?")) {
-            rawFilename = rawFilename.split("?")[0];
-        }
-
+        const rawFilename = urlParts[urlParts.length - 1] || "";
         // Remove timestamp prefix if present (usually 13 digits + dash)
         const filename = rawFilename.replace(/^\d+-/, "");
 
@@ -284,14 +266,11 @@ export function CohortEvaluation({ logs }: { logs: any[] }) {
                       alt=""
                       fill
                       className="object-cover"
-                      unoptimized={log.image_url.startsWith("http")}
                     />
                   </div>
                 </TableCell>
-                <TableCell className="font-medium text-slate-700 text-xs font-mono max-w-[300px]">
-                  <div className="truncate" title={log.filename}>
-                    {log.filename}
-                  </div>
+                <TableCell className="font-medium text-slate-700 text-xs font-mono">
+                  {log.filename}
                 </TableCell>
                 <TableCell>
                   <Badge variant="outline" className="bg-slate-50">

@@ -41,7 +41,7 @@ const ORG_NAV_ITEMS = [
 
 // Navigation items when user has NO organization (exploring)
 const EXPLORE_NAV_ITEMS = [
-  { label: "Find a Lab", href: "/onboarding", icon: Search },
+  { label: "Find a Lab", href: "/discover", icon: Search },
 ];
 
 export function MobileNav() {
@@ -169,7 +169,7 @@ export function MobileNav() {
 
                     {/* Link to discover more labs */}
                     <Link
-                      href="/onboarding"
+                      href="/discover"
                       onClick={() => setOpen(false)}
                       className="flex items-center justify-between p-3 rounded-xl text-sm text-muted-foreground hover:text-foreground hover:bg-white/5 transition-colors mt-2"
                     >
@@ -251,11 +251,11 @@ export function MobileNav() {
                         </span>
                       </div>
                       <Link
-                        href="/onboarding"
+                        href="/discover"
                         onClick={() => setOpen(false)}
                         className={cn(
                           "flex items-center gap-3 px-3 py-3 rounded-xl transition-all duration-200",
-                          pathname === "/onboarding"
+                          pathname === "/discover"
                             ? "bg-primary text-primary-foreground shadow-lg shadow-primary/25"
                             : "text-muted-foreground hover:text-foreground hover:bg-white/10"
                         )}

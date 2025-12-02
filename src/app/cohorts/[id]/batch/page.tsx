@@ -33,11 +33,11 @@ import {
   Brain,
   Eye,
   EyeOff,
-  AlertTriangle,
 } from "lucide-react";
 import { CycleWheel, ConfidenceBars } from "@/components/analysis";
 import Link from "next/link";
 import {
+  getUploadUrls,
   batchSaveLogs,
   createScanSession,
   createScanItemsBulk,
@@ -46,8 +46,6 @@ import {
   getScanItems,
   startScanSessionAnalysis,
   getCohort,
-  deleteCohort,
-  parseFilenamesWithLLM,
 } from "@/app/actions";
 import { useParams, useRouter } from "next/navigation";
 import Image from "next/image";
@@ -59,14 +57,6 @@ import {
   getPrimaryStagePrediction,
 } from "@/lib/classification";
 import { useParsedCohortConfig } from "@/lib/cohort-config-context";
-
-// Parsed info extracted from filename (via LLM)
-type ParsedFilename = {
-  subjectId: string | null;      // e.g., "229B" from "MPP/229B_10_16_METESTRUS.jpg"
-  groundTruthStage: string | null; // e.g., "Metestrus" from filename
-  date: string | null;           // e.g., "10_16" parsed as date hint
-  confidence: number;            // How confident the LLM is in the extraction
-};
 
 type ScanItem = {
   id: string; // Local ID for UI
@@ -88,7 +78,6 @@ type ScanItem = {
   result?: ClassificationResult;
   assignedSubjectId?: string;
   newSubjectName?: string;
-  parsed?: ParsedFilename; // Extracted info from filename (via LLM)
 };
 
 type SubjectOption = {
@@ -168,7 +157,6 @@ export default function BatchUploadPage() {
   const [items, setItems] = useState<ScanItem[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [isParsing, setIsParsing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [copiedLinkId, setCopiedLinkId] = useState<string | null>(null);
@@ -176,7 +164,6 @@ export default function BatchUploadPage() {
   const [subjectsLoading, setSubjectsLoading] = useState(false);
   const [subjectsError, setSubjectsError] = useState<string | null>(null);
   const [showCroppedImage, setShowCroppedImage] = useState(false);
-  const [uploadError, setUploadError] = useState<string | null>(null);
   const [cohort, setCohort] = useState<{
     type?: string | null;
     log_config?: unknown;
@@ -208,52 +195,10 @@ export default function BatchUploadPage() {
       items.some((i) => i.status === "uploaded" || i.status === "analyzing"),
     [items]
   );
-  const isAnalyzing = useMemo(
-    () => items.some((i) => i.status === "analyzing"),
-    [items]
-  );
   const hasAnalyzableItems = useMemo(
     () => items.some((i) => i.status === "uploaded" || i.status === "error"),
     [items]
   );
-
-  // Group items by detected subject ID for visual grouping
-  const subjectGroups = useMemo(() => {
-    const groups = new Map<string, { items: ScanItem[]; color: string }>();
-    const colors = [
-      "bg-blue-100 border-blue-300",
-      "bg-green-100 border-green-300",
-      "bg-purple-100 border-purple-300",
-      "bg-amber-100 border-amber-300",
-      "bg-rose-100 border-rose-300",
-      "bg-cyan-100 border-cyan-300",
-      "bg-indigo-100 border-indigo-300",
-      "bg-orange-100 border-orange-300",
-    ];
-    let colorIdx = 0;
-    
-    items.forEach((item) => {
-      const subjectId = item.parsed?.subjectId || item.newSubjectName || "Unknown";
-      if (!groups.has(subjectId)) {
-        groups.set(subjectId, { 
-          items: [], 
-          color: subjectId === "Unknown" ? "bg-slate-100 border-slate-300" : colors[colorIdx++ % colors.length]
-        });
-      }
-      groups.get(subjectId)!.items.push(item);
-    });
-    
-    return groups;
-  }, [items]);
-
-  // Check if any items have ground truth that differs from AI prediction
-  const groundTruthMismatches = useMemo(() => {
-    return items.filter((item) => {
-      if (!item.parsed?.groundTruthStage || !item.result) return false;
-      const predicted = getPrimaryStageName(item.result);
-      return predicted && predicted.toLowerCase() !== item.parsed.groundTruthStage.toLowerCase();
-    });
-  }, [items]);
   const selectedItemSource = selectedItem?.gcsUrl?.split("?")[0];
   const selectedStageName = getPrimaryStageName(selectedItem?.result);
   const selectedStageConfidence = getPrimaryStageConfidence(
@@ -441,76 +386,6 @@ export default function BatchUploadPage() {
     return () => clearInterval(id);
   }, [sessionId, hasActiveAnalysis, refreshItemsFromServer]);
 
-  // Reset isProcessing when analysis completes (no more items in "analyzing" or "uploading" state)
-  // BUT only if we have completed items (to avoid resetting on initial load)
-  const hasCompletedItems = items.some((i) => i.status === "complete" || i.status === "saved");
-  const hasActiveWork = items.some((i) => i.status === "analyzing" || i.status === "uploading");
-  
-  useEffect(() => {
-    // Only reset if we're processing, have no active work, AND have some completed items
-    // This prevents resetting during the initial "starting analysis" phase
-    if (isProcessing && !hasActiveWork && hasCompletedItems) {
-      setIsProcessing(false);
-    }
-  }, [isProcessing, hasActiveWork, hasCompletedItems]);
-
-  // Auto-upload files after they are added (pass the actual items, not IDs, to avoid stale closure)
-  const autoUploadFiles = useCallback(async (itemsToUpload: ScanItem[]) => {
-    if (itemsToUpload.length === 0) return;
-    
-    setIsProcessing(true);
-    setUploadError(null);
-
-    let uploadErrors = 0;
-    let uploadedCount = 0;
-
-    // Upload in chunks (concurrency: 3)
-    const chunkSize = 3;
-    for (let i = 0; i < itemsToUpload.length; i += chunkSize) {
-      const chunk = itemsToUpload.slice(i, i + chunkSize);
-
-      await Promise.all(
-        chunk.map(async (item) => {
-          updateItemState(item.id, "uploading");
-
-          try {
-            const result = await uploadFile(item);
-            
-            if (!result) {
-              throw new Error("No file to upload");
-            }
-
-            updateItemState(item.id, "uploaded", { 
-              gcsUrl: result.publicUrl,
-              previewUrl: result.publicUrl,
-            });
-
-            if (item.scanItemId) {
-              await updateScanItem(item.scanItemId, {
-                status: "uploaded",
-                imageUrl: result.publicUrl,
-              });
-            }
-            uploadedCount++;
-          } catch (err) {
-            const errorMsg = err instanceof Error ? err.message : "Upload failed";
-            console.error(`Upload error for ${item.filename}:`, errorMsg);
-            updateItemState(item.id, "error");
-            uploadErrors++;
-          }
-        })
-      );
-    }
-
-    // Show error summary if any uploads failed
-    if (uploadErrors > 0) {
-      setUploadError(`${uploadErrors} file${uploadErrors > 1 ? 's' : ''} failed to upload. Check file size (max 10MB) and format.`);
-    }
-
-    // Upload phase complete
-    setIsProcessing(false);
-  }, []);
-
   const handleFiles = async (files: File[]) => {
     const currentSessionId = await ensureSession();
     if (!currentSessionId) {
@@ -546,7 +421,7 @@ export default function BatchUploadPage() {
       }
     }
 
-    // 2. Create UI Items (initially without parsed info)
+    // 2. Create UI Items
     const newUIItems: ScanItem[] = filesToProcess.map((file) => ({
       id: Math.random().toString(36).substring(7),
       file,
@@ -555,131 +430,10 @@ export default function BatchUploadPage() {
       status: "pending",
     }));
 
-    const newItemIds = newUIItems.map(i => i.id);
-    
     setItems((prev) => [...prev, ...newUIItems]);
     if (!selectedId && newUIItems.length > 0) setSelectedId(newUIItems[0].id);
 
-    // 3. Parse filenames - first with regex (instant), then LLM for uncertain ones
-    setIsParsing(true);
-    
-    // Helper: regex-based extraction (same logic as server-side)
-    const extractWithRegex = (filename: string): ParsedFilename => {
-      // Get just the base filename (remove folder path like "MPP/")
-      const baseName = filename.split("/").pop() || filename;
-      const nameWithoutExt = baseName.replace(/\.(jpg|jpeg|png|webp|gif)$/i, "");
-      const cleanFilename = nameWithoutExt.replace(/^\d{10,}-/, ""); // Remove timestamp prefix
-      
-      // Split by common delimiters
-      const parts = cleanFilename.split(/[_\-\s]+/);
-      
-      // Known stage names
-      const stageMap: Record<string, string> = {
-        proestrus: "Proestrus", pro: "Proestrus",
-        estrus: "Estrus", est: "Estrus",
-        metestrus: "Metestrus", met: "Metestrus",
-        diestrus: "Diestrus", di: "Diestrus",
-      };
-      
-      let subjectId: string | null = null;
-      let groundTruthStage: string | null = null;
-      let date: string | null = null;
-      const dateParts: string[] = [];
-      
-      for (const part of parts) {
-        const lower = part.toLowerCase();
-        
-        // Check for stage
-        if (stageMap[lower]) {
-          groundTruthStage = stageMap[lower];
-          continue;
-        }
-        
-        // Check for date-like (1-2 digit numbers)
-        if (/^\d{1,2}$/.test(part)) {
-          dateParts.push(part);
-          continue;
-        }
-        
-        // Check for year (skip)
-        if (/^20\d{2}$/.test(part)) continue;
-        
-        // First valid part is likely the subject ID
-        if (!subjectId && part.length >= 2) {
-          subjectId = part;
-        }
-      }
-      
-      // Construct date from parts
-      if (dateParts.length >= 2) {
-        date = dateParts.slice(0, 2).join("_");
-      }
-      
-      // Confidence based on what we found
-      const confidence = subjectId && groundTruthStage ? 0.95 : subjectId ? 0.8 : 0.1;
-      
-      return { subjectId, groundTruthStage, date, confidence };
-    };
-    
-    // First pass: regex extraction
-    const regexResults = new Map<string, ParsedFilename>();
-    const needsLlm: string[] = [];
-    
-    for (const file of filesToProcess) {
-      const parsed = extractWithRegex(file.name);
-      regexResults.set(file.name, parsed);
-      
-      // If low confidence, queue for LLM
-      if (parsed.confidence < 0.5) {
-        needsLlm.push(file.name);
-      }
-    }
-    
-    // Immediately update items with regex results
-    setItems((prev) =>
-      prev.map((item) => {
-        const parsed = regexResults.get(item.filename);
-        if (parsed && parsed.confidence >= 0.5) {
-          return {
-            ...item,
-            parsed,
-            newSubjectName: parsed.subjectId || item.newSubjectName,
-          };
-        }
-        return item;
-      })
-    );
-    
-    // If some files need LLM parsing, do it async
-    if (needsLlm.length > 0) {
-      parseFilenamesWithLLM(needsLlm)
-        .then((llmResults) => {
-          const llmMap = new Map(llmResults.map((r) => [r.filename, r.parsed]));
-          
-          setItems((prev) =>
-            prev.map((item) => {
-              // Only update if this item needed LLM parsing
-              const llmParsed = llmMap.get(item.filename);
-              if (llmParsed && llmParsed.confidence > (item.parsed?.confidence || 0)) {
-                return {
-                  ...item,
-                  parsed: llmParsed,
-                  newSubjectName: llmParsed.subjectId && llmParsed.confidence >= 0.7
-                    ? llmParsed.subjectId
-                    : item.newSubjectName,
-                };
-              }
-              return item;
-            })
-          );
-        })
-        .catch((err) => console.error("LLM parsing failed:", err))
-        .finally(() => setIsParsing(false));
-    } else {
-      setIsParsing(false);
-    }
-
-    // 4. Bulk Create DB Items
+    // 3. Bulk Create DB Items
     // We use a temporary path "pending/filename"
     const dbPayload = newUIItems.map((i) => ({
       imageUrl: `pending/${i.filename}`,
@@ -689,15 +443,12 @@ export default function BatchUploadPage() {
       .then((dbItems) => {
         if (dbItems) {
           // Match back to UI items by index (preserved order)
-          // Also update the newUIItems with scanItemIds for the upload
-          newUIItems.forEach((uiItem, idx) => {
-            if (dbItems[idx]) {
-              uiItem.scanItemId = dbItems[idx].id;
-            }
-          });
-          
           setItems((prev) => {
             const updated = [...prev];
+            // We need to find the items we just added.
+            // Since we appended, they are at the end.
+            // This is slightly risky if user added more files rapidly.
+            // Better: map newUIItems to updated ones.
             newUIItems.forEach((uiItem, idx) => {
               const match = updated.find((u) => u.id === uiItem.id);
               if (match && dbItems[idx]) {
@@ -707,9 +458,6 @@ export default function BatchUploadPage() {
             return updated;
           });
         }
-        
-        // 5. Auto-start upload after DB items are created (pass actual items, not IDs)
-        autoUploadFiles(newUIItems);
       })
       .catch(console.error);
   };
@@ -764,27 +512,7 @@ export default function BatchUploadPage() {
 
   const canSave = analyzedItems.length > 0;
 
-  // --- Action: Upload (via API route for larger files) ---
-
-  const uploadFile = async (item: ScanItem): Promise<{ publicUrl: string } | null> => {
-    if (!item.file) return null;
-    
-    const formData = new FormData();
-    formData.append("file", item.file);
-    formData.append("cohortId", cohortId);
-    
-    const response = await fetch("/api/upload", {
-      method: "POST",
-      body: formData,
-    });
-    
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || "Upload failed");
-    }
-    
-    return response.json();
-  };
+  // --- Action: Upload ---
 
   const handleUpload = async () => {
     setIsProcessing(true);
@@ -794,37 +522,41 @@ export default function BatchUploadPage() {
       );
       if (pendingItems.length === 0) return;
 
-      // Upload in chunks (concurrency: 3 to avoid overwhelming the server)
-      const chunkSize = 3;
+      // Batch get signed URLs
+      const fileMetas = pendingItems.map((i) => ({
+        filename: i.filename,
+        contentType: i.file!.type,
+      }));
+      const uploadUrls = await getUploadUrls(fileMetas, cohortId);
+
+      // Map filename to url
+      const urlMap = new Map(uploadUrls.map((u) => [u.filename, u]));
+
+      // Upload in chunks (concurrency: 5)
+      const chunkSize = 5;
       for (let i = 0; i < pendingItems.length; i += chunkSize) {
         const chunk = pendingItems.slice(i, i + chunkSize);
 
         await Promise.all(
           chunk.map(async (item) => {
+            const urlData = urlMap.get(item.filename);
+            if (!urlData) return;
+
             updateItemState(item.id, "uploading");
 
-            try {
-              // Upload via API route (supports larger files)
-              const result = await uploadFile(item);
-              
-              if (!result) {
-                throw new Error("No file to upload");
-              }
+            await fetch(urlData.url, {
+              method: "PUT",
+              body: item.file,
+              headers: { "Content-Type": item.file!.type },
+            });
 
-              updateItemState(item.id, "uploaded", { 
-                gcsUrl: result.publicUrl,
-                previewUrl: result.publicUrl,
+            updateItemState(item.id, "uploaded", { gcsUrl: urlData.publicUrl });
+
+            if (item.scanItemId) {
+              updateScanItem(item.scanItemId, {
+                status: "uploaded",
+                imageUrl: urlData.publicUrl,
               });
-
-              if (item.scanItemId) {
-                updateScanItem(item.scanItemId, {
-                  status: "uploaded",
-                  imageUrl: result.publicUrl,
-                });
-              }
-            } catch (uploadError) {
-              console.error(`Upload error for ${item.filename}:`, uploadError);
-              updateItemState(item.id, "error");
             }
           })
         );
@@ -839,40 +571,27 @@ export default function BatchUploadPage() {
   // --- Action: Analyze ---
 
   const handleAnalyze = async () => {
-    // IMMEDIATELY lock the button
     setIsProcessing(true);
-    setUploadError(null);
-    
-    // Mark uploaded items as "analyzing"
-    setItems((prev) =>
-      prev.map((item) =>
-        item.status === "uploaded" ? { ...item, status: "analyzing" } : item
-      )
-    );
-
     try {
       const currentSessionId = await ensureSession();
       if (!currentSessionId) {
         throw new Error("No active session found");
       }
 
-      // Start the analysis task
       await startScanSessionAnalysis(currentSessionId);
 
-      // Start polling for results
-      refreshItemsFromServer();
-      
-      // isProcessing stays true - will be reset when analysis completes
-    } catch (e) {
-      console.error("Failed to start analysis", e);
-      // Revert items back to uploaded on error
       setItems((prev) =>
         prev.map((item) =>
-          item.status === "analyzing" ? { ...item, status: "uploaded" } : item
+          item.status === "uploaded" ? { ...item, status: "analyzing" } : item
         )
       );
+
+      refreshItemsFromServer();
+    } catch (e) {
+      console.error("Failed to queue analysis", e);
+      alert("Failed to start analysis job. Please try again.");
+    } finally {
       setIsProcessing(false);
-      setUploadError("Failed to start analysis. Please try again.");
     }
   };
 
@@ -929,21 +648,6 @@ export default function BatchUploadPage() {
     toFeaturePayload,
   ]);
 
-  // --- Action: Discard ---
-  const handleDiscard = useCallback(async () => {
-    if (!confirm("Are you sure you want to discard this batch and delete the cohort? This cannot be undone.")) {
-      return;
-    }
-    
-    try {
-      await deleteCohort(cohortId);
-      router.push("/cohorts");
-    } catch (e) {
-      console.error("Failed to delete cohort", e);
-      alert("Failed to delete cohort. Check console.");
-    }
-  }, [cohortId, router]);
-
   const updateItemState = (
     id: string,
     status: ScanItem["status"],
@@ -990,7 +694,7 @@ export default function BatchUploadPage() {
                 </h1>
                 <p className="text-lg text-slate-500 max-w-md mx-auto leading-relaxed">
                   Drag and drop your raw image data or ZIP archives here. <br />
-                  Our <span className="font-medium text-purple-600">BioCLIP</span> + <span className="font-medium text-blue-600">Gemini</span> ensemble will classify automatically.
+                  Gemini AI will classify and organize everything automatically.
                 </p>
 
                 <div className="mt-10">
@@ -1116,60 +820,41 @@ export default function BatchUploadPage() {
               <div className="space-y-3">
                 {/* Split Buttons: Upload vs Analyze */}
 
-                {/* Upload Progress Indicator (auto-upload, no button needed) */}
-                {items.some((i) => i.status === "pending" || i.status === "uploading") && (
-                  <div className="w-full bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-center gap-3">
-                    <Loader2 className="animate-spin w-5 h-5 text-blue-600" />
-                    <div className="flex-1">
-                      <p className="text-sm font-medium text-blue-900">
-                        Uploading {items.filter((i) => i.status === "uploading").length} of {items.filter((i) => i.status === "pending" || i.status === "uploading").length} files...
-                      </p>
-                      <p className="text-xs text-blue-600">
-                        {items.filter((i) => i.status === "uploaded").length} uploaded
-                      </p>
-                    </div>
-                  </div>
+                {items.some((i) => i.status === "pending") && (
+                  <Button
+                    className="w-full bg-slate-100 text-slate-900 hover:bg-slate-200 h-12 rounded-xl font-semibold text-sm transition-all border border-slate-200 shadow-sm"
+                    onClick={handleUpload}
+                    disabled={isProcessing}
+                  >
+                    {isProcessing &&
+                    items.some((i) => i.status === "pending") ? (
+                      <Loader2 className="animate-spin mr-2 w-4 h-4" />
+                    ) : (
+                      <Cloud className="mr-2 w-4 h-4" />
+                    )}
+                    Upload Pending (
+                    {items.filter((i) => i.status === "pending").length})
+                  </Button>
                 )}
 
-                {/* Analyze Button - only enabled when uploads are complete */}
                 <Button
-                  className={cn(
-                    "w-full h-12 rounded-xl font-semibold text-sm transition-all",
-                    isAnalyzing 
-                      ? "bg-purple-600 text-white hover:bg-purple-500 shadow-xl shadow-purple-600/20"
-                      : hasAnalyzableItems
-                        ? "bg-slate-900 text-white hover:bg-slate-800 shadow-xl shadow-slate-900/10 hover:scale-[1.02] active:scale-[0.98]"
-                        : "bg-slate-200 text-slate-500 cursor-not-allowed"
-                  )}
+                  className="w-full bg-slate-900 text-white hover:bg-slate-800 shadow-xl shadow-slate-900/10 h-12 rounded-xl font-semibold text-sm transition-all hover:scale-[1.02] active:scale-[0.98]"
                   onClick={handleAnalyze}
-                  disabled={isProcessing || isAnalyzing || !hasAnalyzableItems}
+                  disabled={isProcessing || !hasAnalyzableItems}
                 >
-                  {isAnalyzing ? (
-                    <>
-                      <Loader2 className="animate-spin mr-2 w-4 h-4" />
-                      Analyzing ({items.filter((i) => i.status === "analyzing").length} in progress)
-                    </>
-                  ) : isProcessing ? (
-                    <>
-                      <Loader2 className="animate-spin mr-2 w-4 h-4" />
-                      {items.some((i) => i.status === "uploading") ? "Uploading..." : "Starting..."}
-                    </>
-                  ) : hasAnalyzableItems ? (
-                    <>
-                      <CloudLightning className="mr-2 w-4 h-4" />
-                      Analyze {items.filter((i) => i.status === "uploaded").length} Images
-                    </>
-                  ) : items.some((i) => i.status === "pending" || i.status === "uploading") ? (
-                    <>
-                      <Cloud className="mr-2 w-4 h-4" />
-                      Waiting for uploads...
-                    </>
+                  {isProcessing &&
+                  !items.some((i) => i.status === "pending") ? (
+                    <Loader2 className="animate-spin mr-2 w-4 h-4" />
                   ) : (
-                    <>
-                      <CloudLightning className="mr-2 w-4 h-4" />
-                      No images to analyze
-                    </>
+                    <CloudLightning className="mr-2 w-4 h-4" />
                   )}
+                  Analyze Uploaded (
+                  {
+                    items.filter(
+                      (i) => i.status === "uploaded" || i.status === "error"
+                    ).length
+                  }
+                  )
                 </Button>
 
                 {items.some((i) => i.status === "complete") && (
@@ -1215,78 +900,29 @@ export default function BatchUploadPage() {
               exit={{ opacity: 0, x: 50 }}
               className="flex-1 bg-slate-50/50 flex flex-col relative z-10 min-w-0 h-full overflow-hidden"
             >
-              <div className="border-b border-slate-200 bg-white/80 backdrop-blur-xl sticky top-0 z-20 shrink-0">
-                <div className="h-16 flex items-center justify-between px-8">
-                  <h2 className="font-semibold text-slate-800 text-lg">
-                    Library{" "}
-                    <span className="text-slate-400 ml-2 font-normal">
-                      {items.length} items
-                    </span>
-                  </h2>
+              <div className="h-20 border-b border-slate-200 flex items-center justify-between px-8 bg-white/80 backdrop-blur-xl sticky top-0 z-20 shrink-0">
+                <h2 className="font-semibold text-slate-800 text-lg">
+                  Library{" "}
+                  <span className="text-slate-400 ml-2 font-normal">
+                    {items.length} items
+                  </span>
+                </h2>
 
-                  {/* Visual Indicator of State */}
-                  <div className="flex items-center gap-4 text-sm font-medium text-slate-500">
-                    <div className="flex items-center gap-1">
-                      <div className="w-2 h-2 rounded-full bg-slate-300" />
-                      Pending
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <div className="w-2 h-2 rounded-full bg-blue-400" />
-                      Uploaded
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <div className="w-2 h-2 rounded-full bg-emerald-400" />
-                      Analyzed
-                    </div>
+                {/* Visual Indicator of State */}
+                <div className="flex items-center gap-4 text-sm font-medium text-slate-500">
+                  <div className="flex items-center gap-1">
+                    <div className="w-2 h-2 rounded-full bg-slate-300" />
+                    Pending
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <div className="w-2 h-2 rounded-full bg-blue-400" />
+                    Uploaded
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <div className="w-2 h-2 rounded-full bg-emerald-400" />
+                    Analyzed
                   </div>
                 </div>
-                
-                {/* Subject Groups Summary */}
-                {(subjectGroups.size > 0 || isParsing) && (
-                  <div className="px-8 pb-3 flex items-center gap-2 flex-wrap">
-                    {isParsing ? (
-                      <div className="flex items-center gap-2 text-sm text-slate-500">
-                        <Loader2 className="w-3 h-3 animate-spin" />
-                        <span>Analyzing filenames...</span>
-                      </div>
-                    ) : (
-                      <>
-                        <span className="text-xs text-slate-500 font-medium mr-1">
-                          {subjectGroups.size} {subjectGroups.size === 1 ? "subject" : "subjects"} detected:
-                        </span>
-                        {Array.from(subjectGroups.entries()).map(([subjectId, { items: groupItems, color }]) => (
-                          <Badge 
-                            key={subjectId}
-                            className={cn("text-[10px] px-2 py-0.5 font-semibold border", color)}
-                          >
-                            {subjectId} ({groupItems.length})
-                          </Badge>
-                        ))}
-                      </>
-                    )}
-                    
-                    {/* Ground truth comparison info */}
-                    {groundTruthMismatches.length > 0 && (
-                      <div className="ml-auto flex items-center gap-1 text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded-full border border-amber-200" title="Based on stage labels detected in filenames">
-                        <span className="font-medium">📊 {groundTruthMismatches.length} differ from filename labels</span>
-                      </div>
-                    )}
-                  </div>
-                )}
-                
-                {/* Error Banner */}
-                {uploadError && (
-                  <div className="mx-8 mb-3 flex items-center gap-2 text-sm text-red-700 bg-red-50 px-4 py-3 rounded-xl border border-red-200">
-                    <AlertTriangle className="w-4 h-4 flex-shrink-0" />
-                    <span className="flex-1">{uploadError}</span>
-                    <button 
-                      onClick={() => setUploadError(null)}
-                      className="text-red-500 hover:text-red-700 p-1"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
-                )}
               </div>
 
               <div className="flex-1 overflow-hidden relative">
@@ -1365,47 +1001,19 @@ export default function BatchUploadPage() {
                               )}
                             </div>
 
-                            {/* Subject ID badge (from filename parsing) */}
-                            <div className="absolute top-3 left-3 z-10 flex flex-col gap-1">
-                              {item.parsed?.subjectId ? (
-                                <Badge 
-                                  className={cn(
-                                    "text-[10px] px-1.5 py-0.5 font-bold border shadow-sm",
-                                    subjectGroups.get(item.parsed.subjectId)?.color || "bg-slate-100 border-slate-300"
-                                  )}
-                                  title={`Subject: ${item.parsed.subjectId} (${Math.round((item.parsed.confidence || 0) * 100)}% confidence)`}
-                                >
-                                  {item.parsed.subjectId}
-                                </Badge>
-                              ) : isParsing ? (
-                                <Badge className="text-[10px] px-1.5 py-0.5 bg-slate-100 border-slate-300 animate-pulse">
-                                  <Loader2 className="w-2 h-2 animate-spin mr-1" />
-                                  ...
-                                </Badge>
-                              ) : (
-                                <span
-                                  className={cn(
-                                    "block w-2.5 h-2.5 rounded-full border-2 border-white shadow-sm",
-                                    item.assignedSubjectId || item.newSubjectName
-                                      ? "bg-emerald-500"
-                                      : "bg-amber-400"
-                                  )}
-                                  title={
-                                    getAssignmentLabel(item) ||
-                                    "Unassigned subject"
-                                  }
-                                />
-                              )}
-                              
-                              {/* Ground truth badge */}
-                              {item.parsed?.groundTruthStage && (
-                                <Badge 
-                                  className="text-[9px] px-1 py-0 font-medium bg-white/90 text-slate-600 border border-slate-200"
-                                  title={`Ground truth: ${item.parsed.groundTruthStage}`}
-                                >
-                                  GT: {item.parsed.groundTruthStage.substring(0, 3)}
-                                </Badge>
-                              )}
+                            <div className="absolute top-3 left-3 z-10">
+                              <span
+                                className={cn(
+                                  "block w-2.5 h-2.5 rounded-full border-2 border-white shadow-sm",
+                                  item.assignedSubjectId || item.newSubjectName
+                                    ? "bg-emerald-500"
+                                    : "bg-amber-400"
+                                )}
+                                title={
+                                  getAssignmentLabel(item) ||
+                                  "Unassigned subject"
+                                }
+                              />
                             </div>
 
                             {/* Bottom Result Label */}
@@ -1732,36 +1340,20 @@ export default function BatchUploadPage() {
                             <Label className="text-xs text-slate-500 font-semibold">
                               Or create a new {subjectLabel.toLowerCase()}
                             </Label>
-                            <div className="relative">
-                              <Input
-                                placeholder="Enter identifier e.g. 227A"
-                                value={selectedItem.newSubjectName ?? ""}
-                                onChange={(e) =>
-                                  assignNewSubjectName(
-                                    selectedItem.id,
-                                    e.target.value
-                                  )
-                                }
-                                className={cn(
-                                  "h-11 bg-white border-slate-200 rounded-xl pr-24",
-                                  selectedItem.parsed?.subjectId && selectedItem.newSubjectName === selectedItem.parsed.subjectId && "border-emerald-300 bg-emerald-50/50"
-                                )}
-                              />
-                              {selectedItem.parsed?.subjectId && selectedItem.newSubjectName === selectedItem.parsed.subjectId && (
-                                <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 text-[10px] text-emerald-600 bg-emerald-100 px-2 py-1 rounded-full">
-                                  <Sparkles className="w-3 h-3" />
-                                  Auto-detected
-                                </div>
-                              )}
-                            </div>
+                            <Input
+                              placeholder="Enter identifier e.g. 227A"
+                              value={selectedItem.newSubjectName ?? ""}
+                              onChange={(e) =>
+                                assignNewSubjectName(
+                                  selectedItem.id,
+                                  e.target.value
+                                )
+                              }
+                              className="h-11 bg-white border-slate-200 rounded-xl"
+                            />
                             <p className="text-[11px] text-slate-400">
-                              {selectedItem.parsed?.subjectId && selectedItem.newSubjectName === selectedItem.parsed.subjectId ? (
-                                <span className="text-emerald-600">
-                                  ✓ Detected from filename "{selectedItem.filename}"
-                                </span>
-                              ) : (
-                                <>New {subjectLabel.toLowerCase()}s will be created automatically when you save.</>
-                              )}
+                              New {subjectLabel.toLowerCase()}s will be created automatically when
+                              you save.
                             </p>
                           </div>
                         </div>
@@ -1870,35 +1462,15 @@ export default function BatchUploadPage() {
                         <h3 className="font-medium text-slate-900 mb-1">
                           {selectedItem.status === "analyzing"
                             ? "Analyzing Image"
-                            : selectedItem.status === "uploading"
-                            ? "Uploading..."
                             : "Waiting for Input"}
                         </h3>
-                        <p className="text-sm text-slate-500 max-w-[240px]">
-                          {selectedItem.status === "analyzing" ? (
-                            <>
-                              Running <span className="font-semibold text-purple-600">BioCLIP k-NN</span> + <span className="font-semibold text-blue-600">Gemini 2.5</span> ensemble...
-                            </>
-                          ) : selectedItem.status === "uploading" ? (
-                            "Uploading to cloud storage..."
-                          ) : selectedItem.status === "uploaded" ? (
-                            "Ready to be analyzed"
-                          ) : (
-                            "Upload this file to begin analysis"
-                          )}
+                        <p className="text-sm text-slate-500 max-w-[200px]">
+                          {selectedItem.status === "analyzing"
+                            ? "Gemini is currently processing this image..."
+                            : selectedItem.status === "uploaded"
+                            ? "Ready to be analyzed"
+                            : "Upload this file to begin analysis"}
                         </p>
-                        {selectedItem.status === "analyzing" && (
-                          <div className="mt-4 flex items-center gap-3 text-xs text-slate-400">
-                            <div className="flex items-center gap-1.5">
-                              <div className="w-2 h-2 rounded-full bg-purple-500 animate-pulse" />
-                              <span>k-NN matching</span>
-                            </div>
-                            <div className="flex items-center gap-1.5">
-                              <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" style={{ animationDelay: '0.5s' }} />
-                              <span>Vision AI</span>
-                            </div>
-                          </div>
-                        )}
                       </div>
                     )}
                   </motion.div>
@@ -1909,7 +1481,6 @@ export default function BatchUploadPage() {
                 <div className="grid grid-cols-2 gap-3">
                   <Button
                     variant="outline"
-                    onClick={handleDiscard}
                     className="h-12 rounded-xl border-slate-200 hover:bg-red-50 hover:text-red-600 hover:border-red-100 font-medium transition-colors"
                   >
                     <Trash2 className="w-4 h-4 mr-2" /> Discard
