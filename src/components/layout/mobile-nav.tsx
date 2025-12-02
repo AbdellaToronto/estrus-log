@@ -15,15 +15,12 @@ import {
 import {
   LayoutDashboard,
   Users,
-  Library,
   Settings,
   FlaskConical,
   TestTube,
   Search,
   Building2,
-  Globe,
   Menu,
-  Cog,
   ChevronRight,
 } from "lucide-react";
 import {
@@ -44,7 +41,7 @@ const ORG_NAV_ITEMS = [
 
 // Navigation items when user has NO organization (exploring)
 const EXPLORE_NAV_ITEMS = [
-  { label: "Find a Lab", href: "/discover", icon: Search },
+  { label: "Find a Lab", href: "/onboarding", icon: Search },
 ];
 
 export function MobileNav() {
@@ -59,7 +56,6 @@ export function MobileNav() {
 
   const hasOrg = !!organization;
   const navItems = hasOrg ? ORG_NAV_ITEMS : EXPLORE_NAV_ITEMS;
-  const hasMultipleOrgs = (userMemberships?.data?.length || 0) > 1;
 
   const handleSwitchOrg = async (orgId: string) => {
     if (orgId === organization?.id || isSwitching || !setActive) return;
@@ -144,7 +140,7 @@ export function MobileNav() {
                               "w-9 h-9 rounded-lg flex items-center justify-center text-white font-bold text-sm",
                               isActive
                                 ? "bg-primary"
-                                : "bg-gradient-to-br from-slate-500 to-slate-600"
+                                : "bg-linear-to-br from-slate-500 to-slate-600"
                             )}
                           >
                             {membership.organization.name?.[0] || "L"}
@@ -173,7 +169,7 @@ export function MobileNav() {
 
                     {/* Link to discover more labs */}
                     <Link
-                      href="/discover"
+                      href="/onboarding"
                       onClick={() => setOpen(false)}
                       className="flex items-center justify-between p-3 rounded-xl text-sm text-muted-foreground hover:text-foreground hover:bg-white/5 transition-colors mt-2"
                     >
@@ -198,7 +194,7 @@ export function MobileNav() {
                       </p>
                     </div>
                     <Link
-                      href="/discover"
+                      href="/onboarding"
                       onClick={() => setOpen(false)}
                       className="flex items-center justify-center gap-2 mt-3 p-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium transition-colors"
                     >
@@ -255,11 +251,11 @@ export function MobileNav() {
                         </span>
                       </div>
                       <Link
-                        href="/discover"
+                        href="/onboarding"
                         onClick={() => setOpen(false)}
                         className={cn(
                           "flex items-center gap-3 px-3 py-3 rounded-xl transition-all duration-200",
-                          pathname === "/discover"
+                          pathname === "/onboarding"
                             ? "bg-primary text-primary-foreground shadow-lg shadow-primary/25"
                             : "text-muted-foreground hover:text-foreground hover:bg-white/10"
                         )}

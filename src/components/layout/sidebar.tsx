@@ -2,10 +2,8 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useState, useEffect } from 'react';
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { 
   LayoutDashboard, 
   Users, 
@@ -15,45 +13,30 @@ import {
   TestTube,
   Search,
   Building2,
-  Globe,
-  UserPlus,
-  Cog,
 } from "lucide-react";
 import { UserButton, OrganizationSwitcher, useUser, useOrganization } from "@clerk/nextjs";
-import { getPendingRequestsForOrg } from "@/app/actions";
 
 // Navigation items when user HAS an organization
 const ORG_NAV_ITEMS = [
   { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { label: 'Cohorts', href: '/cohorts', icon: Users },
   { label: 'Experiments', href: '/experiments', icon: TestTube },
+  { label: 'Library', href: '/library', icon: Library },
   { label: 'Settings', href: '/settings', icon: Settings },
 ];
 
 // Navigation items when user has NO organization (exploring)
 const EXPLORE_NAV_ITEMS = [
-  { label: 'Find a Lab', href: '/discover', icon: Search },
+  { label: 'Find a Lab', href: '/onboarding', icon: Search },
 ];
 
 export function Sidebar() {
   const pathname = usePathname();
   const { user } = useUser();
   const { organization } = useOrganization();
-  const [pendingCount, setPendingCount] = useState(0);
 
   const hasOrg = !!organization;
   const navItems = hasOrg ? ORG_NAV_ITEMS : EXPLORE_NAV_ITEMS;
-
-  // Fetch pending join requests count
-  useEffect(() => {
-    if (organization?.id) {
-      getPendingRequestsForOrg(organization.id)
-        .then((requests) => setPendingCount(requests.length))
-        .catch(() => setPendingCount(0));
-    } else {
-      setPendingCount(0);
-    }
-  }, [organization?.id]);
 
   // Don't show sidebar on certain pages
   const hiddenPaths = ['/sign-in', '/sign-up'];
@@ -62,7 +45,7 @@ export function Sidebar() {
   }
 
   return (
-    <aside className="hidden lg:flex fixed left-4 top-4 bottom-4 w-64 rounded-3xl glass-panel flex-col p-6 z-50">
+    <aside className="fixed left-4 top-4 bottom-4 w-64 rounded-3xl glass-panel flex flex-col p-6 z-50">
       {/* Logo */}
       <div className="flex items-center gap-3 mb-8 px-2">
         <div className="w-10 h-10 rounded-xl bg-primary/20 flex items-center justify-center text-primary">
@@ -87,12 +70,10 @@ export function Sidebar() {
             appearance={{
               elements: {
                 rootBox: "w-full",
-                organizationSwitcherTrigger: "w-full flex items-center justify-between p-3 rounded-xl bg-white/5 hover:bg-white/10 transition-colors border border-white/10",
+                organizationSwitcherTrigger: "w-full flex items-center justify-between p-2 rounded-xl hover:bg-white/5 transition-colors",
                 organizationPreviewTextContainer: "mr-auto",
                 organizationPreviewMainIdentifier: "text-sm font-medium text-foreground",
-                organizationPreviewSecondaryIdentifier: "text-xs text-muted-foreground",
-                organizationSwitcherPopoverCard: "!z-[100]",
-                organizationSwitcherPopoverActions: "!z-[100]",
+                organizationPreviewSecondaryIdentifier: "text-xs text-muted-foreground"
               }
             }}
           />
@@ -146,43 +127,9 @@ export function Sidebar() {
           );
         })}
 
-        {/* Lab Management section for users with orgs */}
+        {/* Divider and secondary nav for users with orgs */}
         {hasOrg && (
           <>
-            <div className="my-4 mx-4 border-t border-white/10" />
-            <div className="px-4 py-2">
-              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                Lab Management
-              </span>
-            </div>
-            <Link
-              href="/organization/requests"
-              className={cn(
-                "flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group",
-                pathname.startsWith('/organization')
-                  ? "bg-primary text-primary-foreground shadow-lg shadow-primary/25" 
-                  : "text-muted-foreground hover:text-foreground hover:bg-white/5"
-              )}
-            >
-              <Cog className={cn(
-                "w-5 h-5 transition-colors",
-                pathname.startsWith('/organization') ? "text-primary-foreground" : "text-muted-foreground group-hover:text-primary"
-              )} />
-              <span className="font-medium">Lab Settings</span>
-              {pendingCount > 0 && (
-                <Badge 
-                  className={cn(
-                    "ml-auto text-[10px] px-1.5 py-0 h-5 min-w-[20px] justify-center",
-                    pathname.startsWith('/organization')
-                      ? "bg-white/20 text-white"
-                      : "bg-amber-500 text-white"
-                  )}
-                >
-                  {pendingCount}
-                </Badge>
-              )}
-            </Link>
-            
             <div className="my-4 mx-4 border-t border-white/10" />
             <div className="px-4 py-2">
               <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
@@ -190,17 +137,17 @@ export function Sidebar() {
               </span>
             </div>
             <Link
-              href="/discover"
+              href="/onboarding"
               className={cn(
                 "flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group",
-                pathname === '/discover'
+                pathname === '/onboarding'
                   ? "bg-primary text-primary-foreground shadow-lg shadow-primary/25" 
                   : "text-muted-foreground hover:text-foreground hover:bg-white/5"
               )}
             >
               <Search className={cn(
                 "w-5 h-5 transition-colors",
-                pathname === '/discover' ? "text-primary-foreground" : "text-muted-foreground group-hover:text-primary"
+                pathname === '/onboarding' ? "text-primary-foreground" : "text-muted-foreground group-hover:text-primary"
               )} />
               <span className="font-medium">Discover Labs</span>
             </Link>

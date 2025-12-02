@@ -16,9 +16,13 @@ const isPublicRoute = createRouteMatcher([
   "/sign-in",
   "/sign-up",
   "/onboarding(.*)",
-  "/explore(.*)",
-  "/discover(.*)",
   "/api/webhooks(.*)",
+]);
+
+// Routes that work without an org (user can see their personal data)
+const isOrgOptionalRoute = createRouteMatcher([
+  "/settings(.*)",
+  "/organization(.*)",
 ]);
 
 export default clerkMiddleware(async (auth, req) => {
@@ -45,10 +49,19 @@ export default clerkMiddleware(async (auth, req) => {
       await auth.protect();
     }
 
+    // Allow org-optional routes without an active org
+    // This lets users access settings and manage their org membership
+    if (isOrgOptionalRoute(req)) {
+      return NextResponse.next();
+    }
+
     // If user is signed in but has no org, redirect to onboarding
-    // (except if they're already on organization management pages)
-    if (userId && !orgId && !url.pathname.startsWith("/organization")) {
-      return NextResponse.redirect(new URL("/onboarding", req.url));
+    // But allow query param to bypass (for users who want to see personal data)
+    if (userId && !orgId) {
+      const allowPersonal = url.searchParams.get("personal") === "true";
+      if (!allowPersonal) {
+        return NextResponse.redirect(new URL("/onboarding", req.url));
+      }
     }
   }
 

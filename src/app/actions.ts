@@ -1,15 +1,12 @@
 "use server";
 
-import { auth, currentUser, clerkClient } from "@clerk/nextjs/server";
+import { auth, currentUser } from "@clerk/nextjs/server";
 import { createServerClient, configFromEnv } from "@/lib/supabase";
 import { getGcs } from "@/lib/gcs";
 import { revalidatePath } from "next/cache";
 import { tasks } from "@trigger.dev/sdk/v3";
 import type { analyzeScanSessionTask } from "@/trigger/scan-tasks";
 import type { Database, Json } from "@/lib/database-types";
-import { google } from "@ai-sdk/google";
-import { generateObject } from "ai";
-import { z } from "zod";
 
 // --- Types/Defaults ---
 const DEFAULT_ESTRUS_CONFIG = {
@@ -66,41 +63,27 @@ function isValidUUID(id: string) {
 // --- Cohorts ---
 
 export async function getCohorts() {
-  const { userId, orgId } = await auth();
+  const { userId, getToken } = await auth();
   if (!userId) throw new Error("Unauthorized");
 
-  // Use service role to bypass RLS - we handle auth filtering manually
-  const supabase = createServerClient(configFromEnv());
+  const token = await getToken();
+  const supabase = createServerClient(configFromEnv(), token || undefined);
 
-  // If user is in an org, get cohorts for that org
-  if (orgId) {
-    const { data, error } = await supabase
-      .from("cohorts")
-      .select("*")
-      .eq("org_id", orgId)
-      .order("created_at", { ascending: false });
+  const { data, error } = await supabase
+    .from("cohorts")
+    .select("*")
+    .order("created_at", { ascending: false });
 
-    if (error) throw error;
-    return data || [];
-  } else {
-    // If no org, show user's personal cohorts (org_id is null)
-    const { data, error } = await supabase
-      .from("cohorts")
-      .select("*")
-      .is("org_id", null)
-      .eq("user_id", userId)
-      .order("created_at", { ascending: false });
-
-    if (error) throw error;
-    return data || [];
-  }
+  if (error) throw error;
+  return data;
 }
 
 export async function createCohort(formData: FormData) {
-  const { userId, orgId } = await auth();
+  const { userId, orgId, getToken } = await auth();
   if (!userId) throw new Error("Unauthorized");
 
-  const supabase = createServerClient(configFromEnv());
+  const token = await getToken();
+  const supabase = createServerClient(configFromEnv(), token || undefined);
 
   // -- SAFETY CHECK: Ensure user exists in Supabase before creating foreign key ref --
   const user = await currentUser();
@@ -137,7 +120,7 @@ export async function createCohort(formData: FormData) {
     }
   }
 
-  const { data, error } = await supabase.from("cohorts").insert({
+  const { error } = await supabase.from("cohorts").insert({
     user_id: userId,
     org_id: orgId || null,
     name,
@@ -146,24 +129,22 @@ export async function createCohort(formData: FormData) {
     type,
     subject_config: subjectConfig,
     log_config: logConfig,
-  }).select().single();
+  });
 
   if (error) throw error;
   revalidatePath("/dashboard");
-  revalidatePath("/cohorts");
-  
-  return data;
 }
 
 export async function getCohort(id: string) {
-  const { userId } = await auth();
+  const { userId, getToken } = await auth();
   if (!userId) throw new Error("Unauthorized");
 
   if (!isValidUUID(id)) {
     return null;
   }
 
-  const supabase = createServerClient(configFromEnv());
+  const token = await getToken();
+  const supabase = createServerClient(configFromEnv(), token || undefined);
 
   const { data, error } = await supabase
     .from("cohorts")
@@ -175,63 +156,14 @@ export async function getCohort(id: string) {
   return data;
 }
 
-export async function deleteCohort(id: string) {
-  const { userId } = await auth();
-  if (!userId) throw new Error("Unauthorized");
-
-  if (!isValidUUID(id)) {
-    throw new Error("Invalid cohort ID");
-  }
-
-  const supabase = createServerClient(configFromEnv());
-
-  // Delete in order to respect foreign key constraints:
-  // 1. scan_items (via session)
-  // 2. scan_sessions
-  // 3. estrus_logs (via mice)
-  // 4. mice
-  // 5. cohort
-
-  // Get session IDs first
-  const { data: sessions } = await supabase
-    .from("scan_sessions")
-    .select("id")
-    .eq("cohort_id", id);
-
-  if (sessions && sessions.length > 0) {
-    const sessionIds = sessions.map((s) => s.id);
-    await supabase.from("scan_items").delete().in("session_id", sessionIds);
-    await supabase.from("scan_sessions").delete().eq("cohort_id", id);
-  }
-
-  // Get mice IDs
-  const { data: mice } = await supabase
-    .from("mice")
-    .select("id")
-    .eq("cohort_id", id);
-
-  if (mice && mice.length > 0) {
-    const miceIds = mice.map((m) => m.id);
-    await supabase.from("estrus_logs").delete().in("mouse_id", miceIds);
-    await supabase.from("mice").delete().eq("cohort_id", id);
-  }
-
-  // Finally delete the cohort
-  const { error } = await supabase.from("cohorts").delete().eq("id", id);
-
-  if (error) throw error;
-
-  revalidatePath("/cohorts");
-  revalidatePath("/dashboard");
-}
-
 // --- Subjects (Formerly Mice) ---
 
 export async function getSubjects() {
-  const { userId } = await auth();
+  const { userId, getToken } = await auth();
   if (!userId) throw new Error("Unauthorized");
 
-  const supabase = createServerClient(configFromEnv());
+  const token = await getToken();
+  const supabase = createServerClient(configFromEnv(), token || undefined);
 
   const { data, error } = await supabase
     .from("mice")
@@ -243,10 +175,11 @@ export async function getSubjects() {
 }
 
 export async function getCohortSubjects(cohortId: string) {
-  const { userId } = await auth();
+  const { userId, getToken } = await auth();
   if (!userId) throw new Error("Unauthorized");
 
-  const supabase = createServerClient(configFromEnv());
+  const token = await getToken();
+  const supabase = createServerClient(configFromEnv(), token || undefined);
 
   const { data, error } = await supabase
     .from("mice")
@@ -259,18 +192,19 @@ export async function getCohortSubjects(cohortId: string) {
 }
 
 export async function getSubject(id: string) {
-  const { userId } = await auth();
+  const { userId, getToken } = await auth();
   if (!userId) throw new Error("Unauthorized");
 
   if (!isValidUUID(id)) {
     return null;
   }
 
-  const supabase = createServerClient(configFromEnv());
+  const token = await getToken();
+  const supabase = createServerClient(configFromEnv(), token || undefined);
 
   const { data, error } = await supabase
     .from("mice")
-    .select("*, cohorts(id, name, color, type, subject_config, log_config)")
+    .select("*, cohorts(name, color, type, subject_config, log_config)")
     .eq("id", id)
     .single();
 
@@ -279,10 +213,11 @@ export async function getSubject(id: string) {
 }
 
 export async function createSubject(formData: FormData) {
-  const { userId, orgId } = await auth();
+  const { userId, getToken } = await auth();
   if (!userId) throw new Error("Unauthorized");
 
-  const supabase = createServerClient(configFromEnv());
+  const token = await getToken();
+  const supabase = createServerClient(configFromEnv(), token || undefined);
 
   const name = formData.get("name") as string;
   const cohortId = formData.get("cohortId") as string;
@@ -295,9 +230,22 @@ export async function createSubject(formData: FormData) {
     }
   });
 
+  // IMPORTANT: Inherit org_id from the cohort to maintain data consistency
+  // This ensures subjects always belong to the same org as their cohort
+  let subjectOrgId: string | null = null;
+  if (cohortId) {
+    const { data: cohort } = await supabase
+      .from("cohorts")
+      .select("org_id")
+      .eq("id", cohortId)
+      .single();
+    
+    subjectOrgId = cohort?.org_id || null;
+  }
+
   const { error } = await supabase.from("mice").insert({
     user_id: userId,
-    org_id: orgId || null,
+    org_id: subjectOrgId,
     name,
     cohort_id: cohortId || null,
     metadata,
@@ -311,10 +259,11 @@ export async function createSubject(formData: FormData) {
 // --- Logs ---
 
 export async function getSubjectLogs(subjectId: string) {
-  const { userId } = await auth();
+  const { userId, getToken } = await auth();
   if (!userId) throw new Error("Unauthorized");
 
-  const supabase = createServerClient(configFromEnv());
+  const token = await getToken();
+  const supabase = createServerClient(configFromEnv(), token || undefined);
 
   const { data, error } = await supabase
     .from("estrus_logs")
@@ -328,8 +277,8 @@ export async function getSubjectLogs(subjectId: string) {
   const updatedLogs = data.map((log) => {
     if (log.image_url) {
       return { ...log, image_url: log.image_url.split("?")[0] };
-      }
-      return log;
+    }
+    return log;
   });
 
   return updatedLogs;
@@ -344,10 +293,11 @@ export async function createLog(data: {
   notes: string;
   flexibleData?: Record<string, unknown>;
 }) {
-  const { userId } = await auth();
+  const { userId, getToken } = await auth();
   if (!userId) throw new Error("Unauthorized");
 
-  const supabase = createServerClient(configFromEnv());
+  const token = await getToken();
+  const supabase = createServerClient(configFromEnv(), token || undefined);
 
   const { error } = await supabase.from("estrus_logs").insert({
     mouse_id: data.subjectId,
@@ -366,10 +316,11 @@ export async function createLog(data: {
 // --- Scan Sessions (Batch) ---
 
 export async function getScanSession(cohortId: string) {
-  const { userId } = await auth();
+  const { userId, getToken } = await auth();
   if (!userId) throw new Error("Unauthorized");
 
-  const supabase = createServerClient(configFromEnv());
+  const token = await getToken();
+  const supabase = createServerClient(configFromEnv(), token || undefined);
 
   // Find the most recent 'pending' session for this user/cohort
   const { data, error } = await supabase
@@ -387,10 +338,11 @@ export async function getScanSession(cohortId: string) {
 }
 
 export async function getScanItems(sessionId: string) {
-  const { userId } = await auth();
+  const { userId, getToken } = await auth();
   if (!userId) throw new Error("Unauthorized");
 
-  const supabase = createServerClient(configFromEnv());
+  const token = await getToken();
+  const supabase = createServerClient(configFromEnv(), token || undefined);
 
   const { data, error } = await supabase
     .from("scan_items")
@@ -423,21 +375,22 @@ export async function getScanItems(sessionId: string) {
 
   // Bucket is public - just strip any existing query params (old signed URLs) and return clean public URLs
   const updatedItems = data.map((item) => {
-      if (item.image_url && item.image_url.includes(prefix)) {
+    if (item.image_url && item.image_url.includes(prefix)) {
       const cleanUrl = item.image_url.split("?")[0];
       return { ...item, image_url: cleanUrl };
-      }
-      return item;
+    }
+    return item;
   });
 
   return updatedItems;
 }
 
 export async function startScanSessionAnalysis(sessionId: string) {
-  const { userId } = await auth();
+  const { userId, getToken } = await auth();
   if (!userId) throw new Error("Unauthorized");
 
-  const supabase = createServerClient(configFromEnv());
+  const token = await getToken();
+  const supabase = createServerClient(configFromEnv(), token || undefined);
 
   const { data: session, error } = await supabase
     .from("scan_sessions")
@@ -456,10 +409,11 @@ export async function startScanSessionAnalysis(sessionId: string) {
 }
 
 export async function createScanSession(cohortId: string, name?: string) {
-  const { userId } = await auth();
+  const { userId, getToken } = await auth();
   if (!userId) throw new Error("Unauthorized");
 
-  const supabase = createServerClient(configFromEnv());
+  const token = await getToken();
+  const supabase = createServerClient(configFromEnv(), token || undefined);
 
   const { data, error } = await supabase
     .from("scan_sessions")
@@ -477,9 +431,10 @@ export async function createScanSession(cohortId: string, name?: string) {
 }
 
 export async function createScanItem(sessionId: string, imageUrl: string) {
-  const { userId } = await auth();
+  const { userId, getToken } = await auth();
   if (!userId) throw new Error("Unauthorized");
-  const supabase = createServerClient(configFromEnv());
+  const token = await getToken();
+  const supabase = createServerClient(configFromEnv(), token || undefined);
 
   const { data, error } = await supabase
     .from("scan_items")
@@ -499,9 +454,10 @@ export async function createScanItemsBulk(
   sessionId: string,
   items: { imageUrl: string }[]
 ) {
-  const { userId } = await auth();
+  const { userId, getToken } = await auth();
   if (!userId) throw new Error("Unauthorized");
-  const supabase = createServerClient(configFromEnv());
+  const token = await getToken();
+  const supabase = createServerClient(configFromEnv(), token || undefined);
 
   const rows = items.map((item) => ({
     session_id: sessionId,
@@ -527,9 +483,10 @@ export async function updateScanItem(
     imageUrl?: string;
   }
 ) {
-  const { userId } = await auth();
+  const { userId, getToken } = await auth();
   if (!userId) throw new Error("Unauthorized");
-  const supabase = createServerClient(configFromEnv());
+  const token = await getToken();
+  const supabase = createServerClient(configFromEnv(), token || undefined);
 
   const payload: {
     status: string;
@@ -559,109 +516,6 @@ export async function updateScanItem(
 }
 
 // --- GCS Upload & Batch ---
-
-/**
- * Upload a file directly to GCS (server-side upload).
- * This is more reliable than signed URLs as it doesn't require
- * the service account to have signBlob permissions.
- */
-export async function uploadToGcs(
-  filename: string,
-  contentType: string,
-  data: string | Buffer, // base64 data URL or raw buffer
-  cohortId?: string
-) {
-  const { userId, orgId } = await auth();
-  if (!userId) throw new Error("Unauthorized");
-
-  const { bucket } = getGcs();
-
-  // Organize by Org/User -> Cohort -> Logs
-  const rootPath = orgId ? `orgs/${orgId}` : `users/${userId}`;
-  const subPath = cohortId ? `${cohortId}/logs` : "uploads";
-
-  const path = `${rootPath}/${subPath}/${Date.now()}-${filename}`;
-  const file = bucket.file(path);
-
-  // Convert data URL to buffer if needed
-  let buffer: Buffer;
-  if (typeof data === "string") {
-    if (data.startsWith("data:")) {
-      const base64 = data.replace(/^data:[^;]+;base64,/, "");
-      buffer = Buffer.from(base64, "base64");
-    } else {
-      // Assume it's already base64
-      buffer = Buffer.from(data, "base64");
-    }
-  } else {
-    buffer = data;
-  }
-
-  // Upload directly to GCS
-  await file.save(buffer, {
-    metadata: {
-      contentType,
-    },
-    resumable: false,
-  });
-
-  const publicUrl = `https://storage.googleapis.com/${bucket.name}/${path}`;
-
-  return {
-    path,
-    publicUrl,
-  };
-}
-
-/**
- * Batch upload multiple files to GCS (server-side).
- */
-export async function uploadFilesToGcs(
-  files: { filename: string; contentType: string; data: string }[],
-  cohortId: string
-) {
-  const { userId, orgId } = await auth();
-  if (!userId) throw new Error("Unauthorized");
-
-  const { bucket } = getGcs();
-  const rootPath = orgId ? `orgs/${orgId}` : `users/${userId}`;
-  const subPath = cohortId ? `${cohortId}/logs` : "uploads";
-
-  const results = await Promise.all(
-    files.map(async (f) => {
-      const path = `${rootPath}/${subPath}/${Date.now()}-${f.filename}`;
-      const file = bucket.file(path);
-
-      // Convert data URL to buffer
-      let buffer: Buffer;
-      if (f.data.startsWith("data:")) {
-        const base64 = f.data.replace(/^data:[^;]+;base64,/, "");
-        buffer = Buffer.from(base64, "base64");
-      } else {
-        buffer = Buffer.from(f.data, "base64");
-      }
-
-      // Upload directly
-      await file.save(buffer, {
-        metadata: {
-          contentType: f.contentType,
-        },
-        resumable: false,
-      });
-
-      return {
-        filename: f.filename,
-        path,
-        publicUrl: `https://storage.googleapis.com/${bucket.name}/${path}`,
-      };
-    })
-  );
-
-  return results;
-}
-
-// Keep the old signed URL functions for backward compatibility but they may not work
-// depending on service account permissions
 
 export async function getUploadUrl(
   filename: string,
@@ -766,10 +620,20 @@ export async function batchSaveLogs(
   items: BatchLogItem[],
   sessionId?: string
 ) {
-  const { userId, orgId } = await auth();
+  const { userId, getToken } = await auth();
   if (!userId) throw new Error("Unauthorized");
 
-  const supabase = createServerClient(configFromEnv());
+  const token = await getToken();
+  const supabase = createServerClient(configFromEnv(), token || undefined);
+
+  // Get the cohort's org_id to ensure new subjects inherit it
+  const { data: cohort } = await supabase
+    .from("cohorts")
+    .select("org_id")
+    .eq("id", cohortId)
+    .single();
+  
+  const cohortOrgId = cohort?.org_id || null;
 
   // 1. Get existing subjects to match filenames
   const { data: existingSubjects } = await supabase
@@ -784,59 +648,25 @@ export async function batchSaveLogs(
   const logsToInsert = [];
   const scanItemsToUpdate = [];
 
-  // Helper to extract subject name from filename like "FCONPL57_10_22_ESTRUS.jpg"
-  // or "MPP/229B_10_16_METESTRUS.jpg"
-  const extractSubjectFromFilename = (filename: string): string | null => {
-    // 1. Get just the base filename (remove folder path like "MPP/")
-    const baseName = filename.split("/").pop() || filename;
-    
-    // 2. Remove file extension
-    const nameWithoutExt = baseName.replace(/\.(jpg|jpeg|png|webp|gif)$/i, "");
-    
-    // 3. Remove timestamp prefix if present (e.g., "1732123456789-")
-    const cleanFilename = nameWithoutExt.replace(/^\d{10,}-/, "");
-    
-    // 4. Split by common delimiters (underscore, dash, space)
-    const parts = cleanFilename.split(/[_\-\s]+/);
-    
-    // 5. Filter out known stage names and date-like patterns
-    const stageNames = ["proestrus", "estrus", "metestrus", "diestrus", "pro", "est", "met", "di"];
-    const filteredParts = parts.filter((part) => {
-      const lower = part.toLowerCase();
-      // Skip if it's a stage name
-      if (stageNames.includes(lower)) return false;
-      // Skip if it looks like a date (all digits, 1-2 chars)
-      if (/^\d{1,2}$/.test(part)) return false;
-      // Skip if it looks like a year
-      if (/^20\d{2}$/.test(part)) return false;
-      // Keep it
-      return true;
-    });
-    
-    // 6. The first remaining part is likely the subject ID
-    if (filteredParts.length > 0 && filteredParts[0].length >= 2) {
-      return filteredParts[0];
-    }
-    
-    // Fallback: just take the first alphanumeric chunk
-    const match = cleanFilename.match(/^([A-Za-z0-9]+)/);
-    return match ? match[1] : null;
-  };
+  for (const item of items) {
+    let subjectId = item.subjectId;
 
-  // Helper to get or create a subject
-  const getOrCreateSubject = async (name: string): Promise<string | null> => {
-    const lowerName = name.toLowerCase();
-    let subjectId = subjectMap.get(lowerName);
+    // If no explicit ID, try to find by new name or fallback to filename matching
+    if (!subjectId) {
+      // 1. Try explicit new name (e.g. user typed "227A" in UI)
+      if (item.newSubjectName) {
+        const lowerName = item.newSubjectName.toLowerCase();
+        subjectId = subjectMap.get(lowerName); // Check if exists first
 
         if (!subjectId) {
-      // Create the subject
+          // Create it - IMPORTANT: inherit org_id from cohort, not from session
           const { data: createdSubject } = await supabase
             .from("mice")
             .insert({
               user_id: userId,
-              org_id: orgId || null,
+              org_id: cohortOrgId, // Inherit from cohort
               cohort_id: cohortId,
-          name: name,
+              name: item.newSubjectName,
               status: "Active",
             })
             .select("id")
@@ -847,31 +677,20 @@ export async function batchSaveLogs(
             subjectMap.set(lowerName, subjectId);
           }
         }
-    return subjectId || null;
-  };
-
-  for (const item of items) {
-    let subjectId: string | undefined = item.subjectId;
-
-    // If no explicit ID, try to find or create by name
-    if (!subjectId) {
-      // 1. Try explicit new name (e.g. user typed "227A" in UI)
-      if (item.newSubjectName) {
-        subjectId = (await getOrCreateSubject(item.newSubjectName)) ?? undefined;
       }
-      // 2. Try to extract from filename (e.g., "FCONPL57_10_22_ESTRUS.jpg" -> "FCONPL57")
+      // 2. Fallback to Filename heuristic (only if desired/legacy)
       else {
-        const extractedName = extractSubjectFromFilename(item.filename);
-        if (extractedName) {
-          subjectId = (await getOrCreateSubject(extractedName)) ?? undefined;
+        const cleanFilename = item.filename.replace(/^\d+-/, "");
+        const potentialName = cleanFilename.split(/[_\s.-]/)[0];
+        if (potentialName) {
+          subjectId = subjectMap.get(potentialName.toLowerCase());
         }
       }
     }
 
-    // Always save the log - subject is optional
+    if (subjectId) {
       logsToInsert.push({
-      mouse_id: subjectId || null,
-      cohort_id: cohortId,
+        mouse_id: subjectId,
         stage: item.stage,
         confidence:
           typeof item.confidence === "number" ? item.confidence : 0.95,
@@ -884,9 +703,10 @@ export async function batchSaveLogs(
       if (item.scanItemId) {
         scanItemsToUpdate.push({
           id: item.scanItemId,
-        mouse_id: subjectId || null,
-        status: "saved",
+          mouse_id: subjectId,
+          status: "completed",
         });
+      }
     }
   }
 
@@ -921,10 +741,11 @@ export async function batchSaveLogs(
 }
 
 export async function getCohortLogs(cohortId: string) {
-  const { userId } = await auth();
+  const { userId, getToken } = await auth();
   if (!userId) throw new Error("Unauthorized");
 
-  const supabase = createServerClient(configFromEnv());
+  const token = await getToken();
+  const supabase = createServerClient(configFromEnv(), token || undefined);
 
   const { data, error } = await supabase
     .from("estrus_logs")
@@ -945,10 +766,11 @@ export async function getCohortLogs(cohortId: string) {
 export async function getCohortInsights(
   cohortId: string
 ): Promise<CohortInsights> {
-  const { userId } = await auth();
+  const { userId, getToken } = await auth();
   if (!userId) throw new Error("Unauthorized");
 
-  const supabase = createServerClient(configFromEnv());
+  const token = await getToken();
+  const supabase = createServerClient(configFromEnv(), token || undefined);
 
   const { data: logs, error } = await supabase
     .from("estrus_logs")
@@ -1071,74 +893,36 @@ export type DashboardStats = {
     imageUrl: string | null;
     time: string;
   }[];
-  dailyTrend: {
-    date: string;
-    Proestrus: number;
-    Estrus: number;
-    Metestrus: number;
-    Diestrus: number;
-  }[];
 };
 
 export async function getDashboardStats(): Promise<DashboardStats> {
-  const { userId, orgId } = await auth();
+  const { userId, getToken } = await auth();
   if (!userId) throw new Error("Unauthorized");
 
-  const supabase = createServerClient(configFromEnv());
+  const token = await getToken();
+  const supabase = createServerClient(configFromEnv(), token || undefined);
 
-  // Get cohorts for this org first (to filter all other queries)
-  let cohortIds: string[] = [];
-  if (orgId) {
-    const { data: orgCohorts } = await supabase
-      .from("cohorts")
-      .select("id")
-      .eq("org_id", orgId);
-    cohortIds = orgCohorts?.map(c => c.id) || [];
-  } else {
-    // Fallback to user's personal cohorts
-    const { data: userCohorts } = await supabase
-      .from("cohorts")
-      .select("id")
-      .eq("user_id", userId)
-      .is("org_id", null);
-    cohortIds = userCohorts?.map(c => c.id) || [];
-  }
-
-  // If no cohorts, return empty stats
-  if (cohortIds.length === 0) {
-    return {
-      totalSubjects: 0,
-      todaysScans: 0,
-      stageDistribution: [],
-      recentActivity: [],
-      dailyTrend: [],
-    };
-  }
-
-  // 1. Total Subjects (only in this org's cohorts)
+  // 1. Total Subjects
   const { count: totalSubjects, error: subjectsError } = await supabase
     .from("mice")
-    .select("*", { count: "exact", head: true })
-    .in("cohort_id", cohortIds);
+    .select("*", { count: "exact", head: true });
 
   if (subjectsError) throw subjectsError;
 
-  // 2. Today's Scans (only in this org's cohorts)
+  // 2. Today's Scans
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const { count: todaysScans, error: scansError } = await supabase
     .from("estrus_logs")
     .select("*", { count: "exact", head: true })
-    .in("cohort_id", cohortIds)
     .gte("created_at", today.toISOString());
 
   if (scansError) throw scansError;
 
-  // 3. Recent Activity (Last 10 logs in this org's cohorts)
+  // 3. Recent Activity (Last 10 logs across all cohorts)
   const { data: recentLogs, error: logsError } = await supabase
     .from("estrus_logs")
     .select("*, mice(name, cohort_id), cohorts(name)")
-    .in("cohort_id", cohortIds)
     .order("created_at", { ascending: false })
     .limit(10);
 
@@ -1167,14 +951,13 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     };
   });
 
-  // 4. Stage Distribution (Last 7 days, only in this org's cohorts)
+  // 4. Stage Distribution (Last 7 days)
   const weekAgo = new Date();
   weekAgo.setDate(weekAgo.getDate() - 7);
 
   const { data: distributionData, error: distError } = await supabase
     .from("estrus_logs")
-    .select("stage, created_at")
-    .in("cohort_id", cohortIds)
+    .select("stage")
     .gte("created_at", weekAgo.toISOString());
 
   if (distError) throw distError;
@@ -1189,50 +972,22 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     .map(([stage, value]) => ({ stage, value }))
     .sort((a, b) => b.value - a.value);
 
-  // 5. Daily Trend (for chart) - last 7 days broken down by day and stage
-  const dailyTrend: { date: string; Proestrus: number; Estrus: number; Metestrus: number; Diestrus: number }[] = [];
-  
-  for (let i = 6; i >= 0; i--) {
-    const date = new Date();
-    date.setDate(date.getDate() - i);
-    const dateStr = date.toISOString().split('T')[0];
-    
-    dailyTrend.push({
-      date: dateStr,
-      Proestrus: 0,
-      Estrus: 0,
-      Metestrus: 0,
-      Diestrus: 0,
-    });
-  }
-
-  distributionData?.forEach((log) => {
-    const logDate = new Date(log.created_at).toISOString().split('T')[0];
-    const dayData = dailyTrend.find(d => d.date === logDate);
-    if (dayData) {
-      const stage = log.stage as keyof typeof dayData;
-      if (stage in dayData && typeof dayData[stage] === 'number') {
-        (dayData[stage] as number)++;
-      }
-    }
-  });
-
   return {
     totalSubjects: totalSubjects || 0,
     todaysScans: todaysScans || 0,
     stageDistribution,
     recentActivity,
-    dailyTrend,
   };
 }
 
 // --- Experiments ---
 
 export async function getExperiments() {
-  const { userId } = await auth();
+  const { userId, getToken } = await auth();
   if (!userId) throw new Error("Unauthorized");
 
-  const supabase = createServerClient(configFromEnv());
+  const token = await getToken();
+  const supabase = createServerClient(configFromEnv(), token || undefined);
 
   const { data, error } = await supabase
     .from("experiments")
@@ -1244,10 +999,11 @@ export async function getExperiments() {
 }
 
 export async function createExperiment(formData: FormData) {
-  const { userId, orgId } = await auth();
+  const { userId, orgId, getToken } = await auth();
   if (!userId) throw new Error("Unauthorized");
 
-  const supabase = createServerClient(configFromEnv());
+  const token = await getToken();
+  const supabase = createServerClient(configFromEnv(), token || undefined);
 
   const name = formData.get("name") as string;
   const description = formData.get("description") as string;
@@ -1269,7 +1025,7 @@ export async function createExperiment(formData: FormData) {
 }
 
 export async function getExperiment(id: string) {
-  const { userId } = await auth();
+  const { userId, getToken } = await auth();
   if (!userId) throw new Error("Unauthorized");
 
   if (!isValidUUID(id)) {
@@ -1278,7 +1034,8 @@ export async function getExperiment(id: string) {
     return null;
   }
 
-  const supabase = createServerClient(configFromEnv());
+  const token = await getToken();
+  const supabase = createServerClient(configFromEnv(), token || undefined);
 
   const { data, error } = await supabase
     .from("experiments")
@@ -1299,10 +1056,11 @@ export async function getExperiment(id: string) {
 }
 
 export async function deleteExperiment(id: string) {
-  const { userId } = await auth();
+  const { userId, getToken } = await auth();
   if (!userId) throw new Error("Unauthorized");
 
-  const supabase = createServerClient(configFromEnv());
+  const token = await getToken();
+  const supabase = createServerClient(configFromEnv(), token || undefined);
 
   const { error } = await supabase.from("experiments").delete().eq("id", id);
 
@@ -1314,10 +1072,11 @@ export async function addCohortToExperiment(
   experimentId: string,
   cohortId: string
 ) {
-  const { userId } = await auth();
+  const { userId, getToken } = await auth();
   if (!userId) throw new Error("Unauthorized");
 
-  const supabase = createServerClient(configFromEnv());
+  const token = await getToken();
+  const supabase = createServerClient(configFromEnv(), token || undefined);
 
   const { error } = await supabase.from("experiment_cohorts").insert({
     experiment_id: experimentId,
@@ -1332,10 +1091,11 @@ export async function removeCohortFromExperiment(
   experimentId: string,
   cohortId: string
 ) {
-  const { userId } = await auth();
+  const { userId, getToken } = await auth();
   if (!userId) throw new Error("Unauthorized");
 
-  const supabase = createServerClient(configFromEnv());
+  const token = await getToken();
+  const supabase = createServerClient(configFromEnv(), token || undefined);
 
   const { error } = await supabase
     .from("experiment_cohorts")
@@ -1365,9 +1125,10 @@ export type ExperimentInsights = {
 export async function getExperimentInsights(
   experimentId: string
 ): Promise<ExperimentInsights> {
-  const { userId } = await auth();
+  const { userId, getToken } = await auth();
   if (!userId) throw new Error("Unauthorized");
-  const supabase = createServerClient(configFromEnv());
+  const token = await getToken();
+  const supabase = createServerClient(configFromEnv(), token || undefined);
 
   // 1. Get Cohorts in Experiment
   const { data: experimentCohorts, error: cohortsError } = await supabase
@@ -1443,10 +1204,10 @@ export async function getExperimentInsights(
     // cohorts can be an array or single object depending on Supabase typing
     const cohortData = Array.isArray(ec.cohorts) ? ec.cohorts[0] : ec.cohorts;
     return {
-    id: ec.cohort_id,
+      id: ec.cohort_id,
       name: cohortData?.name || "Unknown",
-    subjectCount: cohortSubjectCounts.get(ec.cohort_id) || 0,
-    logCount: cohortLogCounts.get(ec.cohort_id) || 0,
+      subjectCount: cohortSubjectCounts.get(ec.cohort_id) || 0,
+      logCount: cohortLogCounts.get(ec.cohort_id) || 0,
     };
   });
 
@@ -1464,9 +1225,10 @@ export async function getExperimentInsights(
 }
 
 export async function getExperimentExportData(experimentId: string) {
-  const { userId } = await auth();
+  const { userId, getToken } = await auth();
   if (!userId) throw new Error("Unauthorized");
-  const supabase = createServerClient(configFromEnv());
+  const token = await getToken();
+  const supabase = createServerClient(configFromEnv(), token || undefined);
 
   // 1. Get Cohorts
   const { data: experimentCohorts } = await supabase
@@ -1500,31 +1262,32 @@ export async function getExperimentExportData(experimentId: string) {
   // Bucket is public - just strip query params from old signed URLs
   const rows = data.map((log) => {
     const imageUrl = log.image_url?.split("?")[0] || "";
-      const mouse = log.mice as any;
-      const cohort = mouse?.cohorts as any;
+    const mouse = log.mice as any;
+    const cohort = mouse?.cohorts as any;
 
-      return {
-        LogID: log.id,
-        Date: new Date(log.created_at).toLocaleString(),
-        SubjectName: mouse?.name || "Unknown",
-        CohortName: cohort?.name || "Unknown",
-        Stage: log.stage,
-        Confidence: extractConfidenceValue(log.confidence),
-        Notes: log.notes || "",
+    return {
+      LogID: log.id,
+      Date: new Date(log.created_at).toLocaleString(),
+      SubjectName: mouse?.name || "Unknown",
+      CohortName: cohort?.name || "Unknown",
+      Stage: log.stage,
+      Confidence: extractConfidenceValue(log.confidence),
+      Notes: log.notes || "",
       ImageURL: imageUrl,
-        Features: JSON.stringify(log.features || {}),
-        FlexibleData: JSON.stringify(log.data || {}),
-        SubjectMetadata: JSON.stringify(mouse?.metadata || {}),
-      };
+      Features: JSON.stringify(log.features || {}),
+      FlexibleData: JSON.stringify(log.data || {}),
+      SubjectMetadata: JSON.stringify(mouse?.metadata || {}),
+    };
   });
 
   return rows;
 }
 
 export async function getExperimentVisualizationData(experimentId: string) {
-  const { userId } = await auth();
+  const { userId, getToken } = await auth();
   if (!userId) throw new Error("Unauthorized");
-  const supabase = createServerClient(configFromEnv());
+  const token = await getToken();
+  const supabase = createServerClient(configFromEnv(), token || undefined);
 
   // 1. Get Cohorts
   const { data: experimentCohorts, error: cohortsError } = await supabase
@@ -1882,22 +1645,13 @@ export async function approveJoinRequest(requestId: string) {
 
   if (updateError) throw updateError;
 
-  // Create Clerk invitation to add user to the organization
-  const clerkOrgId = request.organization_profiles?.clerk_org_id;
-  if (clerkOrgId && request.user_email) {
-    try {
-      const clerk = await clerkClient();
-      await clerk.organizations.createOrganizationInvitation({
-        organizationId: clerkOrgId,
-        emailAddress: request.user_email,
-        role: "org:member",
-        inviterUserId: userId,
-      });
-    } catch (clerkError) {
-      console.error("Failed to create Clerk invitation:", clerkError);
-      // Don't throw - the request is still approved, user just needs manual invite
-    }
-  }
+  // TODO: Create Clerk invitation using Clerk Backend API
+  // const clerkOrgId = request.organization_profiles?.clerk_org_id;
+  // await clerkClient.organizations.createOrganizationInvitation({
+  //   organizationId: clerkOrgId,
+  //   emailAddress: request.user_email,
+  //   role: "basic_member",
+  // });
 
   revalidatePath("/");
   return { success: true };
@@ -1928,107 +1682,119 @@ export async function denyJoinRequest(requestId: string, note?: string) {
   return { success: true };
 }
 
-// =============================================================================
-// Filename Parsing with LLM
-// =============================================================================
+/**
+ * Get organization profile by Clerk org ID
+ */
+export async function getOrganizationProfile(clerkOrgId: string) {
+  const supabase = createServerClient(configFromEnv());
 
-const ParsedFilenameSchema = z.object({
-  subjectId: z.string().nullable().describe("The subject/mouse identifier (e.g., '229B', 'FCONPL57', 'Mouse_A')"),
-  groundTruthStage: z.enum(["Proestrus", "Estrus", "Metestrus", "Diestrus"]).nullable().describe("If a stage name is in the filename, extract it"),
-  date: z.string().nullable().describe("Any date information in the filename (e.g., '10_16', '2024-01-15')"),
-  confidence: z.number().min(0).max(1).describe("How confident you are in the subject ID extraction (0-1)"),
-});
+  const { data, error } = await supabase
+    .from("organization_profiles")
+    .select("*")
+    .eq("clerk_org_id", clerkOrgId)
+    .single();
 
-export type ParsedFilename = z.infer<typeof ParsedFilenameSchema>;
+  if (error && error.code !== "PGRST116") {
+    console.error("Error fetching org profile:", error);
+    return null;
+  }
 
-export type FilenameParseResult = {
-  filename: string;
-  parsed: ParsedFilename;
-};
+  return data;
+}
 
 /**
- * Use Gemini 2.5 Flash to intelligently parse filenames and extract subject IDs,
- * ground truth stages, and dates.
+ * Update organization profile settings
  */
-export async function parseFilenamesWithLLM(
-  filenames: string[]
-): Promise<FilenameParseResult[]> {
-  if (filenames.length === 0) return [];
+export async function updateOrganizationProfile(
+  clerkOrgId: string,
+  updates: {
+    isDiscoverable?: boolean;
+    institution?: string;
+    department?: string;
+    description?: string;
+  }
+) {
+  const { userId, orgId } = await auth();
+  if (!userId) throw new Error("Unauthorized");
+  
+  // Verify user is part of this org
+  if (orgId !== clerkOrgId) {
+    throw new Error("You can only update your own organization");
+  }
 
-  // Batch filenames into a single prompt for efficiency
-  const FilenamesBatchSchema = z.object({
-    results: z.array(
-      z.object({
-        filename: z.string(),
-        subjectId: z.string().nullable(),
-        groundTruthStage: z.enum(["Proestrus", "Estrus", "Metestrus", "Diestrus"]).nullable(),
-        date: z.string().nullable(),
-        confidence: z.number().min(0).max(1),
-      })
-    ),
+  const supabase = createServerClient(configFromEnv());
+
+  const updateData: Record<string, any> = { updated_at: new Date().toISOString() };
+  if (updates.isDiscoverable !== undefined) updateData.is_discoverable = updates.isDiscoverable;
+  if (updates.institution !== undefined) updateData.institution = updates.institution;
+  if (updates.department !== undefined) updateData.department = updates.department;
+  if (updates.description !== undefined) updateData.description = updates.description;
+
+  const { error } = await supabase
+    .from("organization_profiles")
+    .update(updateData)
+    .eq("clerk_org_id", clerkOrgId);
+
+  if (error) throw error;
+
+  revalidatePath("/settings");
+  return { success: true };
+}
+
+/**
+ * Get user's data summary (for showing what they have across orgs)
+ */
+export async function getUserDataSummary() {
+  const { userId } = await auth();
+  if (!userId) return null;
+
+  const supabase = createServerClient(configFromEnv());
+
+  // Get cohorts grouped by org
+  const { data: cohorts } = await supabase
+    .from("cohorts")
+    .select("id, name, org_id, created_at")
+    .eq("user_id", userId);
+
+  // Get mice count
+  const { count: miceCount } = await supabase
+    .from("mice")
+    .select("*", { count: "exact", head: true })
+    .eq("user_id", userId);
+
+  // Get logs count
+  const { data: logCounts } = await supabase
+    .from("estrus_logs")
+    .select("id, mice!inner(user_id)")
+    .eq("mice.user_id", userId);
+
+  // Group cohorts by org
+  const orgMap = new Map<string | null, typeof cohorts>();
+  cohorts?.forEach(c => {
+    const existing = orgMap.get(c.org_id) || [];
+    existing.push(c);
+    orgMap.set(c.org_id, existing);
   });
 
-  try {
-    const { object } = await generateObject({
-      model: google("gemini-2.5-flash-preview-04-17"),
-      schema: FilenamesBatchSchema,
-      prompt: `You are parsing scientific image filenames from a mouse estrus cycle study.
+  // Get org names
+  const orgIds = [...new Set(cohorts?.map(c => c.org_id).filter(Boolean) as string[])];
+  const { data: orgProfiles } = await supabase
+    .from("organization_profiles")
+    .select("clerk_org_id, department, institution")
+    .in("clerk_org_id", orgIds);
 
-Extract the following from each filename:
-1. **subjectId**: The mouse/subject identifier (usually alphanumeric like "229B", "FCONPL57", "MouseA", etc.)
-2. **groundTruthStage**: If the filename contains an estrus stage name (Proestrus, Estrus, Metestrus, or Diestrus), extract it
-3. **date**: Any date information (could be "10_16" meaning Oct 16, or "2024-01-15", etc.)
-4. **confidence**: How confident you are in the subjectId extraction (0.0 to 1.0)
+  const orgNameMap = new Map(orgProfiles?.map(o => [o.clerk_org_id, o]) || []);
 
-Common filename patterns:
-- "MPP/229B_10_16_METESTRUS.jpg" -> subjectId: "229B", stage: "Metestrus", date: "10_16"
-- "FCONPL57_10_22_ESTRUS.jpg" -> subjectId: "FCONPL57", stage: "Estrus", date: "10_22"
-- "mouse_A_diestrus.png" -> subjectId: "mouse_A", stage: "Diestrus"
-- "IMG_1234.jpg" -> subjectId: null (can't determine), confidence: 0.0
-
-Parse these filenames:
-${filenames.map((f, i) => `${i + 1}. "${f}"`).join("\n")}
-
-Return results in the same order as the input filenames. IMPORTANT: Return exactly ${filenames.length} results.`,
-    });
-
-    // Use index-based matching (LLM is asked to return in same order)
-    // This avoids issues where LLM might return slightly different filenames
-    return filenames.map((filename, idx) => {
-      const llmResult = object.results[idx];
-      if (llmResult) {
-        return {
-          filename, // Use our original filename, not LLM's version
-          parsed: {
-            subjectId: llmResult.subjectId,
-            groundTruthStage: llmResult.groundTruthStage,
-            date: llmResult.date,
-            confidence: llmResult.confidence,
-          },
-        };
-      }
-      // Fallback if LLM didn't return enough results
-      return {
-        filename,
-        parsed: {
-          subjectId: null,
-          groundTruthStage: null,
-          date: null,
-          confidence: 0,
-        },
-      };
-    });
-  } catch (error) {
-    console.error("Failed to parse filenames with LLM:", error);
-    // Return empty parsed results on error
-    return filenames.map((filename) => ({
-      filename,
-      parsed: {
-        subjectId: null,
-        groundTruthStage: null,
-        date: null,
-        confidence: 0,
-      },
-    }));
-  }
+  return {
+    totalCohorts: cohorts?.length || 0,
+    totalMice: miceCount || 0,
+    totalLogs: logCounts?.length || 0,
+    byOrg: Array.from(orgMap.entries()).map(([orgId, orgCohorts]) => ({
+      orgId,
+      orgName: orgId ? orgNameMap.get(orgId)?.department || "Unknown Org" : "Personal",
+      institution: orgId ? orgNameMap.get(orgId)?.institution : null,
+      cohortCount: orgCohorts?.length || 0,
+      isOrphaned: orgId ? !orgNameMap.has(orgId) : false,
+    })),
+  };
 }
