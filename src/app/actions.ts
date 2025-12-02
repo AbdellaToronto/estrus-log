@@ -317,8 +317,16 @@ export async function createLog(data: {
   
   const supabase = createAuthClient(token);
 
+  // Get the cohort_id from the subject - required for RLS
+  const { data: subject } = await supabase
+    .from("mice")
+    .select("cohort_id")
+    .eq("id", data.subjectId)
+    .single();
+
   const { error } = await supabase.from("estrus_logs").insert({
     mouse_id: data.subjectId,
+    cohort_id: subject?.cohort_id, // Required for RLS policy
     stage: data.stage,
     confidence: data.confidence,
     features: data.features ?? {},
@@ -725,6 +733,7 @@ export async function batchSaveLogs(
     if (subjectId) {
       logsToInsert.push({
         mouse_id: subjectId,
+        cohort_id: cohortId, // Required for RLS policy
         stage: item.stage,
         confidence:
           typeof item.confidence === "number" ? item.confidence : 0.95,
