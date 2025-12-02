@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { Plus, UploadCloud, LayoutGrid, List as ListIcon, Search, BarChart2, FlaskConical } from "lucide-react";
+import { Plus, UploadCloud, LayoutGrid, List as ListIcon, Search, BarChart2, FlaskConical, History } from "lucide-react";
 import Link from 'next/link';
 import { Badge } from "@/components/ui/badge";
 import { CohortAnalysis } from "@/components/cohort-analysis";
@@ -39,6 +39,12 @@ export function CohortClient({
         </div>
         
         <div className="flex items-center gap-3">
+          <Link href={`/cohorts/${cohort.id}/scans`}>
+            <Button variant="outline" size="lg" className="rounded-full h-11 px-6">
+              <History className="mr-2 h-4 w-4" />
+              Scan History
+            </Button>
+          </Link>
           <Link href={`/cohorts/${cohort.id}/batch`}>
             <Button size="lg" className="rounded-full h-11 px-6 shadow-lg shadow-blue-500/20 bg-blue-600 hover:bg-blue-500 transition-all hover:scale-105 active:scale-95">
               <UploadCloud className="mr-2 h-4 w-4" />

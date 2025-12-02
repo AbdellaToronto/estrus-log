@@ -10,6 +10,7 @@ const isProtectedRoute = createRouteMatcher([
   "/settings(.*)",
   "/library(.*)",
   "/discover(.*)",
+  "/scans(.*)",
 ]);
 
 const isPublicRoute = createRouteMatcher([

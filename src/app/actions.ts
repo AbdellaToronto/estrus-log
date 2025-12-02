@@ -68,7 +68,7 @@ export async function getCohorts() {
 
   const token = await getToken();
   if (!token) throw new Error("No authentication token");
-  
+
   const supabase = createAuthClient(token);
 
   const { data, error } = await supabase
@@ -86,7 +86,7 @@ export async function createCohort(formData: FormData) {
 
   const token = await getToken();
   if (!token) throw new Error("No authentication token");
-  
+
   const supabase = createAuthClient(token);
 
   // -- SAFETY CHECK: Ensure user exists in Supabase before creating foreign key ref --
@@ -149,7 +149,7 @@ export async function getCohort(id: string) {
 
   const token = await getToken();
   if (!token) throw new Error("No authentication token");
-  
+
   const supabase = createAuthClient(token);
 
   const { data, error } = await supabase
@@ -170,7 +170,7 @@ export async function getSubjects() {
 
   const token = await getToken();
   if (!token) throw new Error("No authentication token");
-  
+
   const supabase = createAuthClient(token);
 
   const { data, error } = await supabase
@@ -188,7 +188,7 @@ export async function getCohortSubjects(cohortId: string) {
 
   const token = await getToken();
   if (!token) throw new Error("No authentication token");
-  
+
   const supabase = createAuthClient(token);
 
   const { data, error } = await supabase
@@ -211,7 +211,7 @@ export async function getSubject(id: string) {
 
   const token = await getToken();
   if (!token) throw new Error("No authentication token");
-  
+
   const supabase = createAuthClient(token);
 
   const { data, error } = await supabase
@@ -230,7 +230,7 @@ export async function createSubject(formData: FormData) {
 
   const token = await getToken();
   if (!token) throw new Error("No authentication token");
-  
+
   const supabase = createAuthClient(token);
 
   const name = formData.get("name") as string;
@@ -253,7 +253,7 @@ export async function createSubject(formData: FormData) {
       .select("org_id")
       .eq("id", cohortId)
       .single();
-    
+
     subjectOrgId = cohort?.org_id || null;
   }
 
@@ -278,7 +278,7 @@ export async function getSubjectLogs(subjectId: string) {
 
   const token = await getToken();
   if (!token) throw new Error("No authentication token");
-  
+
   const supabase = createAuthClient(token);
 
   const { data, error } = await supabase
@@ -314,7 +314,7 @@ export async function createLog(data: {
 
   const token = await getToken();
   if (!token) throw new Error("No authentication token");
-  
+
   const supabase = createAuthClient(token);
 
   // Get the cohort_id from the subject - required for RLS
@@ -347,7 +347,7 @@ export async function getScanSession(cohortId: string) {
 
   const token = await getToken();
   if (!token) throw new Error("No authentication token");
-  
+
   const supabase = createAuthClient(token);
 
   // Find the most recent 'pending' session for this user/cohort
@@ -371,7 +371,7 @@ export async function getScanItems(sessionId: string) {
 
   const token = await getToken();
   if (!token) throw new Error("No authentication token");
-  
+
   const supabase = createAuthClient(token);
 
   const { data, error } = await supabase
@@ -421,7 +421,7 @@ export async function startScanSessionAnalysis(sessionId: string) {
 
   const token = await getToken();
   if (!token) throw new Error("No authentication token");
-  
+
   const supabase = createAuthClient(token);
 
   const { data: session, error } = await supabase
@@ -446,7 +446,7 @@ export async function createScanSession(cohortId: string, name?: string) {
 
   const token = await getToken();
   if (!token) throw new Error("No authentication token");
-  
+
   const supabase = createAuthClient(token);
 
   const { data, error } = await supabase
@@ -469,7 +469,7 @@ export async function createScanItem(sessionId: string, imageUrl: string) {
   if (!userId) throw new Error("Unauthorized");
   const token = await getToken();
   if (!token) throw new Error("No authentication token");
-  
+
   const supabase = createAuthClient(token);
 
   const { data, error } = await supabase
@@ -494,7 +494,7 @@ export async function createScanItemsBulk(
   if (!userId) throw new Error("Unauthorized");
   const token = await getToken();
   if (!token) throw new Error("No authentication token");
-  
+
   const supabase = createAuthClient(token);
 
   const rows = items.map((item) => ({
@@ -525,7 +525,7 @@ export async function updateScanItem(
   if (!userId) throw new Error("Unauthorized");
   const token = await getToken();
   if (!token) throw new Error("No authentication token");
-  
+
   const supabase = createAuthClient(token);
 
   const payload: {
@@ -553,6 +553,214 @@ export async function updateScanItem(
     .eq("id", itemId);
 
   if (error) throw error;
+}
+
+// --- Scan History & Receipts ---
+
+export type ScanSessionSummary = {
+  id: string;
+  name: string | null;
+  status: string;
+  created_at: string;
+  itemCount: number;
+  completedCount: number;
+  stageBreakdown: Record<string, number>;
+};
+
+export type ScanSessionDetail = ScanSessionSummary & {
+  cohort: {
+    id: string;
+    name: string;
+  } | null;
+  items: {
+    id: string;
+    image_url: string | null;
+    status: string;
+    ai_result: Record<string, unknown> | null;
+    mouse_id: string | null;
+    mouse_name: string | null;
+    created_at: string;
+  }[];
+  subjectsLogged: { id: string; name: string; logCount: number }[];
+};
+
+/**
+ * Get all scan sessions for a cohort (for history view)
+ */
+export async function getCohortScanSessions(
+  cohortId: string
+): Promise<ScanSessionSummary[]> {
+  const { userId, getToken } = await auth();
+  if (!userId) throw new Error("Unauthorized");
+
+  const token = await getToken();
+  if (!token) throw new Error("No authentication token");
+
+  const supabase = createAuthClient(token);
+
+  // Get all sessions for this cohort
+  const { data: sessions, error } = await supabase
+    .from("scan_sessions")
+    .select("id, name, status, created_at")
+    .eq("cohort_id", cohortId)
+    .order("created_at", { ascending: false });
+
+  if (error) throw error;
+  if (!sessions) return [];
+
+  // Get item counts and stage breakdowns for each session
+  const sessionIds = sessions.map((s) => s.id);
+
+  const { data: items } = await supabase
+    .from("scan_items")
+    .select("session_id, status, ai_result")
+    .in("session_id", sessionIds);
+
+  // Aggregate by session
+  const sessionStats = new Map<
+    string,
+    { itemCount: number; completedCount: number; stageBreakdown: Record<string, number> }
+  >();
+
+  items?.forEach((item) => {
+    const stats = sessionStats.get(item.session_id) || {
+      itemCount: 0,
+      completedCount: 0,
+      stageBreakdown: {},
+    };
+    stats.itemCount++;
+    if (item.status === "complete" || item.status === "completed") {
+      stats.completedCount++;
+    }
+    // Extract stage from ai_result
+    const result = item.ai_result as { stage?: string } | null;
+    if (result?.stage) {
+      stats.stageBreakdown[result.stage] =
+        (stats.stageBreakdown[result.stage] || 0) + 1;
+    }
+    sessionStats.set(item.session_id, stats);
+  });
+
+  return sessions.map((session) => ({
+    ...session,
+    ...(sessionStats.get(session.id) || {
+      itemCount: 0,
+      completedCount: 0,
+      stageBreakdown: {},
+    }),
+  }));
+}
+
+/**
+ * Get detailed scan session info (for receipt view)
+ */
+export async function getScanSessionDetail(
+  sessionId: string
+): Promise<ScanSessionDetail | null> {
+  const { userId, getToken } = await auth();
+  if (!userId) throw new Error("Unauthorized");
+
+  const token = await getToken();
+  if (!token) throw new Error("No authentication token");
+
+  const supabase = createAuthClient(token);
+
+  // Get session with cohort info
+  const { data: session, error: sessionError } = await supabase
+    .from("scan_sessions")
+    .select(
+      `
+      id, name, status, created_at,
+      cohorts (id, name)
+    `
+    )
+    .eq("id", sessionId)
+    .single();
+
+  if (sessionError || !session) return null;
+
+  // Get all items with mouse info
+  const { data: items, error: itemsError } = await supabase
+    .from("scan_items")
+    .select(
+      `
+      id, image_url, status, ai_result, mouse_id, created_at,
+      mice (id, name)
+    `
+    )
+    .eq("session_id", sessionId)
+    .order("created_at", { ascending: true });
+
+  if (itemsError) throw itemsError;
+
+  // Clean up image URLs (strip query params from signed URLs)
+  const { bucket } = getGcs();
+  const bucketName = bucket.name;
+  const prefix = `https://storage.googleapis.com/${bucketName}/`;
+
+  const cleanedItems =
+    items?.map((item) => {
+      let cleanUrl = item.image_url;
+      if (cleanUrl && cleanUrl.includes(prefix)) {
+        cleanUrl = cleanUrl.split("?")[0];
+      }
+      const miceData = item.mice as { id: string; name: string } | { id: string; name: string }[] | null;
+      const mice = Array.isArray(miceData) ? miceData[0] : miceData;
+      return {
+        id: item.id,
+        image_url: cleanUrl,
+        status: item.status,
+        ai_result: item.ai_result as Record<string, unknown> | null,
+        mouse_id: item.mouse_id,
+        mouse_name: mice?.name || null,
+        created_at: item.created_at,
+      };
+    }) || [];
+
+  // Calculate stage breakdown
+  const stageBreakdown: Record<string, number> = {};
+  cleanedItems.forEach((item) => {
+    const result = item.ai_result as { stage?: string } | null;
+    if (result?.stage) {
+      stageBreakdown[result.stage] = (stageBreakdown[result.stage] || 0) + 1;
+    }
+  });
+
+  // Calculate subjects logged
+  const subjectCounts = new Map<string, { id: string; name: string; count: number }>();
+  cleanedItems.forEach((item) => {
+    if (item.mouse_id && item.mouse_name) {
+      const existing = subjectCounts.get(item.mouse_id) || {
+        id: item.mouse_id,
+        name: item.mouse_name,
+        count: 0,
+      };
+      existing.count++;
+      subjectCounts.set(item.mouse_id, existing);
+    }
+  });
+
+  const cohortDataRaw = session.cohorts as { id: string; name: string } | { id: string; name: string }[] | null;
+  const cohortData = Array.isArray(cohortDataRaw) ? cohortDataRaw[0] : cohortDataRaw;
+
+  return {
+    id: session.id,
+    name: session.name,
+    status: session.status,
+    created_at: session.created_at,
+    cohort: cohortData,
+    itemCount: cleanedItems.length,
+    completedCount: cleanedItems.filter(
+      (i) => i.status === "complete" || i.status === "completed"
+    ).length,
+    stageBreakdown,
+    items: cleanedItems,
+    subjectsLogged: Array.from(subjectCounts.values()).map((s) => ({
+      id: s.id,
+      name: s.name,
+      logCount: s.count,
+    })),
+  };
 }
 
 // --- GCS Upload & Batch ---
@@ -665,7 +873,7 @@ export async function batchSaveLogs(
 
   const token = await getToken();
   if (!token) throw new Error("No authentication token");
-  
+
   const supabase = createAuthClient(token);
 
   // Get the cohort's org_id to ensure new subjects inherit it
@@ -674,7 +882,7 @@ export async function batchSaveLogs(
     .select("org_id")
     .eq("id", cohortId)
     .single();
-  
+
   const cohortOrgId = cohort?.org_id || null;
 
   // 1. Get existing subjects to match filenames
@@ -789,7 +997,7 @@ export async function getCohortLogs(cohortId: string) {
 
   const token = await getToken();
   if (!token) throw new Error("No authentication token");
-  
+
   const supabase = createAuthClient(token);
 
   const { data, error } = await supabase
@@ -816,7 +1024,7 @@ export async function getCohortInsights(
 
   const token = await getToken();
   if (!token) throw new Error("No authentication token");
-  
+
   const supabase = createAuthClient(token);
 
   const { data: logs, error } = await supabase
@@ -955,7 +1163,7 @@ export async function getDashboardStats(): Promise<DashboardStats> {
 
   const token = await getToken();
   if (!token) throw new Error("No authentication token");
-  
+
   const supabase = createAuthClient(token);
 
   // 1. Total Subjects
@@ -1038,19 +1246,27 @@ export async function getDashboardStats(): Promise<DashboardStats> {
   if (trendError) throw trendError;
 
   // Group by date
-  const dailyMap = new Map<string, { Proestrus: number; Estrus: number; Metestrus: number; Diestrus: number }>();
-  
+  const dailyMap = new Map<
+    string,
+    { Proestrus: number; Estrus: number; Metestrus: number; Diestrus: number }
+  >();
+
   // Initialize last 7 days
   for (let i = 6; i >= 0; i--) {
     const date = new Date();
     date.setDate(date.getDate() - i);
-    const dateStr = date.toISOString().split('T')[0];
-    dailyMap.set(dateStr, { Proestrus: 0, Estrus: 0, Metestrus: 0, Diestrus: 0 });
+    const dateStr = date.toISOString().split("T")[0];
+    dailyMap.set(dateStr, {
+      Proestrus: 0,
+      Estrus: 0,
+      Metestrus: 0,
+      Diestrus: 0,
+    });
   }
 
   // Fill in the data
   trendData?.forEach((log) => {
-    const dateStr = new Date(log.created_at).toISOString().split('T')[0];
+    const dateStr = new Date(log.created_at).toISOString().split("T")[0];
     const dayData = dailyMap.get(dateStr);
     if (dayData && log.stage in dayData) {
       dayData[log.stage as keyof typeof dayData]++;
@@ -1079,7 +1295,7 @@ export async function getExperiments() {
 
   const token = await getToken();
   if (!token) throw new Error("No authentication token");
-  
+
   const supabase = createAuthClient(token);
 
   const { data, error } = await supabase
@@ -1097,7 +1313,7 @@ export async function createExperiment(formData: FormData) {
 
   const token = await getToken();
   if (!token) throw new Error("No authentication token");
-  
+
   const supabase = createAuthClient(token);
 
   const name = formData.get("name") as string;
@@ -1131,7 +1347,7 @@ export async function getExperiment(id: string) {
 
   const token = await getToken();
   if (!token) throw new Error("No authentication token");
-  
+
   const supabase = createAuthClient(token);
 
   const { data, error } = await supabase
@@ -1158,7 +1374,7 @@ export async function deleteExperiment(id: string) {
 
   const token = await getToken();
   if (!token) throw new Error("No authentication token");
-  
+
   const supabase = createAuthClient(token);
 
   const { error } = await supabase.from("experiments").delete().eq("id", id);
@@ -1176,7 +1392,7 @@ export async function addCohortToExperiment(
 
   const token = await getToken();
   if (!token) throw new Error("No authentication token");
-  
+
   const supabase = createAuthClient(token);
 
   const { error } = await supabase.from("experiment_cohorts").insert({
@@ -1197,7 +1413,7 @@ export async function removeCohortFromExperiment(
 
   const token = await getToken();
   if (!token) throw new Error("No authentication token");
-  
+
   const supabase = createAuthClient(token);
 
   const { error } = await supabase
@@ -1232,7 +1448,7 @@ export async function getExperimentInsights(
   if (!userId) throw new Error("Unauthorized");
   const token = await getToken();
   if (!token) throw new Error("No authentication token");
-  
+
   const supabase = createAuthClient(token);
 
   // 1. Get Cohorts in Experiment
@@ -1334,7 +1550,7 @@ export async function getExperimentExportData(experimentId: string) {
   if (!userId) throw new Error("Unauthorized");
   const token = await getToken();
   if (!token) throw new Error("No authentication token");
-  
+
   const supabase = createAuthClient(token);
 
   // 1. Get Cohorts
@@ -1395,7 +1611,7 @@ export async function getExperimentVisualizationData(experimentId: string) {
   if (!userId) throw new Error("Unauthorized");
   const token = await getToken();
   if (!token) throw new Error("No authentication token");
-  
+
   const supabase = createAuthClient(token);
 
   // 1. Get Cohorts
@@ -1528,7 +1744,9 @@ export async function getInstitutions(): Promise<string[]> {
     return [];
   }
 
-  const institutions = [...new Set(data?.map((d) => d.institution).filter(Boolean))] as string[];
+  const institutions = [
+    ...new Set(data?.map((d) => d.institution).filter(Boolean)),
+  ] as string[];
   return institutions.sort();
 }
 
@@ -1549,21 +1767,22 @@ export async function upsertOrganizationProfile(data: {
 
   const supabase = createAdminClient();
 
-  const { error } = await supabase
-    .from("organization_profiles")
-    .upsert({
+  const { error } = await supabase.from("organization_profiles").upsert(
+    {
       clerk_org_id: data.clerkOrgId,
       is_discoverable: data.isDiscoverable ?? false,
       institution: data.institution,
       department: data.name, // Use org name as department
       description: data.description,
       logo_url: data.logoUrl,
-    }, {
+    },
+    {
       onConflict: "clerk_org_id",
-    });
+    }
+  );
 
   if (error) throw error;
-  
+
   revalidatePath("/onboarding");
 }
 
@@ -1576,7 +1795,7 @@ export async function requestToJoinOrganization(
 ) {
   const { userId } = await auth();
   const user = await currentUser();
-  
+
   if (!userId || !user) throw new Error("Unauthorized");
 
   const supabase = createAdminClient();
@@ -1613,7 +1832,9 @@ export async function requestToJoinOrganization(
 /**
  * Get user's pending join requests
  */
-export async function getMyJoinRequests(): Promise<(JoinRequest & { organization: DiscoverableOrg | null })[]> {
+export async function getMyJoinRequests(): Promise<
+  (JoinRequest & { organization: DiscoverableOrg | null })[]
+> {
   const { userId } = await auth();
   if (!userId) return [];
 
@@ -1621,7 +1842,8 @@ export async function getMyJoinRequests(): Promise<(JoinRequest & { organization
 
   const { data, error } = await supabase
     .from("join_requests")
-    .select(`
+    .select(
+      `
       *,
       organization_profiles (
         id,
@@ -1633,7 +1855,8 @@ export async function getMyJoinRequests(): Promise<(JoinRequest & { organization
         member_count,
         created_at
       )
-    `)
+    `
+    )
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
 
@@ -1651,17 +1874,19 @@ export async function getMyJoinRequests(): Promise<(JoinRequest & { organization
     role: req.role,
     status: req.status,
     created_at: req.created_at,
-    organization: req.organization_profiles ? {
-      id: req.organization_profiles.id,
-      clerk_org_id: req.organization_profiles.clerk_org_id,
-      name: req.organization_profiles.department || "Unnamed Lab",
-      institution: req.organization_profiles.institution,
-      department: req.organization_profiles.department,
-      description: req.organization_profiles.description,
-      logo_url: req.organization_profiles.logo_url,
-      member_count: req.organization_profiles.member_count || 1,
-      created_at: req.organization_profiles.created_at,
-    } : null,
+    organization: req.organization_profiles
+      ? {
+          id: req.organization_profiles.id,
+          clerk_org_id: req.organization_profiles.clerk_org_id,
+          name: req.organization_profiles.department || "Unnamed Lab",
+          institution: req.organization_profiles.institution,
+          department: req.organization_profiles.department,
+          description: req.organization_profiles.description,
+          logo_url: req.organization_profiles.logo_url,
+          member_count: req.organization_profiles.member_count || 1,
+          created_at: req.organization_profiles.created_at,
+        }
+      : null,
   }));
 }
 
@@ -1690,7 +1915,9 @@ export async function cancelJoinRequest(requestId: string) {
 /**
  * Get pending requests for an organization (admin only)
  */
-export async function getPendingRequestsForOrg(clerkOrgId: string): Promise<JoinRequest[]> {
+export async function getPendingRequestsForOrg(
+  clerkOrgId: string
+): Promise<JoinRequest[]> {
   const { userId } = await auth();
   if (!userId) return [];
 
@@ -1731,10 +1958,12 @@ export async function approveJoinRequest(requestId: string) {
   // Get the request details
   const { data: request, error: fetchError } = await supabase
     .from("join_requests")
-    .select(`
+    .select(
+      `
       *,
       organization_profiles (clerk_org_id)
-    `)
+    `
+    )
     .eq("id", requestId)
     .single();
 
@@ -1825,7 +2054,7 @@ export async function updateOrganizationProfile(
 ) {
   const { userId, orgId } = await auth();
   if (!userId) throw new Error("Unauthorized");
-  
+
   // Verify user is part of this org
   if (orgId !== clerkOrgId) {
     throw new Error("You can only update your own organization");
@@ -1833,11 +2062,17 @@ export async function updateOrganizationProfile(
 
   const supabase = createAdminClient();
 
-  const updateData: Record<string, any> = { updated_at: new Date().toISOString() };
-  if (updates.isDiscoverable !== undefined) updateData.is_discoverable = updates.isDiscoverable;
-  if (updates.institution !== undefined) updateData.institution = updates.institution;
-  if (updates.department !== undefined) updateData.department = updates.department;
-  if (updates.description !== undefined) updateData.description = updates.description;
+  const updateData: Record<string, any> = {
+    updated_at: new Date().toISOString(),
+  };
+  if (updates.isDiscoverable !== undefined)
+    updateData.is_discoverable = updates.isDiscoverable;
+  if (updates.institution !== undefined)
+    updateData.institution = updates.institution;
+  if (updates.department !== undefined)
+    updateData.department = updates.department;
+  if (updates.description !== undefined)
+    updateData.description = updates.description;
 
   const { error } = await supabase
     .from("organization_profiles")
@@ -1879,20 +2114,24 @@ export async function getUserDataSummary() {
 
   // Group cohorts by org
   const orgMap = new Map<string | null, typeof cohorts>();
-  cohorts?.forEach(c => {
+  cohorts?.forEach((c) => {
     const existing = orgMap.get(c.org_id) || [];
     existing.push(c);
     orgMap.set(c.org_id, existing);
   });
 
   // Get org names
-  const orgIds = [...new Set(cohorts?.map(c => c.org_id).filter(Boolean) as string[])];
+  const orgIds = [
+    ...new Set(cohorts?.map((c) => c.org_id).filter(Boolean) as string[]),
+  ];
   const { data: orgProfiles } = await supabase
     .from("organization_profiles")
     .select("clerk_org_id, department, institution")
     .in("clerk_org_id", orgIds);
 
-  const orgNameMap = new Map(orgProfiles?.map(o => [o.clerk_org_id, o]) || []);
+  const orgNameMap = new Map(
+    orgProfiles?.map((o) => [o.clerk_org_id, o]) || []
+  );
 
   return {
     totalCohorts: cohorts?.length || 0,
@@ -1900,7 +2139,9 @@ export async function getUserDataSummary() {
     totalLogs: logCounts?.length || 0,
     byOrg: Array.from(orgMap.entries()).map(([orgId, orgCohorts]) => ({
       orgId,
-      orgName: orgId ? orgNameMap.get(orgId)?.department || "Unknown Org" : "Personal",
+      orgName: orgId
+        ? orgNameMap.get(orgId)?.department || "Unknown Org"
+        : "Personal",
       institution: orgId ? orgNameMap.get(orgId)?.institution : null,
       cohortCount: orgCohorts?.length || 0,
       isOrphaned: orgId ? !orgNameMap.has(orgId) : false,
