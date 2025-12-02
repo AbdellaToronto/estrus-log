@@ -3,12 +3,7 @@
 import { useState, useMemo } from "react";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
-import {
-  X,
-  AlertTriangle,
-  Search,
-  CheckCircle2,
-} from "lucide-react";
+import { X, AlertTriangle, Search, CheckCircle2 } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -182,8 +177,8 @@ export function CohortEvaluation({ logs }: { logs: EvaluationLog[] }) {
         </h3>
         <p className="text-slate-500 max-w-md mx-auto mt-2">
           To evaluate accuracy, filenames must include the stage name (e.g.,
-          &ldquo;Mouse1_Estrus_001.jpg&rdquo;). We couldn&apos;t detect any stage names in your
-          file names.
+          &ldquo;Mouse1_Estrus_001.jpg&rdquo;). We couldn&apos;t detect any
+          stage names in your file names.
         </p>
       </div>
     );
@@ -271,7 +266,9 @@ export function CohortEvaluation({ logs }: { logs: EvaluationLog[] }) {
             </div>
             <Select
               value={filterMatch}
-              onValueChange={(v) => setFilterMatch(v as "all" | "correct" | "incorrect")}
+              onValueChange={(v) =>
+                setFilterMatch(v as "all" | "correct" | "incorrect")
+              }
             >
               <SelectTrigger className="w-[140px] h-9 rounded-xl bg-white border-slate-200">
                 <SelectValue placeholder="Filter" />

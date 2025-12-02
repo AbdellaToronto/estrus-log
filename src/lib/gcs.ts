@@ -51,10 +51,11 @@ export function getGcs(config?: Partial<GCSConfig>) {
     } catch {}
   }
   const cfg: GCSConfig = {
-    bucketName: config?.bucketName ?? process.env.GCS_BUCKET_NAME ?? "",
-    projectId: config?.projectId ?? process.env.GCP_PROJECT_ID,
+    // Trim to prevent issues with newlines in env vars (common copy-paste error)
+    bucketName: (config?.bucketName ?? process.env.GCS_BUCKET_NAME ?? "").trim(),
+    projectId: config?.projectId ?? process.env.GCP_PROJECT_ID?.trim(),
     credentials: config?.credentials ?? envCreds,
-    cdnBaseUrl: config?.cdnBaseUrl ?? process.env.GCS_CDN_BASE_URL,
+    cdnBaseUrl: config?.cdnBaseUrl ?? process.env.GCS_CDN_BASE_URL?.trim(),
   }
   if (!cfg.bucketName)
     throw new Error("GCS bucket is not configured (GCS_BUCKET_NAME missing)")

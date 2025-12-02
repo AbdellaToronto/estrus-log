@@ -1,20 +1,31 @@
 "use client";
 
-import { OrganizationProfile, UserProfile, useOrganization, CreateOrganization } from "@clerk/nextjs";
+import {
+  OrganizationProfile,
+  UserProfile,
+  useOrganization,
+  CreateOrganization,
+} from "@clerk/nextjs";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { 
-  PlusCircle, 
-  Building2, 
-  Users, 
-  Clock, 
-  Check, 
-  X, 
+import {
+  PlusCircle,
+  Building2,
+  Users,
+  Clock,
+  Check,
+  X,
   Loader2,
   Eye,
   EyeOff,
@@ -51,30 +62,30 @@ export function SettingsClient() {
   const { organization, isLoaded, membership } = useOrganization();
   const [showCreateOrg, setShowCreateOrg] = useState(false);
   const [isPending, startTransition] = useTransition();
-  
+
   // Org profile state
   const [isDiscoverable, setIsDiscoverable] = useState(false);
   const [institution, setInstitution] = useState("");
   const [description, setDescription] = useState("");
-  
+
   // Join requests
   const [pendingRequests, setPendingRequests] = useState<JoinRequest[]>([]);
-  
+
   // Data summary
   const [dataSummary, setDataSummary] = useState<DataSummary | null>(null);
-  
+
   const isAdmin = membership?.role === "org:admin";
 
   const loadOrgData = async () => {
     if (!organization?.id) return;
-    
+
     const profile = await getOrganizationProfile(organization.id);
     if (profile) {
       setIsDiscoverable(profile.is_discoverable);
       setInstitution(profile.institution || "");
       setDescription(profile.description || "");
     }
-    
+
     if (isAdmin) {
       const requests = await getPendingRequestsForOrg(organization.id);
       setPendingRequests(requests);
@@ -97,7 +108,7 @@ export function SettingsClient() {
 
   const handleSaveOrgSettings = () => {
     if (!organization?.id) return;
-    
+
     startTransition(async () => {
       try {
         await updateOrganizationProfile(organization.id, {
@@ -116,7 +127,7 @@ export function SettingsClient() {
     startTransition(async () => {
       try {
         await approveJoinRequest(requestId);
-        setPendingRequests(prev => prev.filter(r => r.id !== requestId));
+        setPendingRequests((prev) => prev.filter((r) => r.id !== requestId));
       } catch (error) {
         console.error("Error approving request:", error);
       }
@@ -127,7 +138,7 @@ export function SettingsClient() {
     startTransition(async () => {
       try {
         await denyJoinRequest(requestId);
-        setPendingRequests(prev => prev.filter(r => r.id !== requestId));
+        setPendingRequests((prev) => prev.filter((r) => r.id !== requestId));
       } catch (error) {
         console.error("Error denying request:", error);
       }
@@ -145,24 +156,34 @@ export function SettingsClient() {
   return (
     <Tabs defaultValue="organization" className="w-full">
       <TabsList className="w-full max-w-[500px] grid grid-cols-3 h-10 sm:h-11">
-        <TabsTrigger value="organization" className="text-sm sm:text-base">Lab</TabsTrigger>
-        <TabsTrigger value="profile" className="text-sm sm:text-base">Profile</TabsTrigger>
-        <TabsTrigger value="data" className="text-sm sm:text-base">My Data</TabsTrigger>
+        <TabsTrigger value="organization" className="text-sm sm:text-base">
+          Lab
+        </TabsTrigger>
+        <TabsTrigger value="profile" className="text-sm sm:text-base">
+          Profile
+        </TabsTrigger>
+        <TabsTrigger value="data" className="text-sm sm:text-base">
+          My Data
+        </TabsTrigger>
       </TabsList>
 
       {/* Organization/Lab Settings Tab */}
       <TabsContent value="organization" className="mt-4 sm:mt-6 space-y-6">
         {showCreateOrg ? (
-           <div className="glass-panel rounded-2xl sm:rounded-3xl p-4 sm:p-6 flex justify-center items-center min-h-[400px] sm:min-h-[600px]">
-             <div className="w-full max-w-[480px]">
-                <div className="mb-4">
-                  <Button variant="ghost" onClick={() => setShowCreateOrg(false)} className="text-sm">
-                    ← Back to Settings
-                  </Button>
-                </div>
-                <CreateOrganization afterCreateOrganizationUrl="/settings" />
-             </div>
-           </div>
+          <div className="glass-panel rounded-2xl sm:rounded-3xl p-4 sm:p-6 flex justify-center items-center min-h-[400px] sm:min-h-[600px]">
+            <div className="w-full max-w-[480px]">
+              <div className="mb-4">
+                <Button
+                  variant="ghost"
+                  onClick={() => setShowCreateOrg(false)}
+                  className="text-sm"
+                >
+                  ← Back to Settings
+                </Button>
+              </div>
+              <CreateOrganization afterCreateOrganizationUrl="/settings" />
+            </div>
+          </div>
         ) : !organization ? (
           <Card className="glass-panel border-0 shadow-none">
             <CardHeader>
@@ -171,7 +192,8 @@ export function SettingsClient() {
                 No Lab Selected
               </CardTitle>
               <CardDescription>
-                You are currently working without a lab. Create or join a lab to collaborate with your team.
+                You are currently working without a lab. Create or join a lab to
+                collaborate with your team.
               </CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col items-center justify-center py-10 gap-4">
@@ -213,7 +235,9 @@ export function SettingsClient() {
                     <div>
                       <p className="font-medium">Lab Visibility</p>
                       <p className="text-sm text-muted-foreground">
-                        {isDiscoverable ? "Visible to other researchers" : "Private - invite only"}
+                        {isDiscoverable
+                          ? "Visible to other researchers"
+                          : "Private - invite only"}
                       </p>
                     </div>
                   </div>
@@ -225,7 +249,7 @@ export function SettingsClient() {
                     {isDiscoverable ? "Public" : "Private"}
                   </Button>
                 </div>
-                
+
                 <div className="space-y-2">
                   <Label>Institution</Label>
                   <Input
@@ -235,7 +259,7 @@ export function SettingsClient() {
                     disabled={!isAdmin}
                   />
                 </div>
-                
+
                 <div className="space-y-2">
                   <Label>Description</Label>
                   <Textarea
@@ -246,14 +270,16 @@ export function SettingsClient() {
                     disabled={!isAdmin}
                   />
                 </div>
-                
+
                 {isAdmin && (
-                  <Button 
-                    onClick={handleSaveOrgSettings} 
+                  <Button
+                    onClick={handleSaveOrgSettings}
                     disabled={isPending}
                     className="w-full sm:w-auto"
                   >
-                    {isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                    {isPending ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : null}
                     Save Changes
                   </Button>
                 )}
@@ -267,7 +293,9 @@ export function SettingsClient() {
                   <CardTitle className="flex items-center gap-2">
                     <Clock className="w-5 h-5 text-amber-500" />
                     Pending Join Requests
-                    <Badge variant="secondary" className="ml-2">{pendingRequests.length}</Badge>
+                    <Badge variant="secondary" className="ml-2">
+                      {pendingRequests.length}
+                    </Badge>
                   </CardTitle>
                   <CardDescription>
                     Review requests from researchers who want to join your lab
@@ -275,15 +303,21 @@ export function SettingsClient() {
                 </CardHeader>
                 <CardContent className="space-y-3">
                   {pendingRequests.map((request) => (
-                    <div 
-                      key={request.id} 
+                    <div
+                      key={request.id}
                       className="flex items-center justify-between p-4 rounded-xl bg-slate-50"
                     >
                       <div>
-                        <p className="font-medium">{request.user_name || "Unknown"}</p>
-                        <p className="text-sm text-muted-foreground">{request.user_email}</p>
+                        <p className="font-medium">
+                          {request.user_name || "Unknown"}
+                        </p>
+                        <p className="text-sm text-muted-foreground">
+                          {request.user_email}
+                        </p>
                         {request.message && (
-                          <p className="text-sm text-slate-600 mt-1 italic">&ldquo;{request.message}&rdquo;</p>
+                          <p className="text-sm text-slate-600 mt-1 italic">
+                            &ldquo;{request.message}&rdquo;
+                          </p>
                         )}
                       </div>
                       <div className="flex gap-2">
@@ -331,7 +365,7 @@ export function SettingsClient() {
                       scrollBox: "shadow-none border-0 bg-transparent",
                       navbar: "hidden",
                       pageScrollBox: "p-0",
-                    }
+                    },
                   }}
                 />
               </CardContent>
@@ -351,7 +385,7 @@ export function SettingsClient() {
                 card: "shadow-none border-0 bg-transparent w-full h-full",
                 scrollBox: "shadow-none border-0 bg-transparent w-full h-full",
                 navbar: "hidden md:flex",
-              }
+              },
             }}
           />
         </div>
@@ -373,15 +407,21 @@ export function SettingsClient() {
             {/* Summary Stats */}
             <div className="grid grid-cols-3 gap-4">
               <div className="text-center p-4 rounded-xl bg-slate-50">
-                <p className="text-3xl font-bold text-slate-900">{dataSummary?.totalCohorts || 0}</p>
+                <p className="text-3xl font-bold text-slate-900">
+                  {dataSummary?.totalCohorts || 0}
+                </p>
                 <p className="text-sm text-muted-foreground">Cohorts</p>
               </div>
               <div className="text-center p-4 rounded-xl bg-slate-50">
-                <p className="text-3xl font-bold text-slate-900">{dataSummary?.totalMice || 0}</p>
+                <p className="text-3xl font-bold text-slate-900">
+                  {dataSummary?.totalMice || 0}
+                </p>
                 <p className="text-sm text-muted-foreground">Subjects</p>
               </div>
               <div className="text-center p-4 rounded-xl bg-slate-50">
-                <p className="text-3xl font-bold text-slate-900">{dataSummary?.totalLogs || 0}</p>
+                <p className="text-3xl font-bold text-slate-900">
+                  {dataSummary?.totalLogs || 0}
+                </p>
                 <p className="text-sm text-muted-foreground">Logs</p>
               </div>
             </div>
@@ -392,10 +432,12 @@ export function SettingsClient() {
                 Data by Lab
               </h3>
               {dataSummary?.byOrg.map((org) => (
-                <div 
-                  key={org.orgId || "personal"} 
+                <div
+                  key={org.orgId || "personal"}
                   className={`flex items-center justify-between p-4 rounded-xl ${
-                    org.isOrphaned ? "bg-amber-50 border border-amber-200" : "bg-slate-50"
+                    org.isOrphaned
+                      ? "bg-amber-50 border border-amber-200"
+                      : "bg-slate-50"
                   }`}
                 >
                   <div className="flex items-center gap-3">
@@ -408,13 +450,18 @@ export function SettingsClient() {
                       <p className="font-medium">
                         {org.orgName}
                         {org.isOrphaned && (
-                          <Badge variant="outline" className="ml-2 text-amber-600 border-amber-300">
+                          <Badge
+                            variant="outline"
+                            className="ml-2 text-amber-600 border-amber-300"
+                          >
                             Deleted Lab
                           </Badge>
                         )}
                       </p>
                       {org.institution && (
-                        <p className="text-sm text-muted-foreground">{org.institution}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {org.institution}
+                        </p>
                       )}
                     </div>
                   </div>
@@ -423,7 +470,7 @@ export function SettingsClient() {
                   </Badge>
                 </div>
               ))}
-              
+
               {(!dataSummary?.byOrg || dataSummary.byOrg.length === 0) && (
                 <p className="text-center text-muted-foreground py-8">
                   No data yet. Create your first cohort to get started!
@@ -432,16 +479,19 @@ export function SettingsClient() {
             </div>
 
             {/* Orphaned Data Notice */}
-            {dataSummary?.byOrg.some(o => o.isOrphaned) && (
+            {dataSummary?.byOrg.some((o) => o.isOrphaned) && (
               <div className="p-4 rounded-xl bg-amber-50 border border-amber-200">
                 <div className="flex items-start gap-3">
                   <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
                   <div>
-                    <p className="font-medium text-amber-800">You have data in deleted labs</p>
+                    <p className="font-medium text-amber-800">
+                      You have data in deleted labs
+                    </p>
                     <p className="text-sm text-amber-700 mt-1">
-                      Some of your data belongs to labs that no longer exist. This data is still 
-                      visible to you, but not to other lab members. You can continue using it 
-                      or create a new lab to organize future work.
+                      Some of your data belongs to labs that no longer exist.
+                      This data is still visible to you, but not to other lab
+                      members. You can continue using it or create a new lab to
+                      organize future work.
                     </p>
                   </div>
                 </div>
@@ -453,9 +503,3 @@ export function SettingsClient() {
     </Tabs>
   );
 }
-
-
-
-
-
-
