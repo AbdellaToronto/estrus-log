@@ -36,24 +36,32 @@ import Image from "next/image";
 // Helper to extract "ground truth" from filename
 // Expected format: [SubjectID]_[Stage]_[Date].jpg or similar
 // We will look for stage names in the filename
-const STAGES = ["Proestrus", "Estrus", "Metestrus", "Diestrus"];
+// IMPORTANT: Check longer names first to avoid false matches
+// (e.g., "METESTRUS" contains "estrus", so check "metestrus" before "estrus")
+const STAGES_BY_LENGTH = ["Metestrus", "Proestrus", "Diestrus", "Estrus"];
 
 function inferGroundTruth(filename: string): string | null {
   if (!filename) return null;
   const lower = filename.toLowerCase();
-  for (const stage of STAGES) {
+  
+  // Check full stage names (longer first to avoid substring matches)
+  for (const stage of STAGES_BY_LENGTH) {
     if (lower.includes(stage.toLowerCase())) {
       return stage;
     }
   }
-  // Common abbreviations
-  if (lower.includes("_pro_") || lower.includes("-pro-")) return "Proestrus";
-  if (lower.includes("_est_") || lower.includes("-est-")) return "Estrus";
-  if (lower.includes("_met_") || lower.includes("-met-")) return "Metestrus";
-  if (lower.includes("_die_") || lower.includes("-die-")) return "Diestrus";
+  
+  // Common abbreviations (also check longer first)
+  if (lower.includes("_met_") || lower.includes("-met-") || lower.includes("_met.")) return "Metestrus";
+  if (lower.includes("_pro_") || lower.includes("-pro-") || lower.includes("_pro.")) return "Proestrus";
+  if (lower.includes("_die_") || lower.includes("-die-") || lower.includes("_die.")) return "Diestrus";
+  if (lower.includes("_est_") || lower.includes("-est-") || lower.includes("_est.")) return "Estrus";
 
   return null;
 }
+
+// For display purposes, use standard order
+const STAGES = ["Proestrus", "Estrus", "Metestrus", "Diestrus"];
 
 export function CohortEvaluation({ logs }: { logs: any[] }) {
   const [searchTerm, setSearchTerm] = useState("");

@@ -716,7 +716,10 @@ export async function getScanSessionDetail(
         id: log.id,
         image_url: cleanUrl,
         status: "completed" as const, // Logs are always finalized
-        ai_result: { stage: log.stage, confidence: log.confidence } as Record<string, unknown>,
+        ai_result: { stage: log.stage, confidence: log.confidence } as Record<
+          string,
+          unknown
+        >,
         mouse_id: log.mouse_id,
         mouse_name: mice?.name || null,
         created_at: log.created_at,
