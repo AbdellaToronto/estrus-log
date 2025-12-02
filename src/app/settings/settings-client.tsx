@@ -34,16 +34,6 @@ import {
   type JoinRequest,
 } from "@/app/actions";
 
-type OrgProfile = {
-  id: string;
-  clerk_org_id: string;
-  is_discoverable: boolean;
-  institution: string | null;
-  department: string | null;
-  description: string | null;
-  member_count: number;
-};
-
 type DataSummary = {
   totalCohorts: number;
   totalMice: number;
@@ -63,7 +53,6 @@ export function SettingsClient() {
   const [isPending, startTransition] = useTransition();
   
   // Org profile state
-  const [orgProfile, setOrgProfile] = useState<OrgProfile | null>(null);
   const [isDiscoverable, setIsDiscoverable] = useState(false);
   const [institution, setInstitution] = useState("");
   const [description, setDescription] = useState("");
@@ -76,20 +65,11 @@ export function SettingsClient() {
   
   const isAdmin = membership?.role === "org:admin";
 
-  // Load org profile and pending requests
-  useEffect(() => {
-    if (organization?.id) {
-      loadOrgData();
-    }
-    loadDataSummary();
-  }, [organization?.id]);
-
   const loadOrgData = async () => {
     if (!organization?.id) return;
     
     const profile = await getOrganizationProfile(organization.id);
     if (profile) {
-      setOrgProfile(profile);
       setIsDiscoverable(profile.is_discoverable);
       setInstitution(profile.institution || "");
       setDescription(profile.description || "");
@@ -105,6 +85,15 @@ export function SettingsClient() {
     const summary = await getUserDataSummary();
     setDataSummary(summary);
   };
+
+  // Load org profile and pending requests
+  useEffect(() => {
+    if (organization?.id) {
+      loadOrgData();
+    }
+    loadDataSummary();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [organization?.id]);
 
   const handleSaveOrgSettings = () => {
     if (!organization?.id) return;
@@ -294,7 +283,7 @@ export function SettingsClient() {
                         <p className="font-medium">{request.user_name || "Unknown"}</p>
                         <p className="text-sm text-muted-foreground">{request.user_email}</p>
                         {request.message && (
-                          <p className="text-sm text-slate-600 mt-1 italic">"{request.message}"</p>
+                          <p className="text-sm text-slate-600 mt-1 italic">&ldquo;{request.message}&rdquo;</p>
                         )}
                       </div>
                       <div className="flex gap-2">
@@ -377,7 +366,7 @@ export function SettingsClient() {
               Your Research Data
             </CardTitle>
             <CardDescription>
-              Overview of all data you've created across labs
+              Overview of all data you&apos;ve created across labs
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
@@ -402,7 +391,7 @@ export function SettingsClient() {
               <h3 className="font-medium text-sm text-muted-foreground uppercase tracking-wide">
                 Data by Lab
               </h3>
-              {dataSummary?.byOrg.map((org, i) => (
+              {dataSummary?.byOrg.map((org) => (
                 <div 
                   key={org.orgId || "personal"} 
                   className={`flex items-center justify-between p-4 rounded-xl ${
@@ -446,7 +435,7 @@ export function SettingsClient() {
             {dataSummary?.byOrg.some(o => o.isOrphaned) && (
               <div className="p-4 rounded-xl bg-amber-50 border border-amber-200">
                 <div className="flex items-start gap-3">
-                  <AlertTriangle className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
+                  <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
                   <div>
                     <p className="font-medium text-amber-800">You have data in deleted labs</p>
                     <p className="text-sm text-amber-700 mt-1">

@@ -1674,7 +1674,10 @@ export async function getExperimentVisualizationData(experimentId: string) {
 
   const cohorts = experimentCohorts.map((ec) => {
     // Handle both array and object responses from Supabase joins
-    const rawCohorts = ec.cohorts as { id: string; name: string; color: string | null } | { id: string; name: string; color: string | null }[] | null;
+    const rawCohorts = ec.cohorts as
+      | { id: string; name: string; color: string | null }
+      | { id: string; name: string; color: string | null }[]
+      | null;
     const cohortData = Array.isArray(rawCohorts) ? rawCohorts[0] : rawCohorts;
     return {
       id: cohortData?.id ?? ec.cohort_id,

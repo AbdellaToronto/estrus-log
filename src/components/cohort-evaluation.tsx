@@ -4,10 +4,8 @@ import { useState, useMemo } from "react";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import {
-  Check,
   X,
   AlertTriangle,
-  ChevronRight,
   Search,
   CheckCircle2,
 } from "lucide-react";
@@ -113,7 +111,11 @@ export function CohortEvaluation({ logs }: { logs: EvaluationLog[] }) {
         let confidenceValue = 0;
         if (typeof rawConf === "number") {
           confidenceValue = rawConf;
-        } else if (rawConf && typeof rawConf === "object" && "score" in rawConf) {
+        } else if (
+          rawConf &&
+          typeof rawConf === "object" &&
+          "score" in rawConf
+        ) {
           confidenceValue = (rawConf as { score: number }).score;
         }
 
@@ -125,7 +127,9 @@ export function CohortEvaluation({ logs }: { logs: EvaluationLog[] }) {
           isMatch,
           confidence: confidenceValue,
           // Access granular scores if available in flexible data
-          scores: (log.data as { confidence_scores?: Record<string, number> })?.confidence_scores || {},
+          scores:
+            (log.data as { confidence_scores?: Record<string, number> })
+              ?.confidence_scores || {},
         };
       })
       .filter((l) => l.groundTruth); // Only show items where we could infer truth
@@ -178,7 +182,7 @@ export function CohortEvaluation({ logs }: { logs: EvaluationLog[] }) {
         </h3>
         <p className="text-slate-500 max-w-md mx-auto mt-2">
           To evaluate accuracy, filenames must include the stage name (e.g.,
-          "Mouse1_Estrus_001.jpg"). We couldn't detect any stage names in your
+          &ldquo;Mouse1_Estrus_001.jpg&rdquo;). We couldn&apos;t detect any stage names in your
           file names.
         </p>
       </div>
@@ -267,7 +271,7 @@ export function CohortEvaluation({ logs }: { logs: EvaluationLog[] }) {
             </div>
             <Select
               value={filterMatch}
-              onValueChange={(v: any) => setFilterMatch(v)}
+              onValueChange={(v) => setFilterMatch(v as "all" | "correct" | "incorrect")}
             >
               <SelectTrigger className="w-[140px] h-9 rounded-xl bg-white border-slate-200">
                 <SelectValue placeholder="Filter" />
