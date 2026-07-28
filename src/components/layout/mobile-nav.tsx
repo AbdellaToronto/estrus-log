@@ -70,6 +70,8 @@ function MobileNavContent({ pathname }: { pathname: string }) {
     process.env.NEXT_PUBLIC_ESTRUS_LOCAL_TEST_IDENTITY === "true";
 
   const hasOrg = isLocalRehearsal || (hydrated && !!organization);
+  const visibleUser = hydrated ? user : null;
+  const visibleMemberships = hydrated ? userMemberships?.data : [];
   const navItems = hasOrg ? ORG_NAV_ITEMS : EXPLORE_NAV_ITEMS;
 
   const handleSwitchOrg = async (orgId: string) => {
@@ -145,7 +147,7 @@ function MobileNavContent({ pathname }: { pathname: string }) {
                     </p>
 
                     {/* List all orgs the user is in */}
-                    {userMemberships?.data?.map((membership) => {
+                    {visibleMemberships?.map((membership) => {
                       const isActive =
                         membership.organization.id === organization?.id;
                       return (
@@ -301,12 +303,12 @@ function MobileNavContent({ pathname }: { pathname: string }) {
                       <p className="text-sm font-medium truncate">
                         {isLocalRehearsal
                           ? "Local Scientist"
-                          : user?.fullName || "User"}
+                          : visibleUser?.fullName || "User"}
                       </p>
                       <p className="text-xs text-muted-foreground truncate">
                         {isLocalRehearsal
                           ? "scientist@estrus.local"
-                          : user?.primaryEmailAddress?.emailAddress}
+                          : visibleUser?.primaryEmailAddress?.emailAddress}
                       </p>
                     </div>
                   </div>
