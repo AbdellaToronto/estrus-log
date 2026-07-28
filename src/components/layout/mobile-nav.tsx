@@ -29,6 +29,7 @@ import {
   useOrganization,
   useOrganizationList,
 } from "@clerk/nextjs";
+import { useHydrated } from "@/hooks/use-hydrated";
 import { Badge } from "@/components/ui/badge";
 
 // Navigation items when user HAS an organization
@@ -64,10 +65,11 @@ function MobileNavContent({ pathname }: { pathname: string }) {
   const { userMemberships, setActive } = useOrganizationList({
     userMemberships: { infinite: true },
   });
+  const hydrated = useHydrated();
   const isLocalRehearsal =
     process.env.NEXT_PUBLIC_ESTRUS_LOCAL_TEST_IDENTITY === "true";
 
-  const hasOrg = isLocalRehearsal || !!organization;
+  const hasOrg = isLocalRehearsal || (hydrated && !!organization);
   const navItems = hasOrg ? ORG_NAV_ITEMS : EXPLORE_NAV_ITEMS;
 
   const handleSwitchOrg = async (orgId: string) => {

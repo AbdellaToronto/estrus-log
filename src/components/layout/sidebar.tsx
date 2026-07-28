@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Building2, CalendarDays, FlaskConical, Settings, TestTube, Users } from "lucide-react";
 import { UserButton, useOrganization } from "@clerk/nextjs";
+import { useHydrated } from "@/hooks/use-hydrated";
 import { cn } from "@/lib/utils";
 
 const ORG_NAV_ITEMS = [
@@ -42,8 +43,9 @@ export function Sidebar() {
 
 function SidebarContent({ pathname }: { pathname: string }) {
   const { organization } = useOrganization();
+  const hydrated = useHydrated();
   const isLocalRehearsal = process.env.NEXT_PUBLIC_ESTRUS_LOCAL_TEST_IDENTITY === "true";
-  const hasOrg = isLocalRehearsal || Boolean(organization);
+  const hasOrg = isLocalRehearsal || (hydrated && Boolean(organization));
 
   return (
     <header className="fixed inset-x-0 top-0 z-40 hidden h-16 border-b border-[#ded9cd] bg-[#fbfaf7]/95 backdrop-blur-lg lg:block">
