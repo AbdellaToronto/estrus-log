@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { ArrowLeft, Check, ChevronDown, FilePlus2 } from "lucide-react";
 import { EstrusIcon } from "@/components/estrus-icon";
 import { PreparedRoiCropper } from "@/components/prepared-roi-cropper";
@@ -14,6 +15,8 @@ const stages = [
 ];
 
 export function ObservationLabClient() {
+  const searchParams = useSearchParams();
+  const subjectName = searchParams.get("subject") || "AH09";
   const [stage, setStage] = useState("");
   const [evidenceOpen, setEvidenceOpen] = useState(false);
   const [paired, setPaired] = useState(false);
@@ -44,7 +47,7 @@ export function ObservationLabClient() {
         <section className="px-5 py-7 sm:px-8 lg:px-12 lg:py-10">
           <header className="flex flex-wrap items-start justify-between gap-6 border-b border-[#ded9cd] pb-7">
             <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#625f58]">Lab / Cohort 04 / Mouse AH09</p>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#625f58]">Lab / North colony / Mouse {subjectName}</p>
               <h1 className="mt-3 font-serif text-4xl tracking-[-0.06em] text-[#292b4c] sm:text-5xl">Review one observation</h1>
               <p className="mt-2 text-sm text-[#5f5c56]">External photo · public test ROI · framing confirmed</p>
             </div>
@@ -86,7 +89,7 @@ export function ObservationLabClient() {
                 <legend className="px-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#625f58]">Confirmation source</legend>
                 <label className={`flex cursor-pointer items-start gap-3 border p-3 text-sm ${!paired ? "border-[#454a9f] bg-white" : "border-[#ded9cd]"}`}><input type="radio" checked={!paired} onChange={() => { setPaired(false); setAcknowledged(false); setSaved(false); }} className="mt-0.5" /><span><span className="block font-medium">Scientist visual review</span><span className="mt-1 block text-xs text-[#5f5c56]">Valid observation; not cytology-grounded.</span></span></label>
                 <label className={`flex cursor-pointer items-start gap-3 border p-3 text-sm ${paired ? "border-[#454a9f] bg-[#eeedf9]" : "border-[#ded9cd]"}`}><input type="radio" checked={paired} onChange={() => { setPaired(true); setAcknowledged(false); setSaved(false); }} className="mt-0.5" /><span><span className="block font-medium">Paired vaginal cytology</span><span className="mt-1 block text-xs text-[#5f5c56]">Link the smear used for this decision.</span></span><EstrusIcon name="paired-images" className="ml-auto h-9 w-9 shrink-0" /></label>
-                {paired && <button type="button" className="inline-flex items-center gap-2 border border-[#b8b7e1] bg-[#eeedf9] px-3 py-2 text-xs font-semibold text-[#454a9f]"><FilePlus2 className="h-3.5 w-3.5" />Cytology linked · AH09-2026-07-19-A</button>}
+                {paired && <button type="button" className="inline-flex items-center gap-2 border border-[#b8b7e1] bg-[#eeedf9] px-3 py-2 text-xs font-semibold text-[#454a9f]"><FilePlus2 className="h-3.5 w-3.5" />Cytology linked · {subjectName}-2026-07-19-A</button>}
               </fieldset>
 
               <details data-testid="model-evidence-disclosure" open={evidenceOpen} onToggle={(event) => setEvidenceOpen(event.currentTarget.open)} className="border border-[#ded9cd] bg-[#fbfaf7] p-4 text-sm">

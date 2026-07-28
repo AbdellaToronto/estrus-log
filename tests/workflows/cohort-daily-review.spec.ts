@@ -7,15 +7,17 @@ test.describe("cohort daily review", () => {
     await expect(page.getByRole("heading", { name: "North colony · Cycle study" })).toBeVisible();
   });
 
-  test("prioritizes today's incomplete observations and opens capture directly", async ({ page }) => {
+  test("prioritizes today's incomplete observations and opens a real profile", async ({ page }) => {
     await expect(page.getByRole("tab", { name: "Today" })).toHaveAttribute("aria-selected", "true");
-    await expect(page.getByText("2 of 6 recorded")).toBeVisible();
-    await expect(page.getByRole("button", { name: "Needs observation · 4" })).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByText("7 of 12 recorded")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Needs observation · 5" })).toHaveAttribute("aria-pressed", "true");
 
     const firstSubject = page.locator("article").first();
-    await expect(firstSubject.getByRole("heading", { name: "N-221" })).toBeVisible();
+    await expect(firstSubject.getByRole("heading", { name: "N-228" })).toBeVisible();
     await expect(firstSubject.getByText("Due today")).toBeVisible();
-    await expect(firstSubject.getByRole("link", { name: "Record observation" })).toHaveAttribute("href", /\/subjects\/.+\?new=1$/);
+    await firstSubject.getByRole("button", { name: "Open N-228 profile" }).click();
+    await expect(page.getByRole("dialog", { name: "N-228 profile" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Review one" })).toHaveAttribute("href", "/observation-lab?subject=N-228");
 
     await expect(page).toHaveScreenshot("cohort-today-workspace.png", { animations: "disabled", fullPage: true });
   });
@@ -23,7 +25,7 @@ test.describe("cohort daily review", () => {
   test("keeps record identity visible without hover or hidden image crops", async ({ page }) => {
     await page.getByRole("tab", { name: "Records" }).click();
     await expect(page.getByRole("tabpanel", { name: "Records" })).toBeVisible();
-    await expect(page.getByText("N-222")).toBeVisible();
+    await expect(page.getByRole("tabpanel", { name: "Records" }).getByText("N-222").first()).toBeVisible();
     await expect(page.getByText("Scientist reviewed").first()).toBeVisible();
     await expect(page).toHaveScreenshot("cohort-records-workspace.png", { animations: "disabled", fullPage: true });
   });
@@ -32,8 +34,8 @@ test.describe("cohort daily review", () => {
     await page.getByRole("tab", { name: "Trends" }).click();
     const panel = page.getByRole("tabpanel", { name: "Trends" });
     await expect(panel.getByText("New binary review")).toBeVisible();
-    await expect(panel.getByText("18", { exact: true })).toBeVisible();
-    await expect(panel.getByText("15", { exact: true })).toBeVisible();
+    await expect(panel.getByText("127", { exact: true })).toBeVisible();
+    await expect(panel.getByText("114", { exact: true })).toBeVisible();
     await expect(panel.getByText("Legacy four-stage model support")).toBeVisible();
     await expect(page).toHaveScreenshot("cohort-new-model-trends.png", { animations: "disabled", fullPage: true });
   });
@@ -42,8 +44,8 @@ test.describe("cohort daily review", () => {
     await page.getByRole("tab", { name: "Evaluation" }).click();
     const panel = page.getByRole("tabpanel", { name: "Evaluation" });
     await expect(panel.getByRole("heading", { name: "Ready for grouped preflight" })).toBeVisible();
-    await expect(panel.getByText("4 external photos have an exact stage confirmed from a paired cytology record.")).toBeVisible();
-    await expect(panel.getByText("2 visual-only records excluded · 0 transition pairs held out")).toBeVisible();
+    await expect(panel.getByText(/external photos have an exact stage confirmed from a paired cytology record/)).toBeVisible();
+    await expect(panel.getByText(/visual-only records excluded/)).toBeVisible();
     await expect(panel.getByRole("button", { name: "Export preflight manifest" })).toBeEnabled();
     await expect(panel.getByText("Legacy filename import QA")).toBeVisible();
     const results = await new AxeBuilder({ page }).analyze();

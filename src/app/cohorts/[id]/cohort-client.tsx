@@ -11,8 +11,11 @@ import {
   Images,
   ListChecks,
   Loader2,
+  ArrowRight,
+  CalendarDays,
   UserPlus,
   UploadCloud,
+  X,
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -62,14 +65,40 @@ interface CohortClientProps {
   initialInsights: CohortInsights;
   initialSubjects: SubjectItem[];
   todayKey?: string;
+  demoMode?: boolean;
 }
 
-export function CohortClient({ cohort, initialLogs, initialInsights, initialSubjects, todayKey }: CohortClientProps) {
+export function CohortClient({ cohort, initialLogs, initialInsights, initialSubjects, todayKey, demoMode = false }: CohortClientProps) {
   const [activeTab, setActiveTab] = useState("today");
   const [isExporting, setIsExporting] = useState(false);
   const [isAddingSubject, setIsAddingSubject] = useState(false);
+  const [selectedDemoSubjectId, setSelectedDemoSubjectId] = useState<string | null>(null);
+  const [demoNotice, setDemoNotice] = useState<string | null>(null);
+  const selectedDemoSubject = demoMode ? initialSubjects.find((subject) => subject.id === selectedDemoSubjectId) : undefined;
+  const selectedDemoLogs = selectedDemoSubject ? initialLogs.filter((log) => log.mouse_id === selectedDemoSubject.id) : [];
 
   const downloadManifest = async () => {
+    if (demoMode) {
+      const columns = ["subject", "capture_date", "saved_stage", "confirmation_source", "model_decision"];
+      const csv = [
+        columns.join(","),
+        ...initialLogs.map((log) => [
+          log.mice?.name || "Unassigned",
+          log.capture_date || log.created_at.slice(0, 10),
+          log.stage,
+          log.confirmation_source || "scientist_review",
+          String((log.data as { evidence?: { external_binary?: { decision_status?: string } } } | null)?.evidence?.external_binary?.decision_status || "manual"),
+        ].map((value) => `"${String(value).replaceAll('"', '""')}"`).join(",")),
+      ].join("\n");
+      const href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+      const anchor = document.createElement("a");
+      anchor.href = href;
+      anchor.download = "estrus-supervisor-demo-manifest.csv";
+      anchor.click();
+      URL.revokeObjectURL(href);
+      setDemoNotice("Illustrative manifest downloaded. It contains no live laboratory data.");
+      return;
+    }
     setIsExporting(true);
     try {
       const rows = await getCohortExportData(cohort.id);
@@ -122,7 +151,7 @@ export function CohortClient({ cohort, initialLogs, initialInsights, initialSubj
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <Button onClick={() => setIsAddingSubject(true)} variant="outline" className="h-10 border-[#b8b7e1] bg-white text-[#353a87] hover:bg-[#eeedf9]">
+            <Button onClick={() => demoMode ? setDemoNotice("This is a fixed reference cohort. Use Batch capture to add your own local demo images.") : setIsAddingSubject(true)} variant="outline" className="h-10 border-[#b8b7e1] bg-white text-[#353a87] hover:bg-[#eeedf9]">
               <UserPlus className="mr-2 h-4 w-4" />
               Add mouse
             </Button>
@@ -131,7 +160,7 @@ export function CohortClient({ cohort, initialLogs, initialInsights, initialSubj
               Record one
             </Button>
             <Button asChild className="h-10 bg-[#454a9f] text-white hover:bg-[#383d89]" data-tour="bulk-capture">
-              <Link href={`/cohorts/${cohort.id}/batch`}>
+              <Link href={demoMode ? "/batch-lab" : `/cohorts/${cohort.id}/batch`}>
                 <UploadCloud className="mr-2 h-4 w-4" />
                 Bulk capture
               </Link>
@@ -142,7 +171,7 @@ export function CohortClient({ cohort, initialLogs, initialInsights, initialSubj
               </summary>
               <div className="absolute right-0 z-40 mt-2 w-56 space-y-1 border border-[#ded9cd] bg-white p-2 shadow-xl">
                 <Button asChild variant="ghost" className="w-full justify-start">
-                  <Link href={`/cohorts/${cohort.id}/scans`}><History className="mr-2 h-4 w-4" />Batch history</Link>
+                  <Link href={demoMode ? "/batch-lab" : `/cohorts/${cohort.id}/scans`}><History className="mr-2 h-4 w-4" />Batch history</Link>
                 </Button>
                 <Button variant="ghost" className="w-full justify-start" onClick={downloadManifest} disabled={isExporting}>
                   {isExporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
@@ -153,6 +182,13 @@ export function CohortClient({ cohort, initialLogs, initialInsights, initialSubj
           </div>
         </div>
       </header>
+
+      {demoNotice && (
+        <div role="status" className="flex items-center justify-between gap-4 border border-[#b8b7e1] bg-[#eeedf9] px-4 py-3 text-sm text-[#353a87]">
+          <span>{demoNotice}</span>
+          <button type="button" onClick={() => setDemoNotice(null)} className="rounded p-1 hover:bg-white/60" aria-label="Dismiss notice"><X className="h-4 w-4" /></button>
+        </div>
+      )}
 
       <details className="group border border-[#c9c7e7] bg-[#eeedf9]" aria-label="Model review policy">
         <summary className="flex cursor-pointer list-none items-center gap-3 px-4 py-3 text-sm font-semibold text-[#353a87]">
@@ -190,6 +226,7 @@ export function CohortClient({ cohort, initialLogs, initialInsights, initialSubj
                 logs={initialLogs}
                 todayKey={todayKey}
                 onAddSubject={() => setIsAddingSubject(true)}
+                onSubjectOpen={demoMode ? (subject) => setSelectedDemoSubjectId(subject.id) : undefined}
               />
             </TabsContent>
             <TabsContent value="records" className="mt-0 focus-visible:ring-0">
@@ -215,6 +252,40 @@ export function CohortClient({ cohort, initialLogs, initialInsights, initialSubj
           open
           onOpenChange={setIsAddingSubject}
         />
+      )}
+      {selectedDemoSubject && (
+        <div className="fixed inset-0 z-50 flex justify-end bg-[#292b4c]/35 p-3 sm:p-6" role="dialog" aria-modal="true" aria-label={`${selectedDemoSubject.name} profile`}>
+          <section className="flex h-full w-full max-w-xl flex-col overflow-y-auto border border-[#ded9cd] bg-[#fbfaf7] shadow-2xl">
+            <header className="border-b border-[#ded9cd] px-6 py-5">
+              <div className="flex items-start justify-between gap-5">
+                <div>
+                  <p className="page-eyebrow">Demo subject profile</p>
+                  <h2 className="mt-2 font-serif text-4xl text-[#292b4c]">{selectedDemoSubject.name}</h2>
+                  <p className="mt-2 text-sm text-[#625f58]">{selectedDemoSubject.coat_colour || "Coat colour not recorded"} · {selectedDemoSubject.strain || "strain not recorded"}</p>
+                </div>
+                <button type="button" onClick={() => setSelectedDemoSubjectId(null)} aria-label="Close subject profile" className="rounded-lg p-2 text-[#625f58] hover:bg-[#f0ede5]"><X className="h-5 w-5" /></button>
+              </div>
+            </header>
+            <div className="space-y-6 p-6">
+              <div className="grid grid-cols-3 gap-3">
+                <div className="border border-[#ded9cd] bg-white p-3"><p className="text-2xl font-semibold text-[#292b4c]">{selectedDemoLogs.length}</p><p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#77736c]">observations</p></div>
+                <div className="border border-[#ded9cd] bg-white p-3"><p className="text-2xl font-semibold text-[#292b4c]">{selectedDemoLogs.filter((log) => log.confirmation_source === "paired_cytology_review").length}</p><p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#77736c]">paired checks</p></div>
+                <div className="border border-[#ded9cd] bg-white p-3"><p className="text-2xl font-semibold text-[#292b4c]">{selectedDemoLogs[0]?.stage || "—"}</p><p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#77736c]">latest stage</p></div>
+              </div>
+              <div className="border border-[#ded9cd] bg-white p-4">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#77736c]">Recent cycle trace</p>
+                <div className="mt-3 flex flex-wrap gap-2">{selectedDemoLogs.slice(0, 8).map((log) => <span key={log.id} className="border border-[#ded9cd] bg-[#f7f4ed] px-2 py-1 text-xs font-semibold text-[#4f4b45]">{log.capture_date?.slice(5)} · {log.stage}</span>)}</div>
+              </div>
+              <div className="border border-[#c9c7e7] bg-[#eeedf9] p-4 text-sm leading-6 text-[#454a9f]">
+                <div className="flex gap-2"><CalendarDays className="mt-0.5 h-4 w-4 shrink-0" /><p>The next review is deliberately still open in this demo. Start a single review, or include this mouse in the batch session.</p></div>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Button asChild className="bg-[#454a9f] text-white hover:bg-[#383d89]"><Link href={`/observation-lab?subject=${encodeURIComponent(selectedDemoSubject.name)}`}><ListChecks className="mr-2 h-4 w-4" />Review one</Link></Button>
+                <Button asChild variant="outline" className="border-[#b8b7e1] text-[#353a87]"><Link href="/batch-lab">Open batch capture <ArrowRight className="ml-2 h-4 w-4" /></Link></Button>
+              </div>
+            </div>
+          </section>
+        </div>
       )}
     </div>
   );

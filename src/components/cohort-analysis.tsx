@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { CohortInsights } from "@/app/actions";
 import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
@@ -72,6 +73,8 @@ const AnalyticsCard = ({
 );
 
 export function CohortAnalysis({ insights }: { insights: CohortInsights }) {
+  const [timelineRange, setTimelineRange] = useState<7 | 14 | 21>(14);
+  const [selectedStage, setSelectedStage] = useState<string | null>(null);
   if (!insights || insights.totalLogs === 0) {
     return (
       <div className="bg-white/60 border border-white/40 rounded-3xl p-12 text-center text-slate-400">
@@ -87,7 +90,7 @@ export function CohortAnalysis({ insights }: { insights: CohortInsights }) {
     ? insights.stageDistribution
     : STAGES.map((stage) => ({ stage, value: 0 }));
 
-  const timelineData = insights.timeline.map((item) => ({
+  const timelineData = insights.timeline.slice(-timelineRange).map((item) => ({
     ...item,
     label: format(new Date(`${item.date}T12:00:00`), "MMM d"),
   }));
@@ -96,6 +99,7 @@ export function CohortAnalysis({ insights }: { insights: CohortInsights }) {
     ...item,
     percentage: Math.round(item.value * 100),
   }));
+  const highlightedLogs = selectedStage ? insights.recentLogs.filter((log) => log.stage === selectedStage) : insights.recentLogs;
 
   return (
     <div className="space-y-4 sm:space-y-6 lg:space-y-8">
@@ -153,8 +157,9 @@ export function CohortAnalysis({ insights }: { insights: CohortInsights }) {
               </PieChart>
             </ResponsiveContainer>
           </div>
-          <div className="mt-3 flex flex-wrap gap-2">
-            {stageData.map((entry) => <span key={entry.stage} className="text-xs font-medium text-slate-600">{entry.stage} <span className="text-slate-400">{entry.value}</span></span>)}
+          <div className="mt-3 flex flex-wrap gap-2" aria-label="Filter recent highlights by stage">
+            <button type="button" onClick={() => setSelectedStage(null)} aria-pressed={!selectedStage} className={cn("border px-2 py-1 text-xs font-semibold transition", !selectedStage ? "border-[#454a9f] bg-[#eeedf9] text-[#353a87]" : "border-[#ded9cd] bg-white text-[#625f58]")}>All</button>
+            {stageData.map((entry) => <button key={entry.stage} type="button" onClick={() => setSelectedStage(selectedStage === entry.stage ? null : entry.stage)} aria-pressed={selectedStage === entry.stage} className={cn("border px-2 py-1 text-xs font-semibold transition", selectedStage === entry.stage ? "border-[#454a9f] bg-[#eeedf9] text-[#353a87]" : "border-[#ded9cd] bg-white text-slate-600")}><span className="mr-1 inline-block h-2 w-2 rounded-full" style={{ backgroundColor: STAGE_COLORS[entry.stage] || "#cbd5f5" }} />{entry.stage} <span className="text-slate-400">{entry.value}</span></button>)}
           </div>
         </AnalyticsCard>
       </div>
@@ -185,9 +190,12 @@ export function CohortAnalysis({ insights }: { insights: CohortInsights }) {
       <div className="grid gap-4 sm:gap-6 grid-cols-1 xl:grid-cols-3">
         <AnalyticsCard
           title="Activity Timeline"
-          subtitle="Last 14 days"
+          subtitle={`Last ${timelineRange} days · select a window`}
           className="xl:col-span-2"
         >
+          <div className="mb-4 flex flex-wrap gap-2" aria-label="Activity timeline range">
+            {([7, 14, 21] as const).map((range) => <button key={range} type="button" onClick={() => setTimelineRange(range)} aria-pressed={timelineRange === range} className={cn("border px-2.5 py-1 text-xs font-semibold transition", timelineRange === range ? "border-[#454a9f] bg-[#eeedf9] text-[#353a87]" : "border-[#ded9cd] bg-white text-[#625f58]")}>{range} days</button>)}
+          </div>
           <div className="h-48 sm:h-72">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={timelineData}>
@@ -238,10 +246,10 @@ export function CohortAnalysis({ insights }: { insights: CohortInsights }) {
 
       <AnalyticsCard
         title="Recent Highlights"
-        subtitle="Latest saved observations"
+        subtitle={selectedStage ? `Latest ${selectedStage} observations` : "Latest saved observations"}
       >
         <div className="space-y-4">
-          {insights.recentLogs.map((log) => (
+          {highlightedLogs.length ? highlightedLogs.map((log) => (
             <motion.div
               key={log.id}
               initial={{ opacity: 0, y: 6 }}
@@ -282,7 +290,7 @@ export function CohortAnalysis({ insights }: { insights: CohortInsights }) {
                 )}
               </div>
             </motion.div>
-          ))}
+          )) : <p className="border border-dashed border-[#cfc9bd] p-5 text-sm text-[#625f58]">No recent observation matches this stage. Choose All to return to the latest activity.</p>}
         </div>
       </AnalyticsCard>
     </div>

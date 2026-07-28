@@ -42,6 +42,7 @@ export function CohortLibrary({
   const [stageFilter, setStageFilter] = useState("all");
   const [subjectFilter, setSubjectFilter] = useState("all");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+  const [visibleCount, setVisibleCount] = useState(24);
 
   const filteredLogs = useMemo(() => {
     return logs
@@ -67,6 +68,7 @@ export function CohortLibrary({
           : new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
       });
   }, [logs, search, stageFilter, subjectFilter, sortOrder]);
+  const visibleLogs = filteredLogs.slice(0, visibleCount);
 
   return (
     <div className="space-y-6">
@@ -143,7 +145,7 @@ export function CohortLibrary({
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           <AnimatePresence mode="popLayout">
-            {filteredLogs.map((log) => (
+            {visibleLogs.map((log) => (
               <motion.div
                 layout
                 key={log.id}
@@ -177,6 +179,12 @@ export function CohortLibrary({
               </motion.div>
             ))}
           </AnimatePresence>
+        </div>
+      )}
+      {filteredLogs.length > visibleCount && (
+        <div className="flex items-center justify-between border border-[#ded9cd] bg-[#fbfaf7] p-4 text-sm text-[#625f58]">
+          <span>Showing {visibleCount} of {filteredLogs.length} observations</span>
+          <Button variant="outline" onClick={() => setVisibleCount((current) => current + 24)} className="border-[#b8b7e1] text-[#353a87]">Show 24 more</Button>
         </div>
       )}
     </div>

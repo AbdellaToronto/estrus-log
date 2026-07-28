@@ -7,6 +7,9 @@ const nextConfig: NextConfig = {
   // (VTracer, resvg, sharp) resolve on the developer's machine.
   serverExternalPackages: ["@neplex/vectorizer", "@resvg/resvg-js", "sharp"],
   devIndicators: false,
+  // Playwright uses 127.0.0.1 while the local workflow server also answers on
+  // localhost. Keep development resources available to that explicit test host.
+  allowedDevOrigins: ["127.0.0.1"],
   images: {
     remotePatterns: [
       {

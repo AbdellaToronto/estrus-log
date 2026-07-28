@@ -66,8 +66,8 @@ export function MobileNav() {
     try {
       await setActive({ organization: orgId });
       setOpen(false);
-      // Refresh the page to load new org's data
-      window.location.href = "/dashboard";
+      // Refresh the page to load the newly selected lab's data.
+      window.location.assign("/dashboard");
     } catch (error) {
       console.error("Failed to switch organization:", error);
       alert("Failed to switch lab. Please try again.");
@@ -77,7 +77,7 @@ export function MobileNav() {
   };
 
   // Don't show on certain pages
-  const hiddenPaths = ["/sign-in", "/sign-up", "/onboarding", "/onboarding-flow-lab", "/workflow-lab", "/observation-lab", "/cohort-lab", "/dashboard-lab", "/experiments-lab", "/experiment-detail-lab"];
+  const hiddenPaths = ["/sign-in", "/sign-up", "/onboarding", "/onboarding-flow-lab", "/workflow-lab", "/observation-lab", "/cohort-lab", "/dashboard-lab", "/experiments-lab", "/experiment-detail-lab", "/batch-lab", "/supervisor-demo"];
   if (hiddenPaths.some((path) => pathname.startsWith(path))) {
     return null;
   }

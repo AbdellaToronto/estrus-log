@@ -59,11 +59,13 @@ export function CohortSubjects({
   logs,
   todayKey: todayKeyOverride,
   onAddSubject,
+  onSubjectOpen,
 }: {
   subjects: Subject[];
   logs: Log[];
   todayKey?: string;
   onAddSubject?: () => void;
+  onSubjectOpen?: (subject: SubjectWithStats) => void;
 }) {
   const [searchTerm, setSearchTerm] = useState("");
   const [reviewFilter, setReviewFilter] = useState<ReviewFilter>("needs-observation");
@@ -209,13 +211,25 @@ export function CohortSubjects({
           const metadataMissing = !subject.coat_colour || !subject.strain;
           return (
             <article key={subject.id} className="grid gap-4 p-4 transition hover:bg-[#fbfaf7] md:grid-cols-[minmax(0,1fr)_auto] md:items-center md:px-5">
-              <div className="flex min-w-0 items-start gap-3">
+              <div
+                onClick={() => onSubjectOpen?.(subject)}
+                onKeyDown={(event) => {
+                  if (onSubjectOpen && (event.key === "Enter" || event.key === " ")) {
+                    event.preventDefault();
+                    onSubjectOpen(subject);
+                  }
+                }}
+                role={onSubjectOpen ? "button" : undefined}
+                tabIndex={onSubjectOpen ? 0 : undefined}
+                className={cn("flex min-w-0 items-start gap-3 text-left", onSubjectOpen && "group cursor-pointer rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#454a9f] focus-visible:ring-offset-2")}
+                aria-label={onSubjectOpen ? `Open ${subject.name} profile` : undefined}
+              >
                 <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#eeedf9]">
                   <EstrusIcon name="animal-subject" className="h-9 w-9" />
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="font-semibold text-[#292b4c]">{subject.name}</h3>
+                    <h3 className={cn("font-semibold text-[#292b4c]", onSubjectOpen && "group-hover:text-[#454a9f]")}>{subject.name}</h3>
                     {subject.todayLog ? (
                       <Badge className="border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-50">
                         Recorded · {subject.todayLog.stage}
@@ -261,11 +275,17 @@ export function CohortSubjects({
                     </div>
                   </div>
                 </details>
-                <Button asChild className={cn("h-9", subject.todayLog ? "bg-[#eeedf9] text-[#353a87] hover:bg-[#deddf3]" : "bg-[#454a9f] text-white hover:bg-[#383d89]")}>
-                  <Link href={subject.todayLog ? `/subjects/${subject.id}` : `/subjects/${subject.id}?new=1`}>
-                    {subject.todayLog ? "View record" : "Record observation"}
-                  </Link>
-                </Button>
+                {onSubjectOpen ? (
+                  <Button onClick={() => onSubjectOpen(subject)} className={cn("h-9", subject.todayLog ? "bg-[#eeedf9] text-[#353a87] hover:bg-[#deddf3]" : "bg-[#454a9f] text-white hover:bg-[#383d89]")}>
+                    {subject.todayLog ? "View profile" : "Review today"}
+                  </Button>
+                ) : (
+                  <Button asChild className={cn("h-9", subject.todayLog ? "bg-[#eeedf9] text-[#353a87] hover:bg-[#deddf3]" : "bg-[#454a9f] text-white hover:bg-[#383d89]")}>
+                    <Link href={subject.todayLog ? `/subjects/${subject.id}` : `/subjects/${subject.id}?new=1`}>
+                      {subject.todayLog ? "View record" : "Record observation"}
+                    </Link>
+                  </Button>
+                )}
               </div>
             </article>
           );

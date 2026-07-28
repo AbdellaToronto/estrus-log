@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowRight, Beaker, Camera, ClipboardCheck, Users } from "lucide-react";
+import { ArrowRight, Beaker, Camera, ClipboardCheck, Images, Users } from "lucide-react";
 import { EstrusIcon } from "@/components/estrus-icon";
 
 const stops = [
@@ -26,8 +26,15 @@ const stops = [
     icon: Camera,
   },
   {
+    href: "/batch-lab",
+    eyebrow: "4 · Batch capture",
+    title: "Review a whole session",
+    detail: "Inspect a populated eight-image batch, add local photos, reveal review leads, and confirm each exact stage.",
+    icon: Images,
+  },
+  {
     href: "/experiments-lab",
-    eyebrow: "4 · Study view",
+    eyebrow: "5 · Study view",
     title: "Explore an experiment workspace",
     detail: "See how cohort work rolls up into a reviewable study and reproducible evaluation plan.",
     icon: Beaker,

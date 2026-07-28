@@ -4,7 +4,7 @@ import AxeBuilder from "@axe-core/playwright";
 test.describe("dashboard daily entry", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/dashboard-lab");
-    await expect(page.getByRole("heading", { name: "Today in the lab" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Daily lab briefing" })).toBeVisible();
   });
 
   test("starts with outstanding cohort work instead of historical analytics", async ({ page }) => {
@@ -12,8 +12,8 @@ test.describe("dashboard daily entry", () => {
     await expect(page.getByText("8 of 12 active mice recorded")).toBeVisible();
 
     const north = page.getByRole("article").filter({ hasText: "North colony · Cycle study" });
-    await expect(north.getByText("4 due")).toBeVisible();
-    await expect(north.getByRole("link", { name: "Continue" })).toHaveAttribute("href", /\/cohorts\/.+$/);
+    await expect(north.getByText("4 due", { exact: true }).first()).toBeVisible();
+    await expect(north.getByRole("link", { name: "Open cohort" })).toHaveAttribute("href", /\/cohorts\/.+$/);
     await expect(north.getByRole("link", { name: "Bulk" })).toHaveAttribute("href", /\/cohorts\/.+\/batch$/);
 
     await expect(page.getByText("Recent entries")).toBeHidden();
@@ -33,7 +33,7 @@ test.describe("dashboard daily entry", () => {
       if (message.type() === "error") errors.push(message.text());
     });
     await page.reload();
-    await expect(page.getByRole("heading", { name: "Today in the lab" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Daily lab briefing" })).toBeVisible();
     const results = await new AxeBuilder({ page }).analyze();
     expect(results.violations).toEqual([]);
     expect(errors).toEqual([]);
