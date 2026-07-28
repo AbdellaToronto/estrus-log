@@ -502,7 +502,7 @@ export function SubjectPageClient({
           {/* Main Image Area */}
           <div className="relative flex flex-1 items-center justify-center overflow-hidden border border-[#ded9cd] bg-white">
             {selectedLog ? (
-              <div className="relative h-full w-full">
+              <div className="absolute inset-0">
                 {selectedLog.image_url ? (
                   <Image
                     src={selectedLog.image_url}
