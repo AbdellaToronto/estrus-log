@@ -42,12 +42,12 @@ export function StageTrendChart({ data }: { data: DailyTrendData[] }) {
 
   // Format date for display
   const formatDate = (dateStr: string) => {
-    const date = new Date(dateStr);
+    const date = new Date(`${dateStr}T12:00:00`);
     return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
   };
 
   const formatShortDate = (dateStr: string) => {
-    const date = new Date(dateStr);
+    const date = new Date(`${dateStr}T12:00:00`);
     return date.toLocaleDateString('en-US', { weekday: 'short' });
   };
 
