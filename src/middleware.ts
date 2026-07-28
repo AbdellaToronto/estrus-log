@@ -22,6 +22,7 @@ const isPublicRoute = createRouteMatcher([
   "/experiments-lab",
   "/experiment-detail-lab",
   "/onboarding-flow-lab",
+  "/supervisor-demo",
   "/api/webhooks(.*)",
 ]);
 
