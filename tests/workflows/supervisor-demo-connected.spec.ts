@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import AxeBuilder from "@axe-core/playwright";
 
 test.describe("supervisor demo connected workflow", () => {
   test("makes a mouse card open a usable profile", async ({ page }) => {
@@ -31,5 +32,84 @@ test.describe("supervisor demo connected workflow", () => {
     await expect(page.getByRole("button", { name: "21 days" })).toHaveAttribute("aria-pressed", "true");
     await page.getByRole("button", { name: "Estrus 31" }).click();
     await expect(page.getByText("Latest Estrus observations")).toBeVisible();
+  });
+
+  test("turns a completed AI review into an explorable longitudinal record", async ({ page }) => {
+    await page.goto("/supervisor-demo");
+    await page.getByRole("button", { name: "Day complete" }).click();
+
+    await expect(page.getByRole("heading", { name: "Morning review complete" })).toBeVisible();
+    await expect(page.getByText("8 / 8", { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "14 days" })).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    );
+    await expect(page.getByText("14-day history coverage")).toBeVisible();
+    await expect(page.getByText("86.6%", { exact: true })).toBeVisible();
+    await expect(page.getByTestId("expanded-cycle-history")).toContainText("N-225");
+    await expect(page.getByTestId("expanded-cycle-history")).toContainText("AI proposal");
+    await expect(page.getByTestId("expanded-cycle-history")).toContainText("Saved decision");
+
+    await page.getByRole("button", { name: /N-227 is uncertain/ }).click();
+    const uncertainHistory = page.locator("#history-N-227").getByTestId("expanded-cycle-history");
+    await expect(uncertainHistory).toContainText("N-227");
+    await expect(uncertainHistory).toContainText(
+      "Uncertain / transition"
+    );
+
+    await page.getByRole("button", { name: "28 days" }).click();
+    await expect(page.getByRole("button", { name: "28 days" })).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    );
+    await expect(page.getByText("28-day history coverage")).toBeVisible();
+    await expect(page.getByText("85.3%", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Replay cycle" }).click();
+    await expect(page.getByRole("button", { name: /Replaying/ })).toBeVisible();
+  });
+
+  test("keeps complete-review provenance available in the receipt export", async ({ page }) => {
+    await page.goto("/supervisor-demo");
+    await page.getByRole("button", { name: "Day complete" }).click();
+
+    const downloadPromise = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Export review receipt" }).click();
+    const download = await downloadPromise;
+    expect(download.suggestedFilename()).toBe(
+      "north-colony-review-receipt-2026-07-28.csv"
+    );
+
+    await page.getByRole("button", { name: "Open saved records" }).click();
+    await expect(page.getByRole("heading", { name: "Review complete" })).toBeVisible();
+    const correctedRow = page.getByTestId("receipt-row-demo-225");
+    await expect(correctedRow).toContainText("Estrus");
+    await expect(correctedRow).toContainText("Proestrus");
+  });
+
+  test("keeps the completed-day dashboard accessible and contained on mobile", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.goto("/supervisor-demo");
+    await page.getByRole("button", { name: "Day complete" }).click();
+
+    const pageWidth = await page.evaluate(() => ({
+      client: document.documentElement.clientWidth,
+      scroll: document.documentElement.scrollWidth,
+    }));
+    expect(pageWidth.scroll).toBeLessThanOrEqual(pageWidth.client);
+
+    const results = await new AxeBuilder({ page }).analyze();
+    expect(results.violations).toEqual([]);
+  });
+
+  test("captures the selected day-complete visual target", async ({ page }) => {
+    await page.setViewportSize({ width: 1488, height: 1058 });
+    await page.goto("/supervisor-demo");
+    await page.getByRole("button", { name: "Day complete" }).click();
+    await expect(page.getByTestId("expanded-cycle-history")).toBeVisible();
+    await expect(page).toHaveScreenshot("supervisor-day-complete.png", {
+      animations: "disabled",
+      fullPage: true,
+    });
   });
 });

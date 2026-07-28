@@ -11,12 +11,13 @@ import {
   RotateCcw,
   ShieldCheck,
 } from "lucide-react";
+import { DayComplete } from "./day-complete";
 import { StageDistribution } from "@/components/prediction/stage-distribution";
 import { ESTRUS_STAGES, type ClassificationStage } from "@/lib/classification";
 import { cn } from "@/lib/utils";
 
 type ReviewState = "ready" | "attention" | "abstained";
-type DemoView = "review" | "receipt" | "method";
+type DemoView = "review" | "receipt" | "complete" | "method";
 
 type DemoPrediction = {
   id: string;
@@ -149,6 +150,25 @@ const STARTING_ITEMS: DemoPrediction[] = [
   },
 ];
 
+const COMPLETED_DECISIONS: Record<
+  string,
+  ClassificationStage | "Uncertain / transition"
+> = {
+  "N-221": "Estrus",
+  "N-222": "Proestrus",
+  "N-223": "Metestrus",
+  "N-224": "Diestrus",
+  "N-225": "Proestrus",
+  "N-226": "Metestrus",
+  "N-227": "Uncertain / transition",
+  "N-228": "Diestrus",
+};
+
+const COMPLETED_ITEMS: DemoPrediction[] = STARTING_ITEMS.map((item) => ({
+  ...item,
+  finalStage: COMPLETED_DECISIONS[item.subject],
+}));
+
 function DemoHeader({
   view,
   confirmedCount,
@@ -163,13 +183,13 @@ function DemoHeader({
         <div className="mx-auto flex max-w-[1500px] flex-col gap-3 px-5 py-3 sm:px-8 lg:flex-row lg:items-center lg:px-12">
           <div>
             <p className="font-serif text-xl font-semibold text-[#30345f]">Estrus</p>
-            <p className="text-[10px] font-bold uppercase tracking-[0.17em] text-[#77736c]">Supervisor demonstration</p>
+            <p className="text-[10px] font-bold uppercase tracking-[0.17em] text-[#625f58]">Supervisor demonstration</p>
           </div>
           <nav className="flex lg:ml-10" aria-label="Demo pages">
             {[
               ["review", "Prediction inbox"],
               ["receipt", "Review receipt"],
-              ["method", "How it works"],
+              ["complete", "Day complete"],
             ].map(([target, label]) => (
               <button
                 key={target}
@@ -177,7 +197,7 @@ function DemoHeader({
                 onClick={() => onNavigate(target as DemoView)}
                 className={cn(
                   "relative px-3 py-2 text-sm font-semibold",
-                  view === target ? "text-[#292b4c]" : "text-[#77736c] hover:text-[#454a9f]"
+                  view === target ? "text-[#292b4c]" : "text-[#625f58] hover:text-[#454a9f]"
                 )}
               >
                 {label}
@@ -186,7 +206,7 @@ function DemoHeader({
             ))}
           </nav>
           <div className="flex items-center gap-4 lg:ml-auto">
-            <p className="text-xs text-[#77736c]"><span className="font-semibold text-[#292b4c]">{confirmedCount} of 8</span> reviewed</p>
+            <p className="text-xs text-[#625f58]"><span className="font-semibold text-[#292b4c]">{confirmedCount} of 8</span> reviewed</p>
             <div className="h-1.5 w-32 overflow-hidden rounded-full bg-[#e4dfd5]">
               <div className="h-full rounded-full bg-[#454a9f]" style={{ width: `${(confirmedCount / 8) * 100}%` }} />
             </div>
@@ -371,7 +391,17 @@ function PredictionInbox({
   );
 }
 
-function Receipt({ items, onBack, onRestart }: { items: DemoPrediction[]; onBack: () => void; onRestart: () => void }) {
+function Receipt({
+  items,
+  onBack,
+  onRestart,
+  onExport,
+}: {
+  items: DemoPrediction[];
+  onBack: () => void;
+  onRestart: () => void;
+  onExport: () => void;
+}) {
   const finalized = items.filter((item) => item.finalStage);
   const accepted = finalized.filter((item) => item.finalStage === item.prediction).length;
   const corrected = finalized.filter((item) => item.finalStage !== item.prediction).length;
@@ -403,7 +433,11 @@ function Receipt({ items, onBack, onRestart }: { items: DemoPrediction[]; onBack
           <span>Subject</span><span>AI proposal</span><span>Saved decision</span>
         </div>
         {items.map((item) => (
-          <div key={item.id} className="grid grid-cols-[1fr_120px_120px] items-center border-b border-[#ebe6dc] px-4 py-4 text-sm last:border-b-0 sm:grid-cols-[1fr_180px_180px]">
+          <div
+            key={item.id}
+            data-testid={`receipt-row-${item.id}`}
+            className="grid grid-cols-[1fr_120px_120px] items-center border-b border-[#ebe6dc] px-4 py-4 text-sm last:border-b-0 sm:grid-cols-[1fr_180px_180px]"
+          >
             <div>
               <p className="font-semibold text-[#292b4c]">{item.subject}</p>
               <p className="mt-0.5 text-xs text-[#77736c]">{item.strain}</p>
@@ -416,7 +450,7 @@ function Receipt({ items, onBack, onRestart }: { items: DemoPrediction[]; onBack
 
       <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:justify-end">
         <button type="button" onClick={onRestart} className="inline-flex min-h-11 items-center justify-center gap-2 border border-[#cbc6bb] bg-white px-5 text-sm font-semibold text-[#45413c]"><RotateCcw className="h-4 w-4" />Restart demo</button>
-        <button type="button" className="inline-flex min-h-11 items-center justify-center gap-2 bg-[#454a9f] px-5 text-sm font-semibold text-white"><Download className="h-4 w-4" />Export receipt</button>
+        <button type="button" onClick={onExport} className="inline-flex min-h-11 items-center justify-center gap-2 bg-[#454a9f] px-5 text-sm font-semibold text-white"><Download className="h-4 w-4" />Export receipt</button>
       </div>
     </main>
   );
@@ -463,11 +497,15 @@ export function SupervisorDemoClient() {
   const [selectedId, setSelectedId] = useState("demo-223");
   const [editing, setEditing] = useState(false);
   const confirmedCount = useMemo(() => items.filter((item) => item.finalStage).length, [items]);
+  const dayCompleteItems = useMemo(
+    () => (items.every((item) => item.finalStage) ? items : COMPLETED_ITEMS),
+    [items]
+  );
 
   const reviewNext = (updated: DemoPrediction[]) => {
     const next = updated.find((item) => !item.finalStage);
     if (next) setSelectedId(next.id);
-    else setView("receipt");
+    else setView("complete");
   };
   const saveDecision = (stage: ClassificationStage | "Uncertain / transition") => {
     const updated = items.map((item) =>
@@ -483,10 +521,33 @@ export function SupervisorDemoClient() {
     setEditing(false);
     setView("review");
   };
+  const openCompleteRecords = () => {
+    setItems(dayCompleteItems);
+    setView("receipt");
+  };
+  const exportReceipt = () => {
+    const header = ["subject", "ai_proposal", "saved_decision", "model_support"];
+    const rows = dayCompleteItems.map((item) => [
+      item.subject,
+      item.prediction,
+      item.finalStage ?? "",
+      String(item.scores[item.prediction]),
+    ]);
+    const csv = [header, ...rows]
+      .map((row) => row.map((value) => `"${String(value).replaceAll('"', '""')}"`).join(","))
+      .join("\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "north-colony-review-receipt-2026-07-28.csv";
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+  const displayedCount = view === "complete" ? 8 : confirmedCount;
 
   return (
     <div className="min-h-screen bg-[#f7f4ed] text-[#292b4c]">
-      <DemoHeader view={view} confirmedCount={confirmedCount} onNavigate={setView} />
+      <DemoHeader view={view} confirmedCount={displayedCount} onNavigate={setView} />
       {view === "review" && (
         <PredictionInbox
           items={items}
@@ -501,12 +562,35 @@ export function SupervisorDemoClient() {
           onChooseCorrection={saveDecision}
         />
       )}
-      {view === "receipt" && <Receipt items={items} onBack={() => setView("review")} onRestart={restart} />}
+      {view === "receipt" && (
+        <Receipt
+          items={items}
+          onBack={() => setView("review")}
+          onRestart={restart}
+          onExport={exportReceipt}
+        />
+      )}
+      {view === "complete" && (
+        <DayComplete
+          items={dayCompleteItems}
+          onOpenRecords={openCompleteRecords}
+          onExport={exportReceipt}
+        />
+      )}
       {view === "method" && <Method />}
       <footer className="mt-8 border-t border-[#ded9cd] bg-[#f0ede5]">
-        <div className="mx-auto flex max-w-[1500px] flex-col gap-2 px-5 py-4 text-[10px] leading-4 text-[#77736c] sm:px-8 lg:flex-row lg:items-center lg:justify-between lg:px-12">
-          <p>Estrus supervisor demo · public reference photographs · no production record is changed</p>
-          <p>Scores are illustrative relative model support for the interaction demo, not live calibrated inference.</p>
+        <div className="mx-auto flex max-w-[1500px] flex-col gap-3 px-5 py-4 text-[10px] leading-4 text-[#625f58] sm:px-8 lg:flex-row lg:items-center lg:justify-between lg:px-12">
+          <div>
+            <p>Estrus supervisor demo · public reference photographs · no production record is changed</p>
+            <p className="mt-1">Historical observations are illustrative demo data. Scores are relative model support, not live calibrated inference.</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setView("method")}
+            className="w-fit text-xs font-semibold text-[#454a9f] underline decoration-[#b8b7e1] underline-offset-4 hover:text-[#292f68]"
+          >
+            How it works
+          </button>
         </div>
       </footer>
     </div>
