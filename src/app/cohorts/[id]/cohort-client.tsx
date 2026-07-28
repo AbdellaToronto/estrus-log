@@ -146,7 +146,13 @@ export function CohortClient({ cohort, initialLogs, initialInsights, initialSubj
               <span>{initialSubjects.length} mice</span>
               <span>{initialInsights.totalLogs} observations</span>
               <span>{initialInsights.binaryModelReviews} new-model reviews</span>
-              {cohort.type && <span>{cohort.type}</span>}
+              {cohort.type && (
+                <span>
+                  {cohort.type === "estrus_tracking"
+                    ? "Estrus cycle tracking"
+                    : cohort.type.replaceAll("_", " ")}
+                </span>
+              )}
             </div>
           </div>
 

@@ -2249,28 +2249,17 @@ export default function BatchUploadPage() {
                 </div>
               </div>
 
-              <div className="p-6 border-t border-slate-200 bg-white z-20 shrink-0">
-                <div className="grid grid-cols-2 gap-3">
-                  <Button
-                    variant="outline"
-                    onClick={discardSelectedItem}
-                    className="h-12 rounded-xl border-slate-200 hover:bg-red-50 hover:text-red-600 hover:border-red-100 font-medium transition-colors"
-                  >
-                    <Trash2 className="w-4 h-4 mr-2" /> Remove from batch
-                  </Button>
-                  <Button
-                    disabled={selectedItem.status !== "complete" || isSaving || !canSave}
-                    onClick={handleSaveAll}
-                    className="h-12 rounded-xl bg-slate-900 text-white hover:bg-slate-800 font-medium shadow-lg shadow-slate-900/20 hover:shadow-slate-900/30 transition-all disabled:opacity-70"
-                  >
-                    {isSaving ? (
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    ) : (
-                      <Check className="w-4 h-4 mr-2" />
-                    )}
-                    {isSaving ? "Saving..." : "Save Batch"}
-                  </Button>
-                </div>
+              <div className="border-t border-slate-200 bg-white p-6 z-20 shrink-0">
+                <Button
+                  variant="outline"
+                  onClick={discardSelectedItem}
+                  className="h-12 w-full rounded-xl border-slate-200 font-medium transition-colors hover:border-red-100 hover:bg-red-50 hover:text-red-600"
+                >
+                  <Trash2 className="mr-2 h-4 w-4" /> Remove from batch
+                </Button>
+                <p className="mt-3 text-center text-[11px] leading-4 text-slate-400">
+                  Review the whole batch and save from the checklist on the left.
+                </p>
               </div>
             </motion.aside>
           )}

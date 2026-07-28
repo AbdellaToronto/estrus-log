@@ -494,9 +494,9 @@ export function SubjectPageClient({
       </details>
 
       {/* Main Split View */}
-      <div className="order-3 grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
-        {/* Left: Image Viewer */}
-        <figure className="order-2 flex min-h-[440px] flex-col overflow-hidden border border-[#ded9cd] bg-[#f4f1e9] p-3 lg:min-h-[620px] xl:order-1">
+      <div className="order-3 grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(320px,420px)] xl:items-start">
+        {/* Supporting image stays secondary to the saved scientific record. */}
+        <figure className="order-2 flex min-h-[360px] flex-col overflow-hidden border border-[#ded9cd] bg-[#f4f1e9] p-3 sm:min-h-[440px] xl:sticky xl:top-24 xl:min-h-[520px]">
           <figcaption className="px-1 pb-3 text-[10px] font-bold uppercase tracking-[0.16em] text-[#77736c]">Observation image</figcaption>
 
           {/* Main Image Area */}
@@ -509,7 +509,7 @@ export function SubjectPageClient({
                     alt={`${selectedLog.stage} scan`}
                     fill
                     priority
-                    sizes="(max-width: 768px) 95vw, (max-width: 1024px) 90vw, 60vw"
+                    sizes="(max-width: 768px) 95vw, (max-width: 1279px) 90vw, 420px"
                     className="object-contain"
                   />
                 ) : (
@@ -531,8 +531,8 @@ export function SubjectPageClient({
           </div>
         </figure>
 
-        {/* Right: Analysis Panel */}
-        <div className="order-1 flex flex-col xl:order-2">
+        {/* Data-first record summary */}
+        <div className="order-1 flex flex-col">
           {/* Result Card */}
           {selectedLog ? (
             <article className="space-y-5 border border-[#ded9cd] bg-white p-5 sm:p-6">
