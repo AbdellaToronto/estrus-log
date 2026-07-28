@@ -105,7 +105,7 @@ export function CohortAnalysis({ insights }: { insights: CohortInsights }) {
     <div className="space-y-4 sm:space-y-6 lg:space-y-8">
       <div className="grid gap-4 sm:gap-6 grid-cols-1 lg:grid-cols-3">
         <AnalyticsCard
-          title="New binary review"
+          title="Independent guardrail review"
           subtitle="Reference-backed early-vs-late aid; exact stage remains scientist-controlled."
           className="lg:col-span-2"
         >
@@ -138,7 +138,7 @@ export function CohortAnalysis({ insights }: { insights: CohortInsights }) {
             </div>
           ) : (
             <div className="flex min-h-48 items-center justify-center border border-dashed border-[#c9c7e7] bg-[#f8f7fc] px-6 text-center text-sm leading-6 text-[#625f58]">
-              New-model evidence will appear here after an external-photo ROI is reviewed. Manual and cytology records remain valid without it.
+              Independent guardrail evidence will appear after an external photograph is analyzed. Exact-stage predictions remain visible even when this guardrail abstains.
             </div>
           )}
         </AnalyticsCard>
@@ -167,11 +167,11 @@ export function CohortAnalysis({ insights }: { insights: CohortInsights }) {
       {confidenceData.length > 0 && (
         <details className="group border border-[#ded9cd] bg-[#fbfaf7]">
           <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4 text-sm font-semibold text-[#4f4b45]">
-            Legacy four-stage model support
+            Exact-stage model support by saved stage
             <ChevronDown className="h-4 w-4 transition group-open:rotate-180" />
           </summary>
           <div className="border-t border-[#ded9cd] p-5">
-            <p className="mb-4 text-xs leading-5 text-[#77736c]">Historical relative support only; not a calibrated probability and not the saved scientist decision.</p>
+            <p className="mb-4 text-xs leading-5 text-[#77736c]">Relative support at review time; not a calibrated probability. Corrections remain represented by the saved stage.</p>
             <div className="h-56">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={confidenceData}>
@@ -281,10 +281,10 @@ export function CohortAnalysis({ insights }: { insights: CohortInsights }) {
                     <p className="text-xs font-semibold text-[#454a9f]">
                       {log.binaryGroup === "PROESTRUS_OR_ESTRUS" ? "Early-group lead" : "Late-group lead"}
                     </p>
-                    <p className="text-[10px] text-slate-400">new model · review aid</p>
+                    <p className="text-[10px] text-slate-400">independent guardrail</p>
                   </>
                 ) : log.binaryDecisionStatus ? (
-                  <p className="text-xs font-medium text-amber-700">New model abstained</p>
+                  <p className="text-xs font-medium text-amber-700">Guardrail abstained</p>
                 ) : (
                   <p className="text-xs font-medium text-slate-500">Scientist-reviewed</p>
                 )}

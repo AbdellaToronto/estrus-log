@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowRight, Check, CheckCircle2, Loader2, Rat } from "lucide-react";
+import { ArrowRight, Check, CheckCircle2, Loader2, Rat, Sparkles } from "lucide-react";
 import { createCohort } from "@/app/actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -81,7 +81,7 @@ export function OnboardingFlow({
                 Name your first mouse cohort
               </h1>
               <p className="mt-4 max-w-md text-base leading-7 text-[#5e5d75]">
-                A cohort holds the mouse IDs and daily observations collected under one protocol.
+                A cohort connects mouse identities, analyzed photographs, AI proposals, and reviewed stage records under one protocol.
               </p>
 
               <div className="mt-8 border-t border-[#c9c7e7] pt-6">
@@ -96,6 +96,10 @@ export function OnboardingFlow({
                 <p className="mt-4 text-sm leading-6 text-[#5e5d75]">
                   Each mouse can record coat colour and strain so later model evaluation can be subgroup-aware.
                 </p>
+                <div className="mt-5 flex gap-3 border border-[#b8b7e1] bg-white/70 p-3 text-sm text-[#353a87]">
+                  <Sparkles className="mt-0.5 h-4 w-4 shrink-0" />
+                  <p className="leading-5">After setup, upload photographs and Estrus Log will propose exact stages for you to review.</p>
+                </div>
               </div>
             </div>
 
@@ -156,14 +160,14 @@ export function OnboardingFlow({
             </div>
             <h1 className="mt-5 font-serif text-4xl tracking-[-0.04em] text-[#292b4c] sm:text-5xl">Cohort ready</h1>
             <p className="mx-auto mt-3 max-w-xl text-base leading-7 text-[#77736c]">
-              <strong className="text-[#292b4c]">{cohortName}</strong> is ready. Add the mouse identities before starting single or bulk capture.
+              <strong className="text-[#292b4c]">{cohortName}</strong> is ready. Add mouse identities, then let the AI prepare the first prediction inbox.
             </p>
 
             <ol className="mx-auto mt-8 grid max-w-2xl gap-3 text-left sm:grid-cols-3">
               {[
                 ["1", "Add subjects", "Mouse ID, coat colour, and strain"],
-                ["2", "Choose capture", "One observation or bulk scan"],
-                ["3", "Confirm stages", "Review the lead and save the scientist decision"],
+                ["2", "Analyze photos", "Single observation or a daily batch"],
+                ["3", "Review predictions", "Accept, correct, or mark uncertain"],
               ].map(([number, title, description]) => (
                 <li key={number} className="rounded-2xl border border-[#ded9cd] bg-[#f7f4ed] p-4">
                   <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#454a9f] text-xs font-bold text-white">{number}</span>

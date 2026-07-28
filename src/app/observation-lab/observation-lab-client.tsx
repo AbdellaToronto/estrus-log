@@ -5,6 +5,28 @@ import { useSearchParams } from "next/navigation";
 import { ArrowLeft, Check, ChevronDown, FilePlus2 } from "lucide-react";
 import { EstrusIcon } from "@/components/estrus-icon";
 import { PreparedRoiCropper } from "@/components/prepared-roi-cropper";
+import { PredictionSummary } from "@/components/prediction/prediction-summary";
+import type { ClassificationResult } from "@/lib/classification";
+
+const DEMO_PREDICTION: ClassificationResult = {
+  estrus_stage: "Estrus",
+  confidence_scores: {
+    Proestrus: 0.22,
+    Estrus: 0.61,
+    Metestrus: 0.1,
+    Diestrus: 0.07,
+  },
+  features: {
+    opening: "Open",
+    color: "Pink",
+    swelling: "Pronounced",
+    moistness: "Moist",
+  },
+  reasoning: "The exact-stage model gives the strongest relative support to estrus.",
+  review_required: false,
+  review_reasons: [],
+  model_version: "illustrative-four-stage-review-v1",
+};
 
 const stages = [
   { label: "Proestrus", note: "early group", color: "#ece6f7" },
@@ -22,6 +44,7 @@ export function ObservationLabClient() {
   const [paired, setPaired] = useState(false);
   const [acknowledged, setAcknowledged] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [editingStage, setEditingStage] = useState(false);
   const [demoFile, setDemoFile] = useState<File | null>(null);
 
   useEffect(() => {
@@ -48,7 +71,7 @@ export function ObservationLabClient() {
           <header className="flex flex-wrap items-start justify-between gap-6 border-b border-[#ded9cd] pb-7">
             <div>
         <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#625f58]">Lab / North colony / Mouse {subjectName}</p>
-              <h1 className="mt-3 font-serif text-4xl tracking-[-0.06em] text-[#292b4c] sm:text-5xl">Review one observation</h1>
+              <h1 className="mt-3 font-serif text-4xl tracking-[-0.06em] text-[#292b4c] sm:text-5xl">AI prediction review</h1>
               <p className="mt-2 text-sm text-[#5f5c56]">External photo · public test ROI · framing confirmed</p>
             </div>
             <div data-testid="observation-stepper" className="flex items-center gap-2 pt-2 text-[10px] font-semibold uppercase tracking-[0.14em]">
@@ -69,21 +92,27 @@ export function ObservationLabClient() {
             </div>
 
             <div className="space-y-5">
-              <section data-testid="model-suggestion-panel" className="border border-[#b8b7e1] bg-[#eeedf9] p-5">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div><p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[#454a9f]">New model lead · early vs late only</p><p className="mt-2 font-serif text-3xl text-[#30345f]">Proestrus / estrus group</p></div>
-                  <div className="flex items-center gap-2"><EstrusIcon name="evidence" className="h-10 w-10" /><span className="rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-semibold text-emerald-800">Reference-backed lead</span></div>
-                </div>
-                <p className="mt-3 text-sm leading-6 text-[#5e5d75]">Use this group as a review aid, then choose the exact stage below.</p>
-              </section>
+              <div data-testid="model-suggestion-panel">
+                <PredictionSummary
+                  result={DEMO_PREDICTION}
+                  selectedStage={stage}
+                  onAccept={() => {
+                    setStage(DEMO_PREDICTION.estrus_stage);
+                    setEditingStage(false);
+                    setAcknowledged(false);
+                    setSaved(false);
+                  }}
+                  onCorrect={() => setEditingStage(true)}
+                />
+              </div>
 
-              <fieldset className="space-y-3 border border-[#454a9f] bg-[#fbfaf7] p-4">
-                <legend className="px-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#454a9f]">Your decision · required</legend>
-                <div className="flex items-center justify-between gap-3"><h2 className="font-serif text-xl">Choose the exact stage</h2><span className="text-xs text-[#5f5c56]">Only your choice is saved</span></div>
+              {editingStage && <fieldset className="space-y-3 border border-[#454a9f] bg-[#fbfaf7] p-4">
+                <legend className="px-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#454a9f]">Scientist correction</legend>
+                <div className="flex items-center justify-between gap-3"><h2 className="font-serif text-xl">Choose a different stage</h2><span className="text-xs text-[#5f5c56]">The override is retained</span></div>
                 <div className="grid grid-cols-2 gap-2">
-                  {stages.map((item) => <button key={item.label} type="button" aria-pressed={stage === item.label} onClick={() => { setStage(item.label); setAcknowledged(false); setSaved(false); }} className={`min-h-16 border p-3 text-left transition-colors ${item.label === "Uncertain / transition" ? "col-span-2" : ""}`} style={{ background: stage === item.label ? item.color : "#ffffff", borderColor: stage === item.label ? "#454a9f" : "#ded9cd" }}><span className="flex items-center justify-between text-sm font-semibold">{item.label}{stage === item.label && <Check className="h-4 w-4 text-[#454a9f]" />}</span><span className="mt-1 block text-xs text-[#5f5c56]">{item.note}</span></button>)}
+                  {stages.map((item) => <button key={item.label} type="button" aria-pressed={stage === item.label} onClick={() => { setStage(item.label); setEditingStage(false); setAcknowledged(false); setSaved(false); }} className={`min-h-16 border p-3 text-left transition-colors ${item.label === "Uncertain / transition" ? "col-span-2" : ""}`} style={{ background: stage === item.label ? item.color : "#ffffff", borderColor: stage === item.label ? "#454a9f" : "#ded9cd" }}><span className="flex items-center justify-between text-sm font-semibold">{item.label}{stage === item.label && <Check className="h-4 w-4 text-[#454a9f]" />}</span><span className="mt-1 block text-xs text-[#5f5c56]">{item.note}</span></button>)}
                 </div>
-              </fieldset>
+              </fieldset>}
 
               <fieldset data-testid="paired-cytology-panel" className="space-y-3 border border-[#ded9cd] bg-[#fbfaf7] p-4">
                 <legend className="px-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#625f58]">Confirmation source</legend>
@@ -95,8 +124,8 @@ export function ObservationLabClient() {
               <details data-testid="model-evidence-disclosure" open={evidenceOpen} onToggle={(event) => setEvidenceOpen(event.currentTarget.open)} className="border border-[#ded9cd] bg-[#fbfaf7] p-4 text-sm">
                 <summary className="flex cursor-pointer list-none items-center justify-between font-medium text-[#454a9f]">Why this result?<ChevronDown className={`h-4 w-4 transition-transform ${evidenceOpen ? "rotate-180" : ""}`} /></summary>
                 <div className="mt-4 space-y-4 border-t border-[#ded9cd] pt-4 text-xs leading-5 text-[#5f5c56]">
-                  <section><p className="font-semibold uppercase tracking-[0.14em] text-[#454a9f]">New model evidence</p><p className="mt-2"><span className="font-semibold text-[#292b4c]">65% raw early-group support</span> · dark-coat stable · within reference and acquisition ranges.</p><p className="mt-1 font-mono">s-biad2395-dinov2-robust-ensemble-20260719-v2</p></section>
-                  <section data-testid="legacy-four-stage-disclosure" className="border-t border-[#ded9cd] pt-4"><p className="font-semibold uppercase tracking-[0.14em] text-[#625f58]">Legacy four-stage comparison</p><p className="mt-2">Secondary reference only; its exact-stage output is not used as the primary model lead.</p></section>
+                  <section data-testid="legacy-four-stage-disclosure"><p className="font-semibold uppercase tracking-[0.14em] text-[#454a9f]">Exact-stage model proposal</p><p className="mt-2"><span className="font-semibold text-[#292b4c]">Estrus · 61% relative support</span> · all four stage scores remain attached to the review.</p><p className="mt-1 font-mono">illustrative-four-stage-review-v1</p></section>
+                  <section className="border-t border-[#ded9cd] pt-4"><p className="font-semibold uppercase tracking-[0.14em] text-[#625f58]">Independent guardrail</p><p className="mt-2">Early-cycle family agrees · dark-coat stable · within reference and acquisition ranges.</p></section>
                 </div>
               </details>
 

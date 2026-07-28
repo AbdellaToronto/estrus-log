@@ -31,6 +31,7 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { CycleWheel, ConfidenceBars } from "@/components/analysis";
+import { PredictionSummary } from "@/components/prediction/prediction-summary";
 import Link from "next/link";
 import {
   getUploadUrls,
@@ -54,6 +55,7 @@ import {
   getPrimaryStageConfidence,
   getPrimaryStageName,
   getPrimaryStagePrediction,
+  needsCloserPredictionReview,
 } from "@/lib/classification";
 import { useParsedCohortConfig } from "@/lib/cohort-config-context";
 import {
@@ -366,6 +368,7 @@ export default function BatchUploadPage() {
   const [subjectsError, setSubjectsError] = useState<string | null>(null);
   const [reviewAcknowledgedFor, setReviewAcknowledgedFor] = useState<string | null>(null);
   const [batchReviewAcknowledgedFor, setBatchReviewAcknowledgedFor] = useState<string | null>(null);
+  const [editingDecisionId, setEditingDecisionId] = useState<string | null>(null);
   const [batchModality, setBatchModality] = useState<BatchModality | null>("external_photo");
   const [captureDate, setCaptureDate] = useState(localDateKey);
   const [contextError, setContextError] = useState<string | null>(null);
@@ -394,7 +397,16 @@ export default function BatchUploadPage() {
 
   const selectedItem = items.find((i) => i.id === selectedId);
   const reviewOrderedItems = useMemo(
-    () => [...items].sort((left, right) => Number(right.status === "crop_error") - Number(left.status === "crop_error")),
+    () => {
+      const rank = (item: ScanItem) => {
+        if (item.status === "crop_error") return 4;
+        if (item.status !== "complete" || !item.result) return 3;
+        if (item.result.evidence?.external_binary?.decision_status === "abstain") return 2;
+        if (needsCloserPredictionReview(item.result)) return 1;
+        return 0;
+      };
+      return [...items].sort((left, right) => rank(left) - rank(right));
+    },
     [items]
   );
   const hasItems = items.length > 0;
@@ -804,7 +816,7 @@ export default function BatchUploadPage() {
   );
 
   const reviewRequiredItems = useMemo(
-    () => analyzedItems.filter((item) => item.result?.review_required),
+    () => analyzedItems.filter((item) => needsCloserPredictionReview(item.result)),
     [analyzedItems]
   );
   const reviewKey = reviewRequiredItems.map((item) => item.id).sort().join(",");
@@ -1548,7 +1560,7 @@ export default function BatchUploadPage() {
             >
               <div className="sticky top-0 z-20 flex h-20 shrink-0 items-center justify-between border-b border-[#ded9cd] bg-[#fbfaf7]/95 px-6 backdrop-blur-xl">
                 <h2 className="font-serif text-2xl text-[#292b4c]">
-                  Crop review{" "}
+                  {analyzedItems.length > 0 ? "Prediction queue" : "Prepare images"}{" "}
                   <span className="ml-2 font-sans text-sm font-normal text-[#77736c]">
                     {items.length} items
                   </span>
@@ -1700,7 +1712,9 @@ export default function BatchUploadPage() {
                             {/* Bottom review state */}
                             {item.result &&
                               (() => {
-                                const stageName = item.confirmedStage;
+                                const predictedStage = getPrimaryStageName(item.result);
+                                const stageName = item.confirmedStage || predictedStage;
+                                const accepted = Boolean(item.confirmedStage);
                                 return (
                                   <motion.div
                                     initial={{ y: 20, opacity: 0 }}
@@ -1711,11 +1725,12 @@ export default function BatchUploadPage() {
                                       <Badge
                                         className={cn(
                                           "backdrop-blur-md border-0 shadow-lg font-bold px-3 py-1 text-xs tracking-wide",
-                                          !stageName && "bg-amber-400 text-amber-950"
+                                          !stageName && "bg-amber-400 text-amber-950",
+                                          stageName && !accepted && "bg-[#eeedf9] text-[#292b4c]"
                                         )}
-                                        style={stageName ? { backgroundColor: getColor(stageName), color: "white" } : undefined}
+                                        style={stageName && accepted ? { backgroundColor: getColor(stageName), color: "white" } : undefined}
                                       >
-                                        {stageName || "Choose stage"}
+                                        {stageName ? `${accepted ? "Accepted" : "AI"} · ${stageName}` : "Awaiting analysis"}
                                       </Badge>
                                     </div>
                                   </motion.div>
@@ -1921,10 +1936,23 @@ export default function BatchUploadPage() {
                     ) : null}
 
                     {selectedItem.status === "complete" && selectedItem.result && (
+                      <PredictionSummary
+                        result={selectedItem.result}
+                        selectedStage={selectedItem.confirmedStage}
+                        onAccept={() => {
+                          const predicted = getPrimaryStageName(selectedItem.result);
+                          if (predicted) confirmItemStage(selectedItem.id, predicted);
+                          setEditingDecisionId(null);
+                        }}
+                        onCorrect={() => setEditingDecisionId(selectedItem.id)}
+                      />
+                    )}
+
+                    {selectedItem.status === "complete" && selectedItem.result && (
                       <section className="border border-[#c9c7e7] bg-[#eeedf9] p-4" aria-labelledby="binary-model-lead" data-tour="binary-model-lead">
                         <div className="flex items-start justify-between gap-3">
                           <div>
-                            <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#555a9d]">DINOv2 binary model · review aid</p>
+                            <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#555a9d]">Independent cycle-family guardrail</p>
                             <h3 id="binary-model-lead" className="mt-1 font-serif text-2xl text-[#292b4c]">{selectedBinaryLabel}</h3>
                           </div>
                           <Badge variant="outline" className={cn(
@@ -1937,7 +1965,7 @@ export default function BatchUploadPage() {
                         <p className="mt-3 text-xs leading-5 text-[#5e5d75]">
                           {selectedBinaryLabel === "Abstain"
                             ? "The model withheld a group lead. Review the image and make the stage call from your own evidence."
-                            : "This is a broad early-versus-late lead, not the exact stage and not the saved lab record."}
+                            : "This broad early-versus-late check supports the exact-stage proposal above, but never replaces it."}
                         </p>
                         {selectedBinaryEvidence?.abstention_reasons.length ? (
                           <p className="mt-2 text-xs font-medium text-amber-900">Check: {selectedBinaryEvidence.abstention_reasons.join(" · ")}</p>
@@ -1945,11 +1973,15 @@ export default function BatchUploadPage() {
                       </section>
                     )}
 
-                    {selectedItem.status === "complete" && selectedItem.result && (
-                      <section className="border-2 border-[#292b4c] bg-white p-5 shadow-sm" aria-labelledby="batch-stage-decision" data-tour="scientist-stage-call">
-                        <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-500">Your decision · required</p>
-                        <h3 id="batch-stage-decision" className="mt-1 text-xl font-semibold text-slate-950">Choose the stage to save</h3>
-                        <p className="mt-1 text-xs leading-5 text-slate-600">Your selection becomes the lab record.</p>
+                    {selectedItem.status === "complete" &&
+                      selectedItem.result &&
+                      (editingDecisionId === selectedItem.id ||
+                        (selectedItem.confirmedStage &&
+                          selectedItem.confirmedStage !== getPrimaryStageName(selectedItem.result))) && (
+                      <section className="border border-[#ded9cd] bg-white p-5" aria-labelledby="batch-stage-decision" data-tour="scientist-stage-call">
+                        <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#77736c]">Scientist correction</p>
+                        <h3 id="batch-stage-decision" className="mt-1 font-serif text-2xl text-[#292b4c]">Choose a different stage</h3>
+                        <p className="mt-1 text-xs leading-5 text-[#625f58]">This replaces the AI proposal in the saved record and remains visible as an override.</p>
                         <div className="mt-4 grid grid-cols-2 gap-2">
                           {stageNames.map((stage) => {
                             const selected = selectedItem.confirmedStage === stage;
@@ -1958,12 +1990,15 @@ export default function BatchUploadPage() {
                                 key={stage}
                                 type="button"
                                 aria-pressed={selected}
-                                onClick={() => confirmItemStage(selectedItem.id, stage)}
+                                onClick={() => {
+                                  confirmItemStage(selectedItem.id, stage);
+                                  setEditingDecisionId(null);
+                                }}
                                 className={cn(
-                                  "rounded-xl border px-3 py-3 text-left text-sm font-semibold transition",
+                                  "border px-3 py-3 text-left text-sm font-semibold transition",
                                   selected
-                                    ? "border-slate-900 bg-slate-900 text-white shadow-sm"
-                                    : "border-slate-200 bg-slate-50 text-slate-800 hover:border-slate-400 hover:bg-white"
+                                    ? "border-[#454a9f] bg-[#eeedf9] text-[#292b4c]"
+                                    : "border-[#ded9cd] bg-[#fbfaf7] text-[#4f4b45] hover:border-[#9b9dcc] hover:bg-white"
                                 )}
                               >
                                 <span className="mr-2 inline-block h-2.5 w-2.5 rounded-full align-middle" style={{ backgroundColor: getColor(stage) }} />
@@ -1989,7 +2024,7 @@ export default function BatchUploadPage() {
 
                     {selectedItem.result && <details className="group border border-[#ded9cd] bg-white">
                       <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-3 text-xs font-bold uppercase tracking-[0.16em] text-[#625f58]">
-                        Legacy four-stage evidence
+                        Model details and provenance
                         <span className="text-base font-normal transition group-open:rotate-45">+</span>
                       </summary>
                       <div className="space-y-4 border-t border-[#ded9cd] p-4">
@@ -2006,7 +2041,7 @@ export default function BatchUploadPage() {
                         <div className="flex items-start justify-between gap-3 mb-6">
                           <div>
                             <p className="text-[10px] uppercase tracking-[0.25em] text-white/70 font-bold">
-                              Legacy model suggestion
+                              Exact-stage model proposal
                             </p>
                             <h3 className="text-4xl font-bold mt-1 tracking-tight">
                               {selectedStageName || "Awaiting"}

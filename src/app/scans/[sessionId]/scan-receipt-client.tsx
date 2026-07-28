@@ -14,6 +14,7 @@ import {
   UserRound,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { StageDistribution } from "@/components/prediction/stage-distribution";
 import {
   Dialog,
   DialogContent,
@@ -144,6 +145,16 @@ function PhotoGrid({
                 {aid && (
                   <p className="text-xs text-[#625f58]">{aid}</p>
                 )}
+                {item.predictedStage && (
+                  <p className="text-xs text-[#625f58]">
+                    AI proposed {item.predictedStage}
+                    {recordsAreSaved && item.savedStage
+                      ? item.savedStage === item.predictedStage
+                        ? " · accepted"
+                        : ` · corrected to ${item.savedStage}`
+                      : ""}
+                  </p>
+                )}
               </div>
             </button>
           );
@@ -186,6 +197,30 @@ function PhotoGrid({
                     {selected.notes}
                   </div>
                 )}
+                {selected.predictedStage && selected.stageScores && (
+                  <section className="border border-[#c9c7e7] bg-[#fbfaff] p-4">
+                    <div className="flex flex-wrap items-end justify-between gap-3">
+                      <div>
+                        <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#595ea3]">AI proposal</p>
+                        <p className="mt-1 font-serif text-2xl text-[#292b4c]">{selected.predictedStage}</p>
+                      </div>
+                      {selected.savedStage && (
+                        <p className="text-xs font-semibold text-[#555a9d]">
+                          {selected.savedStage === selected.predictedStage
+                            ? "Accepted unchanged"
+                            : `Scientist corrected to ${selected.savedStage}`}
+                        </p>
+                      )}
+                    </div>
+                    <StageDistribution
+                      compact
+                      className="mt-4"
+                      scores={selected.stageScores}
+                      predictedStage={selected.predictedStage}
+                    />
+                    <p className="mt-3 text-[10px] leading-4 text-[#77736c]">Relative model support, not calibrated probabilities.</p>
+                  </section>
+                )}
                 {selected.binaryModel && (
                   <details className="border border-[#ded9cd] bg-[#fbfaf7] p-4">
                     <summary className="cursor-pointer text-sm font-medium text-[#353a87]">
@@ -218,6 +253,12 @@ export function ScanReceiptClient({ session }: { session: ScanSessionDetail }) {
   const recordsAreSaved = session.workflowStatus === "saved";
   const captureDate = session.captureDate || session.created_at;
   const cohortId = session.cohort?.id;
+  const acceptedCount = session.items.filter(
+    (item) => item.savedStage && item.predictedStage === item.savedStage
+  ).length;
+  const correctedCount = session.items.filter(
+    (item) => item.savedStage && item.predictedStage && item.predictedStage !== item.savedStage
+  ).length;
 
   return (
     <div className="page-shell space-y-6 pb-20">
@@ -280,6 +321,18 @@ export function ScanReceiptClient({ session }: { session: ScanSessionDetail }) {
               <p className="text-2xl font-semibold text-[#292b4c]">{session.subjectsLogged.length}</p>
               <p className="text-xs text-[#77736c]">subjects</p>
             </div>
+            {recordsAreSaved && (
+              <>
+                <div>
+                  <p className="text-2xl font-semibold text-[#292b4c]">{acceptedCount}</p>
+                  <p className="text-xs text-[#77736c]">AI accepted</p>
+                </div>
+                <div>
+                  <p className="text-2xl font-semibold text-[#292b4c]">{correctedCount}</p>
+                  <p className="text-xs text-[#77736c]">corrected</p>
+                </div>
+              </>
+            )}
           </div>
         </div>
         {recordsAreSaved && <StageSummary breakdown={session.stageBreakdown} />}

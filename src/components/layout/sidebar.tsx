@@ -8,7 +8,7 @@ import { useHydrated } from "@/hooks/use-hydrated";
 import { cn } from "@/lib/utils";
 
 const ORG_NAV_ITEMS = [
-  { label: "Today", href: "/dashboard", icon: CalendarDays },
+  { label: "Predictions", href: "/dashboard", icon: CalendarDays },
   { label: "Cohorts", href: "/cohorts", icon: Users },
   { label: "Studies", href: "/experiments", icon: TestTube },
 ] as const;

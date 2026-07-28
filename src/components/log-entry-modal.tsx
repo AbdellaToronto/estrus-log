@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import type { ClassificationEvidence } from "@/lib/classification";
 import { EstrusIcon } from "@/components/estrus-icon";
 import { PreparedRoiCropper, type PreparedRoiMetadata } from "@/components/prepared-roi-cropper";
+import { PredictionSummary } from "@/components/prediction/prediction-summary";
 import { AlertCircle, Check, ChevronDown, ImagePlus, Loader2, RotateCcw, Upload } from "lucide-react";
 import { getUploadUrl, createLog } from "@/app/actions";
 
@@ -88,6 +89,7 @@ export function LogEntryModal({
   const [magnification, setMagnification] = useState('');
   const [stainOrPreparation, setStainOrPreparation] = useState('');
   const [confirmedStage, setConfirmedStage] = useState<string>('');
+  const [editingStage, setEditingStage] = useState(false);
   const [reviewAcknowledged, setReviewAcknowledged] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -124,6 +126,7 @@ export function LogEntryModal({
     setMagnification('');
     setStainOrPreparation('');
     setConfirmedStage('');
+    setEditingStage(false);
     setReviewAcknowledged(false);
     setError(null);
     setLoading(false);
@@ -160,6 +163,7 @@ export function LogEntryModal({
     setCytologyReferencePreview(null);
     setReferenceSampleId('');
     setConfirmedStage('');
+    setEditingStage(false);
     setReviewAcknowledged(false);
     setError(null);
   };
@@ -204,6 +208,7 @@ export function LogEntryModal({
       setResult(data);
       setManualReview(false);
       setConfirmedStage('');
+      setEditingStage(false);
       setReviewAcknowledged(false);
     } catch (caught) {
       console.error(caught);
@@ -218,6 +223,7 @@ export function LogEntryModal({
     setResult(null);
     setManualReview(true);
     setConfirmedStage('');
+    setEditingStage(false);
     setReviewAcknowledged(false);
     setError(null);
   };
@@ -355,10 +361,6 @@ export function LogEntryModal({
     : binaryEvidence?.reference_backed_binary_suggestion === 'METESTRUS_OR_DIESTRUS'
       ? 'Metestrus / diestrus group'
       : 'No reference-backed group';
-  const binaryDecisionLabel = binaryEvidence?.decision_status === 'reference_backed_suggestion'
-    ? 'Reference-backed lead'
-    : 'Abstained safely';
-
   const selectModality = (nextModality: ObservationModality) => {
     setModality(nextModality);
     setRoiConfirmed(false);
@@ -369,20 +371,21 @@ export function LogEntryModal({
     setResult(null);
     setManualReview(false);
     setConfirmedStage('');
+    setEditingStage(false);
     setReviewAcknowledged(false);
   };
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
-        <Button className="bg-[#454a9f] text-white hover:bg-[#383d89]">Record observation</Button>
+        <Button className="bg-[#454a9f] text-white hover:bg-[#383d89]">Analyze observation</Button>
       </DialogTrigger>
       <DialogContent className="max-h-[92vh] max-w-6xl overflow-y-auto border-[#ded9cd] bg-[#f7f4ed] p-0 text-[#292b4c] shadow-[0_24px_80px_rgba(39,36,26,0.18)]">
         <DialogHeader className="border-b border-[#ded9cd] px-5 py-5 sm:px-8 sm:py-6">
           <div className="flex flex-wrap items-start justify-between gap-5">
             <div>
-              <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[#b65d43]">{reviewing ? 'Observation review' : 'Observation capture'}</p>
-              <DialogTitle className="mt-2 font-serif text-3xl tracking-[-0.045em] text-[#292b4c]">{reviewing ? 'One observation' : 'Capture one observation'}</DialogTitle>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[#b65d43]">{reviewing ? 'AI prediction review' : 'Observation capture'}</p>
+              <DialogTitle className="mt-2 font-serif text-3xl tracking-[-0.045em] text-[#292b4c]">{reviewing ? 'Review the proposed stage' : 'Analyze one observation'}</DialogTitle>
             </div>
             <div data-testid="observation-stepper" className="flex items-center gap-2 pt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#8b887e]">
               <span className={!reviewing ? 'text-[#454a9f]' : ''}>01 Capture</span><span className="h-px w-5 bg-[#cfc9bc]" /><span className={reviewing && !confirmedStage ? 'text-[#454a9f]' : ''}>02 Review</span><span className="h-px w-5 bg-[#cfc9bc]" /><span className={confirmedStage ? 'text-[#b65d43]' : ''}>03 Confirm</span>
@@ -390,12 +393,12 @@ export function LogEntryModal({
           </div>
           <DialogDescription>
             {result
-              ? 'Review the model lead, then choose the exact stage you want saved.'
+              ? 'The model has proposed an exact stage. Accept it, correct it, or mark the observation uncertain.'
               : manualReview
                 ? modality === 'vaginal_cytology'
                   ? 'Record your cytology interpretation. No automated cytology classifier is configured in this app.'
                   : 'Review the external photo and choose the exact stage without a model lead.'
-                : 'Add one clear image. You will choose the stage before anything is saved.'}
+                : 'Add one clear image. Estrus Log will prepare an exact-stage proposal before anything is saved.'}
           </DialogDescription>
         </DialogHeader>
 
@@ -437,7 +440,7 @@ export function LogEntryModal({
                 />
                 <span>
                   <span className="block font-medium">{MODALITIES.external_photo}</span>
-                  <span className="text-muted-foreground">Model review is available after crop confirmation.</span>
+                  <span className="text-muted-foreground">Exact-stage AI analysis is available after crop confirmation.</span>
                 </span>
               </label>
               <details className="group border-t border-[#ded9cd] pt-3" open={modality === 'vaginal_cytology' ? true : undefined}>
@@ -494,7 +497,7 @@ export function LogEntryModal({
               <div className="space-y-2">
                 <Button onClick={handleClassify} disabled={loading || (modality === 'external_photo' && (!roiConfirmed || !preparedRoiFile))} className="w-full bg-[#454a9f] hover:bg-[#383d89]" size="lg">
                   {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-                  {loading ? 'Running model review…' : modality === 'external_photo' ? 'Run model review' : 'Review and log manually'}
+                  {loading ? 'Analyzing stage…' : modality === 'external_photo' ? 'Analyze estrus stage' : 'Review and log manually'}
                 </Button>
                 {modality === 'external_photo' && (
                   <Button onClick={handleManualReview} disabled={loading} variant="outline" className="w-full" size="lg">
@@ -517,7 +520,7 @@ export function LogEntryModal({
               {preparedRoiPreview && result && preview && <details className="border border-[#ded9cd] bg-[#fbfaf7] p-3 text-xs"><summary className="cursor-pointer font-medium text-[#454a9f]">Compare original photo</summary><Image src={preview} alt="Original uploaded photo" width={640} height={640} unoptimized className="mt-3 max-h-64 w-full object-contain" /></details>}
               <div className="space-y-2">
                 <Label htmlFor="entry-notes">Observation notes <span className="font-normal text-muted-foreground">{confirmedStage === UNCERTAIN_STAGE ? '(required for uncertain / transition)' : '(optional)'}</span></Label>
-                <Textarea id="entry-notes" placeholder="What informed this decision—cell types, handling, treatment, transition signs, or an observation the image cannot capture…" value={notes} onChange={(event) => setNotes(event.target.value)} />
+                <Textarea id="entry-notes" placeholder="Add handling context, transition signs, or anything the photograph cannot show…" value={notes} onChange={(event) => setNotes(event.target.value)} />
               </div>
               <details className="border border-[#ded9cd] bg-[#fbfaf7] p-4 text-sm">
                 <summary className="cursor-pointer font-medium">Capture protocol <span className="font-normal text-muted-foreground">(optional)</span></summary>
@@ -533,29 +536,18 @@ export function LogEntryModal({
 
             <div className="space-y-5">
               {result ? (
-                <section data-testid="model-suggestion-panel" className={cn('border p-5', binaryEvidence?.decision_status === 'reference_backed_suggestion' ? 'border-[#b8b7e1] bg-[#eeedf9]' : 'border-[#d8b28d] bg-[#fff4df]')}>
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[#454a9f]">New model lead · early vs late only</p>
-                      <p className="mt-2 font-serif text-3xl text-[#30345f]">
-                        {binaryEvidence ? binaryGroupLabel : 'No new-model lead'}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <EstrusIcon name={binaryEvidence?.decision_status === 'reference_backed_suggestion' ? 'evidence' : 'review-needed'} className="h-10 w-10" />
-                      <span className={cn('rounded-full px-2.5 py-1 text-[10px] font-semibold', binaryEvidence?.decision_status === 'reference_backed_suggestion' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-900')}>
-                        {binaryEvidence ? binaryDecisionLabel : 'Service unavailable'}
-                      </span>
-                    </div>
-                  </div>
-                  <p className="mt-3 max-w-xl text-sm leading-6 text-[#5e5d75]">
-                    {binaryEvidence?.decision_status === 'reference_backed_suggestion'
-                      ? 'Use this group as a review aid, then choose the exact stage below.'
-                      : binaryEvidence
-                        ? 'The model withheld its lead. Review the image and choose a stage without model guidance.'
-                        : 'The public-photo model did not run. You can still complete a valid scientist-reviewed observation.'}
-                  </p>
-                </section>
+                <div data-testid="model-suggestion-panel">
+                  <PredictionSummary
+                    result={result}
+                    selectedStage={confirmedStage}
+                    onAccept={() => {
+                      setConfirmedStage(result.estrus_stage);
+                      setEditingStage(false);
+                      setReviewAcknowledged(false);
+                    }}
+                    onCorrect={() => setEditingStage(true)}
+                  />
+                </div>
               ) : (
                 <section className="border border-[#d8b28d] bg-[#fff4df] p-4">
                   <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#8e5d2f]">Scientist review · no model lead</p>
@@ -563,11 +555,12 @@ export function LogEntryModal({
                 </section>
               )}
 
+              {(manualReview || editingStage || confirmedStage === UNCERTAIN_STAGE || (result && confirmedStage && confirmedStage !== result.estrus_stage)) && (
               <fieldset className="space-y-3 border border-[#454a9f] bg-[#fbfaf7] p-4">
-                <legend className="px-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#454a9f]">Your decision · required</legend>
+                <legend className="px-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#454a9f]">{manualReview ? 'Scientist stage · required' : 'Correct the AI proposal'}</legend>
                 <div className="flex items-center justify-between gap-3">
-                  <p className="font-serif text-xl text-[#292b4c]">Choose the exact stage</p>
-                  <span className="text-xs text-[#77736c]">Only your choice is saved</span>
+                  <p className="font-serif text-xl text-[#292b4c]">{manualReview ? 'Choose the exact stage' : 'Choose a different stage'}</p>
+                  <span className="text-xs text-[#77736c]">The override is saved</span>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   {SAVED_STAGES.map((stage) => {
@@ -579,6 +572,7 @@ export function LogEntryModal({
                         aria-pressed={selected}
                         onClick={() => {
                           setConfirmedStage(stage);
+                          setEditingStage(stage === UNCERTAIN_STAGE);
                           setReviewAcknowledged(false);
                         }}
                         className={cn(
@@ -593,6 +587,7 @@ export function LogEntryModal({
                   })}
                 </div>
               </fieldset>
+              )}
 
               {modality === 'external_photo' && (
                 <fieldset className="space-y-3 border border-[#ded9cd] bg-[#fbfaf7] p-4">
@@ -670,7 +665,7 @@ export function LogEntryModal({
                 </summary>
                 <div className="mt-4 space-y-5 border-t border-[#ded9cd] pt-4">
                   <section>
-                    <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#454a9f]">New model evidence</p>
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#454a9f]">Independent cycle-family guardrail</p>
                     {binaryEvidence ? (
                       <>
                         <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
@@ -697,10 +692,10 @@ export function LogEntryModal({
 
                   <section data-testid="legacy-four-stage-disclosure" className="border-t border-[#ded9cd] pt-4">
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#8b887e]">Legacy four-stage comparison</p>
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#8b887e]">Exact-stage model proposal</p>
                       <span className={cn('rounded-full px-2.5 py-1 text-xs font-semibold', stageClass[result.estrus_stage])}>{result.estrus_stage} · {suggestedConfidence}% relative support</span>
                     </div>
-                    <p className="mt-2 text-xs leading-5 text-[#77736c]">Secondary visual reference only; its support score is not a calibrated probability.</p>
+                    <p className="mt-2 text-xs leading-5 text-[#77736c]">This is the primary AI proposal. Its support score is relative model evidence, not a calibrated probability.</p>
                     {result.review_reasons && result.review_reasons.length > 0 && (
                       <ul className="mt-2 list-disc space-y-1 pl-4 text-xs leading-5 text-[#77736c]">
                         {result.review_reasons.map((reason) => <li key={reason}>{reason}</li>)}
@@ -728,7 +723,7 @@ export function LogEntryModal({
                 <Button onClick={handleSave} disabled={loading || !confirmedStage || (needsAcknowledgement && !reviewAcknowledged) || (confirmedStage === UNCERTAIN_STAGE && !notes.trim()) || (groundTruthSource === 'paired_vaginal_cytology' && !cytologyReferenceFile)}>
                   {loading && <Loader2 className="h-4 w-4 animate-spin" />}
                   {!loading && <EstrusIcon name="confirm" className="h-6 w-6" />}
-                  Save confirmed stage
+                  {confirmedStage === result?.estrus_stage ? `Accept and save ${confirmedStage}` : 'Save scientist decision'}
                 </Button>
               </div>
             </div>

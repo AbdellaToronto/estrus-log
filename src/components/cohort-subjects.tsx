@@ -151,13 +151,13 @@ export function CohortSubjects({
             {todayLabel}
           </div>
           <h2 id="today-review-heading" className="mt-2 font-serif text-3xl text-[#292b4c]">
-            Today&apos;s observations
+            Today&apos;s analysis coverage
           </h2>
           <div className="mt-4 h-2 max-w-xl overflow-hidden rounded-full bg-[#e7e2d7]">
             <div className="h-full rounded-full bg-[#454a9f] transition-all" style={{ width: `${progress}%` }} />
           </div>
           <p className="mt-2 text-sm text-[#625f58]">
-            {recordedToday} of {subjects.length} recorded
+            {recordedToday} of {subjects.length} reviewed and saved
           </p>
         </div>
         <div className={cn(
@@ -176,8 +176,8 @@ export function CohortSubjects({
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="inline-flex w-fit rounded-xl border border-[#ded9cd] bg-[#f0ede5] p-1" aria-label="Filter daily observations">
           {([
-            ["needs-observation", `Needs observation · ${remaining}`],
-            ["recorded", `Recorded · ${recordedToday}`],
+            ["needs-observation", `Awaiting analysis · ${remaining}`],
+            ["recorded", `Reviewed · ${recordedToday}`],
             ["all", `All · ${subjects.length}`],
           ] as const).map(([value, label]) => (
             <button
@@ -232,10 +232,10 @@ export function CohortSubjects({
                     <h3 className={cn("font-semibold text-[#292b4c]", onSubjectOpen && "group-hover:text-[#454a9f]")}>{subject.name}</h3>
                     {subject.todayLog ? (
                       <Badge className="border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-50">
-                        Recorded · {subject.todayLog.stage}
+                        Reviewed · {subject.todayLog.stage}
                       </Badge>
                     ) : (
-                      <Badge className="border-[#d8b28d] bg-[#fff4df] text-[#8b4a32] hover:bg-[#fff4df]">Due today</Badge>
+                      <Badge className="border-[#d8b28d] bg-[#fff4df] text-[#8b4a32] hover:bg-[#fff4df]">Awaiting photograph</Badge>
                     )}
                     {metadataMissing && (
                       <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-800">Metadata needed</Badge>
@@ -277,12 +277,12 @@ export function CohortSubjects({
                 </details>
                 {onSubjectOpen ? (
                   <Button onClick={() => onSubjectOpen(subject)} className={cn("h-9", subject.todayLog ? "bg-[#eeedf9] text-[#353a87] hover:bg-[#deddf3]" : "bg-[#454a9f] text-white hover:bg-[#383d89]")}>
-                    {subject.todayLog ? "View profile" : "Review today"}
+                    {subject.todayLog ? "View profile" : "Analyze photo"}
                   </Button>
                 ) : (
                   <Button asChild className={cn("h-9", subject.todayLog ? "bg-[#eeedf9] text-[#353a87] hover:bg-[#deddf3]" : "bg-[#454a9f] text-white hover:bg-[#383d89]")}>
                     <Link href={subject.todayLog ? `/subjects/${subject.id}` : `/subjects/${subject.id}?new=1`}>
-                      {subject.todayLog ? "View record" : "Record observation"}
+                      {subject.todayLog ? "View record" : "Analyze observation"}
                     </Link>
                   </Button>
                 )}

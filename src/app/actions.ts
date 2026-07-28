@@ -11,7 +11,14 @@ import type {
   proposeScanSessionRoisTask,
 } from "@/trigger/scan-tasks";
 import type { Database } from "@/lib/database-types";
-import { normalizeClassificationFeatures } from "@/lib/classification";
+import {
+  ESTRUS_STAGES,
+  isClassificationStage,
+  normalizeClassificationFeatures,
+  normalizeConfidenceScores,
+  needsCloserPredictionReview,
+  type ClassificationStage,
+} from "@/lib/classification";
 import {
   isSubjectCoatColour,
   normalizeSubjectCoatColour,
@@ -894,6 +901,8 @@ export type ScanSessionDetail = ScanSessionSummary & {
     image_url: string | null;
     status: string;
     savedStage: string | null;
+    predictedStage: ClassificationStage | null;
+    stageScores: Record<ClassificationStage, number> | null;
     notes: string | null;
     captureDate: string | null;
     confirmationSource: string | null;
@@ -1078,11 +1087,23 @@ export async function getScanSessionDetail(
         | null;
       const mice = Array.isArray(miceData) ? miceData[0] : miceData;
       const binary = getExternalBinarySummary(log);
+      const rawLogData = isRecord(log.data) ? log.data : {};
+      const stageScores = isRecord(rawLogData.confidence_scores)
+        ? normalizeConfidenceScores(rawLogData.confidence_scores)
+        : null;
+      const storedPrediction = rawLogData.suggested_stage;
+      const predictedStage = isClassificationStage(storedPrediction)
+        ? storedPrediction
+        : stageScores
+          ? [...ESTRUS_STAGES].sort((left, right) => stageScores[right] - stageScores[left])[0]
+          : null;
       return {
         id: log.id,
         image_url: imageUrl,
         status: "completed" as const, // Logs are always finalized
         savedStage: log.stage,
+        predictedStage,
+        stageScores,
         notes: log.notes,
         captureDate: log.capture_date,
         confirmationSource: log.confirmation_source,
@@ -1129,6 +1150,12 @@ export async function getScanSessionDetail(
           typeof result.scientist_confirmed_stage === "string"
             ? result.scientist_confirmed_stage
             : null,
+        predictedStage: isClassificationStage(result.estrus_stage)
+          ? result.estrus_stage
+          : null,
+        stageScores: isRecord(result.confidence_scores)
+          ? normalizeConfidenceScores(result.confidence_scores)
+          : null,
         notes: null,
         captureDate: session.capture_date,
         confirmationSource: null,
@@ -1761,6 +1788,20 @@ export async function getCohortInsights(
 export type DashboardStats = {
   totalSubjects: number;
   todaysScans: number;
+  predictionQueue: {
+    id: string;
+    sessionId: string;
+    cohortId: string;
+    cohortName: string;
+    subjectName: string;
+    stage: ClassificationStage;
+    support: number;
+    scores: Record<ClassificationStage, number>;
+    reviewRequired: boolean;
+    abstained: boolean;
+    imageUrl: string | null;
+    createdAt: string;
+  }[];
   cohortProgress: {
     id: string;
     name: string;
@@ -1814,18 +1855,71 @@ export async function getDashboardStats(): Promise<DashboardStats> {
 
   // Use specimen capture date for daily lab work. created_at reflects when a
   // record was entered and can move an observation into the wrong workday.
-  const [subjectsResult, cohortsResult, todayLogsResult] = await Promise.all([
+  const [subjectsResult, cohortsResult, todayLogsResult, pendingPredictionsResult] = await Promise.all([
     supabase.from("mice").select("*", { count: "exact", head: true }).eq("status", "Active"),
     supabase.from("cohorts").select("id, name, mice(id, name, status, coat_colour, strain)"),
     supabase
       .from("estrus_logs")
       .select("cohort_id, mouse_id")
       .eq("capture_date", todayKey),
+    supabase
+      .from("scan_items")
+      .select("id, status, ai_result, cropped_image_url, image_url, created_at, mice(name), scan_sessions!inner(id, cohort_id, status, cohorts(name))")
+      .in("status", ["complete", "error"])
+      .order("created_at", { ascending: false })
+      .limit(24),
   ]);
 
   if (subjectsResult.error) throw subjectsResult.error;
   if (cohortsResult.error) throw cohortsResult.error;
   if (todayLogsResult.error) throw todayLogsResult.error;
+  if (pendingPredictionsResult.error) throw pendingPredictionsResult.error;
+
+  const predictionQueue = (
+    await Promise.all(
+      (pendingPredictionsResult.data ?? []).map(async (item) => {
+        const raw = isRecord(item.ai_result) ? item.ai_result : {};
+        const stage = raw.estrus_stage;
+        const scores = isRecord(raw.confidence_scores)
+          ? normalizeConfidenceScores(raw.confidence_scores)
+          : normalizeConfidenceScores(undefined);
+        if (!isClassificationStage(stage)) return null;
+
+        const sessionRaw = item.scan_sessions as unknown as
+          | { id: string; cohort_id: string; status: string | null; cohorts: { name: string } | { name: string }[] | null }
+          | { id: string; cohort_id: string; status: string | null; cohorts: { name: string } | { name: string }[] | null }[]
+          | null;
+        const session = Array.isArray(sessionRaw) ? sessionRaw[0] : sessionRaw;
+        if (!session || session.status === "completed") return null;
+        const cohortRaw = session.cohorts;
+        const cohort = Array.isArray(cohortRaw) ? cohortRaw[0] : cohortRaw;
+        const mouseRaw = item.mice as unknown as { name: string } | { name: string }[] | null;
+        const mouse = Array.isArray(mouseRaw) ? mouseRaw[0] : mouseRaw;
+        const evidence = isRecord(raw.evidence) ? raw.evidence : {};
+        const binary = isRecord(evidence.external_binary) ? evidence.external_binary : {};
+
+        return {
+          id: item.id,
+          sessionId: session.id,
+          cohortId: session.cohort_id,
+          cohortName: cohort?.name || "Unassigned cohort",
+          subjectName: mouse?.name || "Unassigned subject",
+          stage,
+          support: scores[stage],
+          scores,
+          reviewRequired: needsCloserPredictionReview({
+            review_required: Boolean(raw.review_required),
+            review_reasons: Array.isArray(raw.review_reasons)
+              ? raw.review_reasons.filter((reason): reason is string => typeof reason === "string")
+              : [],
+          }),
+          abstained: binary.decision_status === "abstain",
+          imageUrl: await getReadableImageUrl(item.cropped_image_url || item.image_url),
+          createdAt: item.created_at,
+        };
+      })
+    )
+  ).filter((item): item is NonNullable<typeof item> => Boolean(item));
 
   const recordedByCohort = new Map<string, Set<string>>();
   todayLogsResult.data.forEach((log) => {
@@ -1965,6 +2059,7 @@ export async function getDashboardStats(): Promise<DashboardStats> {
   return {
     totalSubjects: subjectsResult.count || 0,
     todaysScans: todayLogsResult.data.length,
+    predictionQueue,
     cohortProgress,
     stageDistribution,
     recentActivity,

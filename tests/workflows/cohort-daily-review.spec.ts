@@ -9,15 +9,15 @@ test.describe("cohort daily review", () => {
 
   test("prioritizes today's incomplete observations and opens a real profile", async ({ page }) => {
     await expect(page.getByRole("tab", { name: "Today" })).toHaveAttribute("aria-selected", "true");
-    await expect(page.getByText("7 of 12 recorded")).toBeVisible();
-    await expect(page.getByRole("button", { name: "Needs observation · 5" })).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByText("7 of 12 reviewed and saved")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Awaiting analysis · 5" })).toHaveAttribute("aria-pressed", "true");
 
     const firstSubject = page.locator("article").first();
     await expect(firstSubject.getByRole("heading", { name: "N-228" })).toBeVisible();
-    await expect(firstSubject.getByText("Due today")).toBeVisible();
+    await expect(firstSubject.getByText("Awaiting photograph")).toBeVisible();
     await firstSubject.getByRole("button", { name: "Open N-228 profile" }).click();
     await expect(page.getByRole("dialog", { name: "N-228 profile" })).toBeVisible();
-    await expect(page.getByRole("link", { name: "Review one" })).toHaveAttribute("href", "/observation-lab?subject=N-228");
+    await expect(page.getByRole("link", { name: "Analyze one" })).toHaveAttribute("href", "/observation-lab?subject=N-228");
 
     await expect(page).toHaveScreenshot("cohort-today-workspace.png", { animations: "disabled", fullPage: true });
   });
@@ -30,13 +30,13 @@ test.describe("cohort daily review", () => {
     await expect(page).toHaveScreenshot("cohort-records-workspace.png", { animations: "disabled", fullPage: true });
   });
 
-  test("puts new binary evidence ahead of legacy support", async ({ page }) => {
+  test("keeps the independent guardrail separate from exact-stage support", async ({ page }) => {
     await page.getByRole("tab", { name: "Trends" }).click();
     const panel = page.getByRole("tabpanel", { name: "Trends" });
-    await expect(panel.getByText("New binary review")).toBeVisible();
+    await expect(panel.getByText("Independent guardrail review")).toBeVisible();
     await expect(panel.getByText("127", { exact: true })).toBeVisible();
     await expect(panel.getByText("114", { exact: true })).toBeVisible();
-    await expect(panel.getByText("Legacy four-stage model support")).toBeVisible();
+    await expect(panel.getByText("Exact-stage model support by saved stage")).toBeVisible();
     await expect(page).toHaveScreenshot("cohort-new-model-trends.png", { animations: "disabled", fullPage: true });
   });
 

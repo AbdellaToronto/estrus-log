@@ -34,7 +34,7 @@ import { Badge } from "@/components/ui/badge";
 
 // Navigation items when user HAS an organization
 const ORG_NAV_ITEMS = [
-  { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+  { label: "Prediction Inbox", href: "/dashboard", icon: LayoutDashboard },
   { label: "Cohorts", href: "/cohorts", icon: Users },
   { label: "Experiments", href: "/experiments", icon: TestTube },
   { label: "Settings", href: "/settings", icon: Settings },

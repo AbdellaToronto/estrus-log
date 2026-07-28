@@ -8,7 +8,7 @@ test.describe("supervisor demo connected workflow", () => {
     const profile = page.getByRole("dialog", { name: "N-231 profile" });
     await expect(profile.getByText("10", { exact: true })).toBeVisible();
     await expect(profile.getByText("observations", { exact: true })).toBeVisible();
-    await expect(profile.getByRole("link", { name: "Review one" })).toHaveAttribute("href", "/observation-lab?subject=N-231");
+    await expect(profile.getByRole("link", { name: "Analyze one" })).toHaveAttribute("href", "/observation-lab?subject=N-231");
   });
 
   test("runs a populated batch from analysis through a confirmed scientist stage", async ({ page }) => {

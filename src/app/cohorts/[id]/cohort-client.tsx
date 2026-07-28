@@ -136,16 +136,16 @@ export function CohortClient({ cohort, initialLogs, initialInsights, initialSubj
         <div className="mt-4 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <p className="page-eyebrow">Daily cycle workspace</p>
+              <p className="page-eyebrow">AI-assisted cycle workspace</p>
               <Badge variant="outline" className="border-[#b8b7e1] bg-[#eeedf9] text-[#3d428e]">
-                Binary model v2
+                Four-stage predictions
               </Badge>
             </div>
             <h1 className="mt-2 font-serif text-4xl tracking-tight text-[#292b4c] sm:text-5xl">{cohort.name}</h1>
             <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-sm text-[#625f58]">
               <span>{initialSubjects.length} mice</span>
               <span>{initialInsights.totalLogs} observations</span>
-              <span>{initialInsights.binaryModelReviews} new-model reviews</span>
+              <span>{initialInsights.modelSupportedLogs} AI-assisted records</span>
               {cohort.type && (
                 <span>
                   {cohort.type === "estrus_tracking"
@@ -163,12 +163,12 @@ export function CohortClient({ cohort, initialLogs, initialInsights, initialSubj
             </Button>
             <Button onClick={() => setActiveTab("today")} disabled={initialSubjects.length === 0} variant="outline" className="h-10 border-[#b8b7e1] bg-white text-[#353a87] hover:bg-[#eeedf9]" data-tour="record-one">
               <ListChecks className="mr-2 h-4 w-4" />
-              Record one
+              Analyze one
             </Button>
             <Button asChild className="h-10 bg-[#454a9f] text-white hover:bg-[#383d89]" data-tour="bulk-capture">
               <Link href={demoMode ? "/batch-lab" : `/cohorts/${cohort.id}/batch`}>
                 <UploadCloud className="mr-2 h-4 w-4" />
-                Bulk capture
+                Analyze batch
               </Link>
             </Button>
             <details className="group relative">
@@ -199,10 +199,10 @@ export function CohortClient({ cohort, initialLogs, initialInsights, initialSubj
       <details className="group border border-[#c9c7e7] bg-[#eeedf9]" aria-label="Model review policy">
         <summary className="flex cursor-pointer list-none items-center gap-3 px-4 py-3 text-sm font-semibold text-[#353a87]">
           <EstrusIcon name="evidence" className="h-8 w-8" />
-          Model assistance appears after a photo crop is confirmed
+          Exact-stage AI analysis starts after the crop is confirmed
           <ChevronDown className="ml-auto h-4 w-4 transition group-open:rotate-180" />
         </summary>
-        <p className="border-t border-[#c9c7e7] px-4 py-3 text-xs leading-5 text-[#5e5d75]">The external-photo model gives an early-versus-late research lead or abstains. The scientist always chooses the saved four-stage label.</p>
+        <p className="border-t border-[#c9c7e7] px-4 py-3 text-xs leading-5 text-[#5e5d75]">Estrus Log proposes one of four stages and shows support for every stage. An independent early-versus-late model acts as a guardrail. Accepting or correcting the proposal creates the reviewed record.</p>
       </details>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-5">
@@ -286,7 +286,7 @@ export function CohortClient({ cohort, initialLogs, initialInsights, initialSubj
                 <div className="flex gap-2"><CalendarDays className="mt-0.5 h-4 w-4 shrink-0" /><p>The next review is deliberately still open in this demo. Start a single review, or include this mouse in the batch session.</p></div>
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
-                <Button asChild className="bg-[#454a9f] text-white hover:bg-[#383d89]"><Link href={`/observation-lab?subject=${encodeURIComponent(selectedDemoSubject.name)}`}><ListChecks className="mr-2 h-4 w-4" />Review one</Link></Button>
+                <Button asChild className="bg-[#454a9f] text-white hover:bg-[#383d89]"><Link href={`/observation-lab?subject=${encodeURIComponent(selectedDemoSubject.name)}`}><ListChecks className="mr-2 h-4 w-4" />Analyze one</Link></Button>
                 <Button asChild variant="outline" className="border-[#b8b7e1] text-[#353a87]"><Link href="/batch-lab">Open batch capture <ArrowRight className="ml-2 h-4 w-4" /></Link></Button>
               </div>
             </div>

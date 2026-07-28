@@ -1,76 +1,112 @@
-# Estrus supervisor-demo journey design QA
+# Prediction Inbox design QA
 
-## Source visual truth
+## Comparison target
 
-- Brief reference: `/Users/della/.codex/generated_images/019f783b-ec9b-77e3-81c7-bc9bbc53fc28/call_y1jOv5tWsBBOXeVq54OXKm1C.png`
-- Review reference: `/Users/della/.codex/generated_images/019f783b-ec9b-77e3-81c7-bc9bbc53fc28/call_E5fsAkHV8ND2sxGzA7snkyTv.png`
-- Outcome reference: `/Users/della/.codex/generated_images/019f783b-ec9b-77e3-81c7-bc9bbc53fc28/call_NmYZN7MdwqFHaXRx20VMCGjX.png`
-- Selected direction: combine the three references as sequential states, retain the pale-bone and indigo research-workstation language, and intentionally reduce the mouse image so subject data and the scientist decision dominate the review.
+- Source visual truth: `/Users/della/.codex/generated_images/019f783b-ec9b-77e3-81c7-bc9bbc53fc28/call_GyiQAY5IQQssR8IL0fTUOdIS.png`
+- Implementation route: `http://localhost:3100/supervisor-demo`
+- Implementation screenshot: `tmp/design-qa/prediction-inbox-implementation.png`
+- Mobile screenshot: `tmp/design-qa/prediction-inbox-mobile.png`
+- Side-by-side comparison: `tmp/design-qa/prediction-inbox-side-by-side.png`
+- State: fresh eight-image prediction inbox, N-223 selected, no decisions saved
 
-Each reference is 1487 × 1058 px. The references are concept targets rather than a single route screenshot, so the implementation preserves their hierarchy and interaction model while integrating the user's explicit data-first review change.
+## Viewport and normalization
 
-## Browser-rendered implementation
+- Source pixels: 1487 x 1058.
+- Desktop implementation capture: 1487 x 923 pixels.
+- Source comparison crop: top 1487 x 923 pixels, preserving scale and alignment.
+- Browser CSS width: 1487 px. Browser device scale factor: 1.5.
+- Browser viewport override: 2231 x 1790 device pixels; the in-app browser exposed a 1487 px CSS page width and a 923 px screenshot content area.
+- Mobile validation: 390 px CSS width with no horizontal overflow.
 
-- Local route: `http://localhost:3100/supervisor-demo`
-- Browser: in-app Browser
-- CSS viewport: 853 × 480
-- Captured pixels: 853 × 480
-- Device pixel ratio reported by the Browser: 3; the Browser capture was normalized to CSS-pixel dimensions.
-- Brief: `work/product-audit-2026-07-28/14-redesign-brief-compact.png`
-- Review: `work/product-audit-2026-07-28/12-redesign-review.png`
-- Outcome: `work/product-audit-2026-07-28/13-redesign-outcome.png`
-- Side-by-side comparisons:
-  - `work/product-audit-2026-07-28/qa-brief-comparison-v2.png`
-  - `work/product-audit-2026-07-28/qa-review-comparison.png`
-  - `work/product-audit-2026-07-28/qa-outcome-comparison.png`
+## Full-view comparison evidence
 
-## Full-view comparison
+The source and implementation are placed together in
+`tmp/design-qa/prediction-inbox-side-by-side.png`. Both use the selected warm
+ivory, deep-indigo editorial system; a compact grouped prediction rail; an
+exact-stage AI headline; four-stage support bars; a separate guardrail; and a
+secondary supporting photograph. The implementation intentionally adds a
+minimal demo navigation header and replaces the source's unsupported
+"calibrated confidence" claim with the scientifically accurate "model support"
+label.
 
-The three implementation states read as one continuous product journey rather than three unrelated feature pages:
-
-1. Prepare gives the researcher a resumed daily brief, visible workload, queue, review estimate, and clear next action.
-2. Review keeps recent history, last saved stage, cycle position, model limitations, exact-stage choices, and confirmation on the larger left side. The source photograph is supporting evidence on the smaller right side.
-3. Outcome converts the completed decisions into a 21-day colony atlas and an explicit provenance/export receipt.
-
-The implementation intentionally uses a three-step rail rather than a separate fourth confirmation page. Confirmation happens on every observation; adding a second confirmation screen would duplicate the scientist's decision and make the journey longer without adding scientific integrity.
+The selected prediction region, score bars, guardrail, photograph treatment,
+and primary accept/correct controls are all readable in the full comparison.
+A separate focused crop was not needed because the equal-width side-by-side
+evidence preserves these details at legible size. Mobile received a separate
+focused capture because its ordering changes materially.
 
 ## Required fidelity surfaces
 
-- Fonts and typography: Geist remains the application UI face and the existing serif fallback remains the display face. Weight, line height, compact uppercase labels, and indigo hierarchy match the references. The compact brief keeps the queue visible in the first viewport instead of allowing the headline to become a marketing hero.
-- Spacing and layout rhythm: thin neutral rules, compact panels, small radii, and dense workstation spacing are consistent across all three states. The 853 px review remains two-column: data first, evidence second.
-- Colors and visual tokens: warm ivory, deep indigo, restrained lavender, warm warning, and semantic stage colors map closely to the references and the existing app tokens. Contrast remained readable in browser inspection.
-- Image quality and asset fidelity: the repeated placeholder was replaced by eight distinct S-BIAD2395 PNGs. Images use `object-contain`, retain their 83 × 128 source ratio, and are never stretched or presented as higher-resolution cytology evidence.
-- Copy and content: model language is consistently binary early/late or abstention, exact stage is always the scientist's saved decision, and illustrative subject history is separated from real public image provenance.
+- Fonts and typography: serif display hierarchy, restrained sans-serif UI
+  labels, uppercase tracking, weights, wrapping, and line heights match the
+  chosen direction. Mobile title wrapping remains deliberate and readable.
+- Spacing and layout rhythm: thin dividers, square-edged data surfaces, compact
+  queue rows, three-region desktop hierarchy, and generous evidence spacing
+  match the source. The mobile layout has no horizontal overflow.
+- Colors and tokens: warm ivory background, deep indigo type/actions, lavender
+  selection, muted stage colors, green guardrail, and warm warning states are
+  consistent across the demo and integrated product screens.
+- Image quality: real public reference photographs are used. The prepared crop
+  is contained rather than stretched or hidden behind an object-cover crop.
+- Copy and content: exact-stage AI prediction is primary. All four scores are
+  labeled relative model support, not calibrated probabilities. The independent
+  early/late model is described as a guardrail. Accept, correct, abstain, and
+  receipt language is internally consistent.
+- Icons and affordances: Lucide icons use one stroke family and remain
+  secondary to labels. Accept and correction are explicit semantic buttons.
+- Accessibility and behavior: semantic buttons/headings/landmarks are present;
+  selected rows and progress are not conveyed by color alone; 390 px layout has
+  no horizontal overflow; console error log is empty.
 
-## Focused comparison and iteration history
+## Comparison history
 
-- P1 — the original demo opened as a “start anywhere” feature menu with authenticated exits. Replaced it with one public, stateful Prepare → Review → Outcome route and removed all auth-only links from the core journey.
-- P1 — the first implementation gave the brief too much headline space, pushing useful queue data below the first viewport. Reduced header/hero height, moved to a data-first two-column brief at medium widths, and recaptured the comparison. The prepared queue is now visible at 853 × 480.
-- P1 — the first review implementation stacked the photograph below the data at 853 px, making the image large again. Moved the data/evidence split to the medium breakpoint and constrained evidence to the smaller right column. The recapture shows the requested left-heavy data balance.
-- P1 — the first step rail allowed an incomplete session to jump to a false “complete” outcome. Reduced the rail to the three actual states and disabled Outcome until all eight observations are confirmed. Browser evidence confirmed `Outcome` is disabled at 2/8 and becomes current only at 8/8.
-- P2 — the prior batch demo repeated one image eight times. Added eight distinct public reference images and subject-specific filenames.
-- P2 — confirmation initially preserved the page's old scroll position. Every state transition now returns to the top of the next state.
-- P2 — the chart initially emitted a zero-dimension hydration warning. Added an explicit initial dimension; a fresh browser tab no longer emitted the chart warning.
-- P2 — hidden public demo navigation still initialized Clerk organization hooks. Moved those hooks behind route-aware child components; the signed-out organization warning no longer appears.
-- P3 — the root Clerk provider still reports that this project uses Clerk development keys. This is an environment warning, not a demo interaction or rendering error. The public supervisor journey does not expose login or require a Clerk session.
+### Iteration 1
 
-## Interaction and integrity evidence
+- P2: the initial desktop build duplicated the summary in a full-width band and
+  pushed accept/correct below the visible comparison area.
+- Fix: condensed the 8/5/2/1 summary into the title header, reduced the demo
+  wrapper, moved subject context under the photograph, and kept actions attached
+  to the prediction panel.
+- Post-fix evidence: `tmp/design-qa/prediction-inbox-implementation.png`.
 
-- The primary brief CTA entered review without navigation or authentication.
-- The incomplete Outcome step was disabled.
-- Exact stages were selected and confirmed for the six remaining observations.
-- Confirmation auto-advanced through N-223 to N-228.
-- The sixth confirmation transitioned to Outcome at 8/8 and reset scroll to the state top.
-- Outcome rendered 252 atlas cells and six provenance rows.
-- CSV export is implemented as a local browser download.
-- At all three states: no horizontal page overflow, no buttons without accessible names, no images without `alt`, and no duplicate IDs were found.
-- Confirm remains disabled until an exact scientist stage is selected.
-- Browser diagnostics contained no application error. The only remaining warning is the existing Clerk development-key notice.
-- `pnpm exec tsc --noEmit`: passed.
-- Scoped ESLint for the changed application and layout files: passed.
-- `pnpm build`: passed; `/supervisor-demo` is statically prerendered.
-- The existing Playwright workflow suite was not invoked because the selected Product Design browser is the in-app Browser; the complete journey was exercised directly there instead.
+### Iteration 2
 
-## Final result
+- P2: at 390 px, the entire queue appeared before the selected prediction,
+  recreating a list-first rather than AI-decision-first hierarchy.
+- Fix: reordered the responsive layout so the selected prediction appears
+  before the queue below the XL breakpoint; applied the same fix to the real
+  dashboard.
+- Post-fix evidence: `tmp/design-qa/prediction-inbox-mobile.png`.
+
+### Iteration 3
+
+- P2: stage scores appeared in cycle order rather than placing the proposed
+  stage first, weakening the selected design's primary prediction hierarchy.
+- Fix: stage distributions now show the proposed stage first and sort remaining
+  stages by support. The guardrail moved below the distribution, matching the
+  source's evidence sequence.
+- Post-fix evidence: `tmp/design-qa/prediction-inbox-implementation.png` and
+  `tmp/design-qa/prediction-inbox-side-by-side.png`.
+
+## Primary interactions tested
+
+- Accepting N-223 advances the queue and selects the next unresolved prediction.
+- Correcting a prediction exposes all four stages plus
+  `Uncertain / transition`.
+- A corrected decision increments the receipt's corrected count.
+- The receipt preserves AI proposal and saved decision side by side.
+- Reload restores the clean supervisor-demo state.
+
+## Console check
+
+- In-app browser console errors: none.
+
+## Remaining findings
+
+No actionable P0, P1, or P2 findings remain.
+
+P3: the supervisor-demo navigation header is an intentional product wrapper not
+shown in the source concept. It slightly reduces vertical canvas area but keeps
+the demo's Prediction Inbox, receipt, and method views discoverable.
 
 final result: passed

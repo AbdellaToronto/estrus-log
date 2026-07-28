@@ -24,7 +24,7 @@ test.describe("first mouse cohort", () => {
     await page.getByRole("button", { name: "Create mouse cohort" }).click();
 
     await expect(page.getByRole("heading", { name: "Cohort ready" })).toBeVisible();
-    await expect(page.getByText("Add the mouse identities before starting single or bulk capture.")).toBeVisible();
+    await expect(page.getByText(/Add mouse identities, then let the AI prepare the first prediction inbox/)).toBeVisible();
     await expect(page.getByRole("button", { name: "Add mouse subjects" })).toBeVisible();
     await expect(page.getByText("Bulk capture appears in the cohort workspace once subject identities are available.")).toBeVisible();
     await expect(page).toHaveScreenshot("first-cohort-subject-handoff.png", {

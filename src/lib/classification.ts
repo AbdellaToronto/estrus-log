@@ -184,3 +184,21 @@ export function getPrimaryStagePrediction(
     reviewRequired: summary.reviewRequired,
   };
 }
+
+const ROUTINE_CONFIRMATION_PATTERN =
+  /human confirmation is required|until this classifier is validated|scientist confirmation/i;
+
+/**
+ * `review_required` historically also carried the universal rule that a human
+ * must click Accept. The UI already enforces that rule for every prediction.
+ * This helper isolates the predictions that need *extra* scrutiny so the inbox
+ * can still distinguish ready work from genuine exceptions.
+ */
+export function needsCloserPredictionReview(
+  result?: Pick<ClassificationResult, "review_required" | "review_reasons"> | null
+): boolean {
+  if (!result?.review_required) return false;
+  const reasons = result.review_reasons ?? [];
+  return reasons.length === 0 ||
+    reasons.some((reason) => !ROUTINE_CONFIRMATION_PATTERN.test(reason));
+}

@@ -25,7 +25,14 @@ import {
 import { ChevronDown, Loader2, Pencil, Search } from "lucide-react";
 import { LogEntryModal } from "@/components/log-entry-modal";
 import { EstrusIcon } from "@/components/estrus-icon";
-import type { ClassificationEvidence } from "@/lib/classification";
+import { StageDistribution } from "@/components/prediction/stage-distribution";
+import {
+  ESTRUS_STAGES,
+  isClassificationStage,
+  normalizeConfidenceScores,
+  type ClassificationEvidence,
+  type ClassificationStage,
+} from "@/lib/classification";
 import { format } from "date-fns";
 import {
   ResponsiveContainer,
@@ -155,6 +162,25 @@ const getModelInputReference = (log: SubjectLog): ModelInputReference | null => 
   return reference as ModelInputReference;
 };
 
+const getStageScores = (
+  log: SubjectLog | null
+): Record<ClassificationStage, number> | null => {
+  const raw = log?.data?.confidence_scores;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const scores = normalizeConfidenceScores(raw as Record<ClassificationStage, unknown>);
+  return Object.values(scores).some((score) => score > 0) ? scores : null;
+};
+
+const getProposedStage = (
+  log: SubjectLog | null,
+  scores: Record<ClassificationStage, number> | null
+): ClassificationStage | null => {
+  const stored = log?.data?.suggested_stage;
+  if (isClassificationStage(stored)) return stored;
+  if (!scores) return null;
+  return [...ESTRUS_STAGES].sort((left, right) => scores[right] - scores[left])[0] ?? null;
+};
+
 export function SubjectPageClient({
   subject,
   initialLogs,
@@ -255,6 +281,11 @@ export function SubjectPageClient({
   const selectedContext = selectedLog ? getObservationContext(selectedLog) : null;
   const selectedCaptureMetadata = selectedLog ? getCaptureMetadata(selectedLog) : {};
   const selectedScores = selectedLog?.data?.confidence_scores;
+  const selectedStageScores = getStageScores(selectedLog);
+  const selectedProposedStage = getProposedStage(selectedLog, selectedStageScores);
+  const predictionAccepted = Boolean(
+    selectedProposedStage && selectedProposedStage === selectedLog?.stage
+  );
   const selectedExternalBinary = selectedLog ? getExternalBinaryEvidence(selectedLog) : null;
   const selectedModelInput = selectedLog ? getModelInputReference(selectedLog) : null;
   const hasModelScores = Boolean(
@@ -537,11 +568,17 @@ export function SubjectPageClient({
           {selectedLog ? (
             <article className="space-y-5 border border-[#ded9cd] bg-white p-5 sm:p-6">
               <div>
-                <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#77736c]">Latest observation</p>
+                <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#77736c]">Saved AI-assisted record</p>
                 <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
                   <h2 className="font-serif text-4xl tracking-tight text-[#292b4c]">{selectedLog.stage}</h2>
                   <Badge variant="outline" className="border-[#b8b7e1] bg-[#eeedf9] text-[#353a87]">
-                    {isPairedCytology ? "Cytology-confirmed" : isManualReview ? "Scientist-reviewed" : "Model-assisted review"}
+                    {isManualReview
+                      ? "Scientist entered"
+                      : predictionAccepted
+                        ? "AI proposal accepted"
+                        : selectedProposedStage
+                          ? "Scientist corrected AI"
+                          : "Scientist reviewed"}
                   </Badge>
                 </div>
                 <p className="mt-2 text-sm text-[#625f58]">
@@ -550,6 +587,29 @@ export function SubjectPageClient({
                     : format(new Date(selectedLog.created_at), "MMMM d, yyyy")}
                 </p>
               </div>
+
+              {selectedStageScores && selectedProposedStage && (
+                <section className="border border-[#c9c7e7] bg-[#fbfaff] p-4 sm:p-5">
+                  <div className="flex flex-wrap items-end justify-between gap-3">
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#595ea3]">AI proposal at review time</p>
+                      <p className="mt-1 font-serif text-2xl text-[#292b4c]">{selectedProposedStage}</p>
+                    </div>
+                    <p className="text-xs font-semibold text-[#555a9d]">
+                      {predictionAccepted ? "Accepted unchanged" : `Corrected to ${selectedLog.stage}`}
+                    </p>
+                  </div>
+                  <StageDistribution
+                    className="mt-4"
+                    compact
+                    scores={selectedStageScores}
+                    predictedStage={selectedProposedStage}
+                  />
+                  <p className="mt-3 text-[10px] leading-4 text-[#77736c]">
+                    Scores are relative model support, not calibrated probabilities. The saved stage above is the reviewed scientific record.
+                  </p>
+                </section>
+              )}
 
               <section className="border-y border-[#ebe6dc] py-4">
                 <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#77736c]">Scientist note</p>
@@ -606,46 +666,6 @@ export function SubjectPageClient({
                     )}
                   </details>
                 )}
-
-                {/* All Scores Breakdown */}
-                {(() => {
-                  const scores = selectedLog.data?.confidence_scores;
-                  if (!scores || typeof scores !== "object") return null;
-
-                  const typedScores = scores as Record<string, number>;
-
-                  return (
-                    <details className="border border-[#ded9cd] bg-[#fbfaf7] p-4">
-                      <summary className="cursor-pointer text-sm font-semibold text-[#4f4b45]">Legacy four-stage scores</summary>
-                      <div className="mt-3 space-y-2 border-t border-[#ded9cd] pt-3">
-                      {Object.entries(typedScores).map(([stage, score]) => (
-                        <div
-                          key={stage}
-                          className="flex items-center gap-2 text-xs"
-                        >
-                          <div className="w-20 font-medium text-slate-600">
-                            {stage}
-                          </div>
-                          <div className="flex-1 h-1.5 bg-slate-50 rounded-full overflow-hidden">
-                            <div
-                              className="h-full rounded-full"
-                              style={{
-                                width: `${score * 100}%`,
-                                backgroundColor:
-                                  STAGE_COLORS[stage] || "#94a3b8",
-                                opacity: stage === selectedLog.stage ? 1 : 0.3,
-                              }}
-                            />
-                          </div>
-                          <div className="w-10 text-right text-slate-500">
-                            {Math.round(score * 100)}%
-                          </div>
-                        </div>
-                      ))}
-                      </div>
-                    </details>
-                  );
-                })()}
 
                 {/* Legacy Support: Fallback if data.confidence_scores is missing but confidence is an object */}
                 {!selectedLog.data?.confidence_scores &&

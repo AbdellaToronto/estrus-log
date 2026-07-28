@@ -154,7 +154,7 @@ test.describe("workflow canvas", () => {
     await page.getByRole("button", { name: "Outline" }).click();
     await expect(page.getByTestId("workflow-outline")).toBeVisible();
     await expect(
-      page.getByRole("heading", { name: "Single scientist-reviewed observation" })
+      page.getByRole("heading", { name: "Single AI-assisted observation" })
     ).toBeVisible();
 
     const results = await new AxeBuilder({ page })
