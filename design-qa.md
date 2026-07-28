@@ -1,87 +1,76 @@
-# Estrus Log scientist-workflow design QA
+# Estrus supervisor-demo journey design QA
 
 ## Source visual truth
 
-- Daily Brief reference: `/Users/della/.codex/generated_images/019f783b-ec9b-77e3-81c7-bc9bbc53fc28/exec-3b7bf484-ecb7-47c2-984d-bc7068e61b21.png`
-- Batch Review reference: `/Users/della/.codex/generated_images/019f783b-ec9b-77e3-81c7-bc9bbc53fc28/exec-824e8b93-e65a-46ea-96c4-09660b1e694b.png`
-- Single-observation reference: `/Users/della/.codex/generated_images/019f783b-ec9b-77e3-81c7-bc9bbc53fc28/exec-1156f572-c995-4389-9d0d-a549620c3272.png`
-- Visual contract: pale bone canvas, indigo serif hierarchy, thin neutral rules, compact uppercase labels, warm exception accents, and model evidence subordinate to the scientist's decision.
-- Workflow contract: Daily Brief or cohort Today view → one observation or Bulk capture → confirm crop → receive optional binary review aid → scientist chooses the exact stage → save the lab record.
+- Brief reference: `/Users/della/.codex/generated_images/019f783b-ec9b-77e3-81c7-bc9bbc53fc28/call_y1jOv5tWsBBOXeVq54OXKm1C.png`
+- Review reference: `/Users/della/.codex/generated_images/019f783b-ec9b-77e3-81c7-bc9bbc53fc28/call_E5fsAkHV8ND2sxGzA7snkyTv.png`
+- Outcome reference: `/Users/della/.codex/generated_images/019f783b-ec9b-77e3-81c7-bc9bbc53fc28/call_NmYZN7MdwqFHaXRx20VMCGjX.png`
+- Selected direction: combine the three references as sequential states, retain the pale-bone and indigo research-workstation language, and intentionally reduce the mouse image so subject data and the scientist decision dominate the review.
+
+Each reference is 1487 × 1058 px. The references are concept targets rather than a single route screenshot, so the implementation preserves their hierarchy and interaction model while integrating the user's explicit data-first review change.
 
 ## Browser-rendered implementation
 
-- Local routes: `http://localhost:3000/dashboard`, `http://localhost:3000/cohorts/730c89a9-223f-405e-9de4-c49a6f9e87f4/batch`, `http://localhost:3000/cohorts/730c89a9-223f-405e-9de4-c49a6f9e87f4/scans`, and `http://localhost:3000/scans/1947bd28-6237-459a-b878-dd2275537d84`.
-- Desktop screenshots: `tmp/design-qa/daily-brief-due-list-1440x894.png`, `tmp/design-qa/single-observation-capture-progressive.png`, `tmp/design-qa/mouse-record-empty-state.png`, `tmp/design-qa/mouse-record-populated.png`, `tmp/design-qa/batch-review-1440x1024-v4.png`, `tmp/design-qa/batch-final-1440x1024.png`, `tmp/design-qa/batch-history-truthful.png`, and `tmp/design-qa/batch-session-action-needed.png`.
-- Compact screenshots: `tmp/design-qa/batch-review-compact-960x683.png` and `tmp/design-qa/mouse-record-populated-compact.png`.
-- Side-by-side comparison artifacts: `tmp/design-qa/daily-due-list-comparison.png`, `tmp/design-qa/mouse-record-comparison.png`, and `tmp/design-qa/batch-comparison.png`.
-- Browser: in-app Browser. Desktop CSS viewport approximately 1440 × 894 at DPR 1.5; compact CSS viewport approximately 960 × 683.
-- Local fixture state: one cohort, three active mice, two real external-photo uploads, two confirmed prepared crops, two conservative binary-model abstentions, and an exercised scientist stage selection. The fixture is labeled `local-rehearsal-fixture` and is not production evidence.
+- Local route: `http://localhost:3100/supervisor-demo`
+- Browser: in-app Browser
+- CSS viewport: 853 × 480
+- Captured pixels: 853 × 480
+- Device pixel ratio reported by the Browser: 3; the Browser capture was normalized to CSS-pixel dimensions.
+- Brief: `work/product-audit-2026-07-28/14-redesign-brief-compact.png`
+- Review: `work/product-audit-2026-07-28/12-redesign-review.png`
+- Outcome: `work/product-audit-2026-07-28/13-redesign-outcome.png`
+- Side-by-side comparisons:
+  - `work/product-audit-2026-07-28/qa-brief-comparison-v2.png`
+  - `work/product-audit-2026-07-28/qa-review-comparison.png`
+  - `work/product-audit-2026-07-28/qa-outcome-comparison.png`
 
 ## Full-view comparison
 
-The implementation retains the references' information architecture and visual system while using truthful local data. Daily Brief is a lab-wide due-work summary that now exposes the ordered mice due in each cohort. Its `Record` actions deep-link into the existing subject observation dialog, so researchers get a direct queue without creating a second record-entry surface. Batch Review preserves the reference's three-part workbench: context and batch controls, crop contact sheet, and a focused inspector.
+The three implementation states read as one continuous product journey rather than three unrelated feature pages:
 
-Visible state differences are data- and contract-driven:
+1. Prepare gives the researcher a resumed daily brief, visible workload, queue, review estimate, and clear next action.
+2. Review keeps recent history, last saved stage, cycle position, model limitations, exact-stage choices, and confirmation on the larger left side. The source photograph is supporting evidence on the smaller right side.
+3. Outcome converts the completed decisions into a 21-day colony atlas and an explicit provenance/export receipt.
 
-- The Daily reference contains six illustrative mice and a fictional current model lead. The live view shows the two real mice due in the local cohort, preserves their strain and coat metadata, and does not invent a model result before an image and crop exist.
-- The Batch reference contains 12 illustrative crops. The live fixture contains two real portrait prepared crops and preserves the exact 83:128 processor-frame contract instead of stretching them into landscape thumbnails.
-- The binary model appears only after crop confirmation and may return Early, Late, or Abstain. It never preselects the saved four-stage record.
+The implementation intentionally uses a three-step rail rather than a separate fourth confirmation page. Confirmation happens on every observation; adding a second confirmation screen would duplicate the scientist's decision and make the journey longer without adding scientific integrity.
+
+## Required fidelity surfaces
+
+- Fonts and typography: Geist remains the application UI face and the existing serif fallback remains the display face. Weight, line height, compact uppercase labels, and indigo hierarchy match the references. The compact brief keeps the queue visible in the first viewport instead of allowing the headline to become a marketing hero.
+- Spacing and layout rhythm: thin neutral rules, compact panels, small radii, and dense workstation spacing are consistent across all three states. The 853 px review remains two-column: data first, evidence second.
+- Colors and visual tokens: warm ivory, deep indigo, restrained lavender, warm warning, and semantic stage colors map closely to the references and the existing app tokens. Contrast remained readable in browser inspection.
+- Image quality and asset fidelity: the repeated placeholder was replaced by eight distinct S-BIAD2395 PNGs. Images use `object-contain`, retain their 83 × 128 source ratio, and are never stretched or presented as higher-resolution cytology evidence.
+- Copy and content: model language is consistently binary early/late or abstention, exact stage is always the scientist's saved decision, and illustrative subject history is separated from real public image provenance.
 
 ## Focused comparison and iteration history
 
-- P1 — primary analysis action fell below the first viewport: moved above progress/review receipts while crops are ready, then hidden once no confirmed crop remains to analyze.
-- P1 — selecting a scientist stage called a route-revalidating server action from inside a React state updater: moved the mutation outside the updater. The interaction was re-run; the Next issue overlay did not return.
-- P1 — the post-crop empty state said “Waiting for input” even when all crops were confirmed: corrected to “Ready for analysis.”
-- P2 — legacy four-stage model output leaked onto crop cards: removed. It now appears only inside the collapsed `Legacy four-stage evidence` disclosure.
-- P2 — model reasoning was being saved into the scientist notes field: separated into flexible model evidence; the notes field now contains only scientist-entered text.
-- P2 — “3 mouses” appeared in assignment context: corrected to “3 mice.”
-- P2 — fill images omitted responsive `sizes`: added explicit sizes for the crop grid and inspector.
-- P2 — a disabled `Analyze confirmed crops (0)` action remained visually primary after analysis: hidden in review state.
-- P2 — Daily Brief required researchers to open a cohort before discovering which mice were due: added a truthful ordered due list with direct `Record` actions and kept the existing observation dialog as the only entry surface.
-- P2 — direct `?new=1` observation links produced React 19/Radix dialog ID hydration mismatches: deferred the subject-page dialogs until after hydration. The real link was clicked again and opened the capture dialog with no issue overlay.
-- P2 — the initial single-observation screen gave cytology equal visual weight even though the current workflow is external-photo-first: moved cytology under `Other image types`, shortened capture copy, and hid crop confirmation and action controls until an image exists.
-- P2 — a mouse with no records opened to empty charts, a blank image inspector, and an empty searchable library: replaced those inactive controls with one focused empty state and moved `Record observation` into the page header.
-- P2 — populated mouse records opened with trend cards and summary statistics before the actual saved observation: moved the observation image, scientist-confirmed stage, capture date, and note immediately below subject identity; trends are now collapsed beneath the record.
-- P2 — the populated image viewer showed non-functional zoom controls: removed them instead of presenting inactive core controls.
-- P2 — provenance and legacy four-stage output competed with the scientist record: moved both into separate disclosures. A saved binary-model cross-check, when present, remains a distinct collapsed review-aid disclosure.
-- P2 — at compact desktop width the large image pushed the saved stage below the fold: the stage/note panel now precedes the image until the two-column desktop breakpoint.
-- P2 — the populated local rehearsal fixture labeled a visibly black C57BL/6J subject as white: corrected the local-only subject metadata to black before capture. No production record was changed.
-- P1 — Batch History counted only permanent logs, so a real active session with two workflow photos appeared as `0/0 classified`: combined workflow-item and permanent-record sources without double-counting. The screen now says `2 photos`, `0 saved records`, and `2 photos still need scientist review`.
-- P1 — the old receipt relabeled scientist-confirmed four-stage records as `AI result`, `confidence`, and `success rate`: replaced those semantics with a saved scientist stage and optional, separately disclosed binary-model evidence. Active sessions are now action-needed session pages rather than fake receipts.
-- P1 — development Strict Mode hydrated the same persisted scan items twice, so following `Resume review` showed four photos even though the session contained two: resume hydration now merges by the persistent scan-item id. The full History → Resume review path was rerun and showed exactly two photos.
-- P2 — date-only capture values were parsed as UTC and displayed one day early in Toronto: date-only values are now parsed as local calendar dates on both history and receipt screens.
-- P2 — the post-batch history used generic scan/classification language and made every session look complete: changed the primary distinctions to `Need review`, `Saved records`, and `Photos across batches`, with unfinished work ordered first and a direct `Resume review` action.
-- P3 — at compact desktop width the three-pane review remains usable but dense. This is acceptable for a review workstation; the app switches to its compact top navigation and each pane retains independent scrolling.
+- P1 — the original demo opened as a “start anywhere” feature menu with authenticated exits. Replaced it with one public, stateful Prepare → Review → Outcome route and removed all auth-only links from the core journey.
+- P1 — the first implementation gave the brief too much headline space, pushing useful queue data below the first viewport. Reduced header/hero height, moved to a data-first two-column brief at medium widths, and recaptured the comparison. The prepared queue is now visible at 853 × 480.
+- P1 — the first review implementation stacked the photograph below the data at 853 px, making the image large again. Moved the data/evidence split to the medium breakpoint and constrained evidence to the smaller right column. The recapture shows the requested left-heavy data balance.
+- P1 — the first step rail allowed an incomplete session to jump to a false “complete” outcome. Reduced the rail to the three actual states and disabled Outcome until all eight observations are confirmed. Browser evidence confirmed `Outcome` is disabled at 2/8 and becomes current only at 8/8.
+- P2 — the prior batch demo repeated one image eight times. Added eight distinct public reference images and subject-specific filenames.
+- P2 — confirmation initially preserved the page's old scroll position. Every state transition now returns to the top of the next state.
+- P2 — the chart initially emitted a zero-dimension hydration warning. Added an explicit initial dimension; a fresh browser tab no longer emitted the chart warning.
+- P2 — hidden public demo navigation still initialized Clerk organization hooks. Moved those hooks behind route-aware child components; the signed-out organization warning no longer appears.
+- P3 — the root Clerk provider still reports that this project uses Clerk development keys. This is an environment warning, not a demo interaction or rendering error. The public supervisor journey does not expose login or require a Clerk session.
 
-## Researcher-facing integrity checks
+## Interaction and integrity evidence
 
-- Capture date is separate from upload time and is saved on every record.
-- Subject identity is always chosen or created by the scientist; it is not inferred from the photograph or filename.
-- Missing subject-days remain explicit. No stage is interpolated to fill a gap.
-- Full source and prepared crop are shown together before the decision.
-- The binary review aid is labeled as DINOv2, exposes abstention/domain reasons, and precedes but does not override the exact scientist stage decision.
-- Scientist notes are optional, remain attributable to the human review, and are not replaced by model prose.
-- Stable `data-tour` landmarks exist for Daily Brief, cohort continuation, model policy, Record one, and Bulk capture. A future coachmark tour can attach to these without becoming required navigation.
-
-## Interaction and validation evidence
-
-- Uploading two local photos restored/created prepared crops and rendered both full-source and prepared-crop views.
-- `Analyze confirmed crops` was enabled in the correct state and removed after analysis.
-- The first Daily Brief `Record` link was clicked in the browser and opened the correct mouse's `Capture one observation` dialog; no direct-route hydration issue remained.
-- Initial capture now exposes the external-photo path, capture date, and a collapsed `Other image types` disclosure. Opening that disclosure reveals the manual cytology option without making it part of the default path.
-- Populated record interactions exercised: selected history record, `Evidence and provenance`, `Legacy four-stage scores`, and `Cycle trends and summary`. Opening trends rendered both charts on demand; the issue overlay remained absent.
-- A real stage button was clicked and reached `aria-pressed="true"`; the optional notes field accepted input; save remained gated by missing subject assignment and the remaining stage decision.
-- The real post-batch route reported one session needing review, zero saved records, and two photos. Its `Resume review` action opened the existing batch workspace with two—not four—restored photos.
-- The action-needed session view rendered both real workflow photos, labeled each `Awaiting scientist review`, exposed `Model: no suggestion` without fabricating a four-stage result, and opened its keyboard-accessible evidence dialog.
-- History and action-needed session layouts were exercised at desktop and a narrow CSS viewport; headings, metrics, and primary actions remained readable without horizontal overflow.
-- The final browser DOM exposed clear regions for `Abstain`, `Choose the stage to save`, notes, legacy evidence, and mouse assignment.
-- Browser diagnostics after the stage-mutation fix contained no new application error. The remaining warnings are local Clerk development-key notices and Next image LCP guidance.
+- The primary brief CTA entered review without navigation or authentication.
+- The incomplete Outcome step was disabled.
+- Exact stages were selected and confirmed for the six remaining observations.
+- Confirmation auto-advanced through N-223 to N-228.
+- The sixth confirmation transitioned to Outcome at 8/8 and reset scroll to the state top.
+- Outcome rendered 252 atlas cells and six provenance rows.
+- CSV export is implemented as a local browser download.
+- At all three states: no horizontal page overflow, no buttons without accessible names, no images without `alt`, and no duplicate IDs were found.
+- Confirm remains disabled until an exact scientist stage is selected.
+- Browser diagnostics contained no application error. The only remaining warning is the existing Clerk development-key notice.
 - `pnpm exec tsc --noEmit`: passed.
-- Scoped ESLint over the Batch, Daily, cohort, layout, and action files: passed; only the dependency's stale Baseline-data notice was printed.
-- `pnpm build`: passed, including the authenticated history and session routes.
-- The existing workflow suite's most recent run passed 33/33. It was not rerun in this pass because direct Playwright CLI use requires an explicit approval under the active design workflow; the current authenticated routes were instead exercised in the in-app Browser.
-- No deploy, remote database write, or production-service modification was performed.
+- Scoped ESLint for the changed application and layout files: passed.
+- `pnpm build`: passed; `/supervisor-demo` is statically prerendered.
+- The existing Playwright workflow suite was not invoked because the selected Product Design browser is the in-app Browser; the complete journey was exercised directly there instead.
 
 ## Final result
 
-passed
+final result: passed

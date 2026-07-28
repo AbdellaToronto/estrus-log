@@ -34,11 +34,16 @@ const HIDDEN_PATHS = [
  */
 export function Sidebar() {
   const pathname = usePathname();
+
+  if (HIDDEN_PATHS.some((path) => pathname.startsWith(path))) return null;
+
+  return <SidebarContent pathname={pathname} />;
+}
+
+function SidebarContent({ pathname }: { pathname: string }) {
   const { organization } = useOrganization();
   const isLocalRehearsal = process.env.NEXT_PUBLIC_ESTRUS_LOCAL_TEST_IDENTITY === "true";
   const hasOrg = isLocalRehearsal || Boolean(organization);
-
-  if (HIDDEN_PATHS.some((path) => pathname.startsWith(path))) return null;
 
   return (
     <header className="fixed inset-x-0 top-0 z-40 hidden h-16 border-b border-[#ded9cd] bg-[#fbfaf7]/95 backdrop-blur-lg lg:block">

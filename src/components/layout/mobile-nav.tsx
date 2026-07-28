@@ -44,10 +44,21 @@ const EXPLORE_NAV_ITEMS = [
   { label: "Find a Lab", href: "/discover", icon: Search },
 ];
 
+const HIDDEN_PATHS = ["/sign-in", "/sign-up", "/onboarding", "/onboarding-flow-lab", "/workflow-lab", "/observation-lab", "/cohort-lab", "/dashboard-lab", "/experiments-lab", "/experiment-detail-lab", "/batch-lab", "/supervisor-demo"];
+
 export function MobileNav() {
+  const pathname = usePathname();
+
+  if (HIDDEN_PATHS.some((path) => pathname.startsWith(path))) {
+    return null;
+  }
+
+  return <MobileNavContent pathname={pathname} />;
+}
+
+function MobileNavContent({ pathname }: { pathname: string }) {
   const [open, setOpen] = useState(false);
   const [isSwitching, setIsSwitching] = useState(false);
-  const pathname = usePathname();
   const { user } = useUser();
   const { organization } = useOrganization();
   const { userMemberships, setActive } = useOrganizationList({
@@ -75,12 +86,6 @@ export function MobileNav() {
       setIsSwitching(false);
     }
   };
-
-  // Don't show on certain pages
-  const hiddenPaths = ["/sign-in", "/sign-up", "/onboarding", "/onboarding-flow-lab", "/workflow-lab", "/observation-lab", "/cohort-lab", "/dashboard-lab", "/experiments-lab", "/experiment-detail-lab", "/batch-lab", "/supervisor-demo"];
-  if (hiddenPaths.some((path) => pathname.startsWith(path))) {
-    return null;
-  }
 
   return (
     <div className="fixed left-0 right-0 top-0 z-50 border-b border-slate-200/80 bg-white/90 shadow-sm backdrop-blur-xl lg:hidden">
