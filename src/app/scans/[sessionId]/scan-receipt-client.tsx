@@ -48,11 +48,14 @@ function modelLead(item: ScanSessionDetail["items"][number]) {
   if (model.decisionStatus === "abstain") return "Model: no suggestion";
 
   const suggestion = model.suggestion?.toLowerCase() || "";
-  if (suggestion.includes("proestrus") || suggestion.includes("estrus") || suggestion.includes("early")) {
-    return "Model lead: earlier-cycle";
-  }
+  // Check the late-stage names first: both "metestrus" and "diestrus"
+  // contain the substring "estrus", so a broad estrus match would invert
+  // the model lead shown in the batch receipt.
   if (suggestion.includes("metestrus") || suggestion.includes("diestrus") || suggestion.includes("late")) {
     return "Model lead: later-cycle";
+  }
+  if (suggestion.includes("proestrus") || suggestion === "estrus" || suggestion.includes("early")) {
+    return "Model lead: earlier-cycle";
   }
   return "Model suggestion available";
 }
