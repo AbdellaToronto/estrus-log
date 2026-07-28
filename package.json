@@ -16,7 +16,7 @@
     "db:stop": "supabase stop",
     "db:reset": "supabase db reset",
     "db:status": "supabase status",
-    "typegen": "npx supabase gen types typescript --project-id vslnwkfsbuuvwfxwfzoc > src/lib/database-types.ts",
+    "typegen": "npx supabase gen types typescript --project-id zqsuaoduwsktldzlfcha > src/lib/database-types.ts",
     "trigger:dev": "pnpm dlx trigger.dev@latest dev",
     "webhook": "npx localtunnel --port 3000"
   },

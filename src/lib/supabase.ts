@@ -37,15 +37,14 @@ export function createAuthClient(accessToken: string): SupabaseClient {
   }
   
   return createClient(config.url, config.anonKey, {
+    // Supabase's first-class Clerk integration expects the current session
+    // token through accessToken so every Data API request is authenticated
+    // against the configured Clerk OIDC issuer.
+    accessToken: async () => accessToken,
     auth: {
       persistSession: false,
       autoRefreshToken: false,
       detectSessionInUrl: false,
-    },
-    global: {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
     },
   })
 }
@@ -80,27 +79,15 @@ export function createAdminClient(): SupabaseClient {
  */
 export function createServerClient(config: SupabaseConfig, accessToken?: string) {
   const key = accessToken ? config.anonKey : (config.serviceRoleKey ?? config.anonKey)
-  
-  const options: {
-    auth: { persistSession: boolean; autoRefreshToken: boolean; detectSessionInUrl: boolean };
-    global?: { headers: { Authorization: string } };
-  } = {
+
+  return createClient(config.url, key, {
+    ...(accessToken ? { accessToken: async () => accessToken } : {}),
     auth: {
       persistSession: false,
       autoRefreshToken: false,
       detectSessionInUrl: false,
     },
-  }
-
-  if (accessToken) {
-    options.global = {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-    }
-  }
-
-  return createClient(config.url, key, options)
+  })
 }
 
 /**
