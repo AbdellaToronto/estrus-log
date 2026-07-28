@@ -1,7 +1,7 @@
 'use client';
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Users, Activity, PieChart } from "lucide-react";
+import { Users, PieChart, ScanLine } from "lucide-react";
 
 export function DashboardStats({ 
   totalSubjects, 
@@ -15,58 +15,48 @@ export function DashboardStats({
   const totalScansInDistribution = stageDistribution.reduce((acc, curr) => acc + curr.value, 0);
 
   return (
-    <div className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-2 md:grid-cols-3">
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium">
-            Total Subjects
-          </CardTitle>
-          <Users className="h-4 w-4 text-muted-foreground" />
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 md:grid-cols-3">
+      <Card className="gap-4">
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-0">
+          <CardTitle className="text-sm font-medium text-muted-foreground">Subjects</CardTitle>
+          <div className="rounded-lg bg-sky-50 p-2 text-sky-700"><Users className="h-4 w-4" /></div>
         </CardHeader>
         <CardContent>
           <div className="text-2xl font-bold">{totalSubjects}</div>
-          <p className="text-xs text-muted-foreground">
-            Active in colony
-          </p>
+          <p className="text-xs text-muted-foreground">Active in this lab</p>
         </CardContent>
       </Card>
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium">
-            Scans Today
-          </CardTitle>
-          <Activity className="h-4 w-4 text-muted-foreground" />
+      <Card className="gap-4">
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-0">
+          <CardTitle className="text-sm font-medium text-muted-foreground">Logged today</CardTitle>
+          <div className="rounded-lg bg-violet-50 p-2 text-violet-700"><ScanLine className="h-4 w-4" /></div>
         </CardHeader>
         <CardContent>
           <div className="text-2xl font-bold">{todaysScans}</div>
-          <p className="text-xs text-muted-foreground">
-            Logs recorded today
-          </p>
+          <p className="text-xs text-muted-foreground">Images reviewed and saved</p>
         </CardContent>
       </Card>
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium">
-            7-Day Distribution
-          </CardTitle>
-          <PieChart className="h-4 w-4 text-muted-foreground" />
+      <Card className="gap-4">
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-0">
+          <CardTitle className="text-sm font-medium text-muted-foreground">Most common stage</CardTitle>
+          <div className="rounded-lg bg-amber-50 p-2 text-amber-700"><PieChart className="h-4 w-4" /></div>
         </CardHeader>
         <CardContent>
-          <div className="flex gap-2 text-xs mt-2">
-             {stageDistribution.slice(0, 3).map(d => (
-               <div key={d.stage} className="flex flex-col items-center">
-                  <div className="font-bold">{Math.round((d.value / totalScansInDistribution) * 100) || 0}%</div>
-                  <div className="text-muted-foreground truncate w-16 text-center">{d.stage}</div>
-               </div>
-             ))}
-          </div>
+          {stageDistribution.length > 0 ? (
+            <div>
+              <div className="text-2xl font-bold">{stageDistribution[0]?.stage}</div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {Math.round(((stageDistribution[0]?.value || 0) / totalScansInDistribution) * 100)}% of recent scans
+              </p>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">No scans yet</p>
+          )}
         </CardContent>
       </Card>
     </div>
   );
 }
-
-
 
 
 

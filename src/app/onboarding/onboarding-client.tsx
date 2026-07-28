@@ -181,12 +181,20 @@ export function OnboardingClient({
             Welcome to Estrus Log
           </div>
           <h1 className="text-4xl font-bold text-slate-900 mb-4">
-            Join Your Research Lab
+            Start with your lab—or work solo
           </h1>
           <p className="text-lg text-slate-600 max-w-2xl mx-auto">
-            Find your lab or department to start collaborating with your team.
-            Don&apos;t see your lab? Create a new one.
+            Join your research lab to collaborate with a team, or begin a private
+            cohort now and invite collaborators later.
           </p>
+          <Button
+            variant="outline"
+            className="mt-6 rounded-xl"
+            onClick={() => router.push("/dashboard")}
+          >
+            Work solo for now
+            <ArrowRight className="ml-2 h-4 w-4" />
+          </Button>
         </MotionDiv>
 
         {/* Pending Requests Banner */}
@@ -576,4 +584,3 @@ export function OnboardingClient({
     </div>
   );
 }
-

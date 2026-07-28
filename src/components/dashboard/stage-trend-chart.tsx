@@ -21,17 +21,23 @@ const STAGE_COLORS = {
 
 export function StageTrendChart({ data }: { data: DailyTrendData[] }) {
   const { maxValue, totalScans, chartData } = useMemo(() => {
-    let max = 0;
-    let total = 0;
-    
     const processed = data.map(day => {
       const dayTotal = day.Proestrus + day.Estrus + day.Metestrus + day.Diestrus;
-      total += dayTotal;
-      if (dayTotal > max) max = dayTotal;
       return { ...day, total: dayTotal };
     });
+    const totals = processed.reduce(
+      (summary, day) => ({
+        max: Math.max(summary.max, day.total),
+        total: summary.total + day.total,
+      }),
+      { max: 0, total: 0 }
+    );
     
-    return { maxValue: max || 1, totalScans: total, chartData: processed };
+    return {
+      maxValue: totals.max || 1,
+      totalScans: totals.total,
+      chartData: processed,
+    };
   }, [data]);
 
   // Format date for display
@@ -207,4 +213,3 @@ export function StageTrendChart({ data }: { data: DailyTrendData[] }) {
     </Card>
   );
 }
-

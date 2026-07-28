@@ -19,6 +19,7 @@ import {
   Bar,
 } from "recharts";
 import { format } from "date-fns";
+import { ChevronDown } from "lucide-react";
 
 const STAGE_COLORS: Record<string, string> = {
   Proestrus: "#f472b6",
@@ -26,9 +27,10 @@ const STAGE_COLORS: Record<string, string> = {
   Metestrus: "#38bdf8",
   Diestrus: "#34d399",
   Uncertain: "#cbd5f5",
+  "Uncertain / transition": "#cbd5f5",
 };
 
-const STAGES = ["Proestrus", "Estrus", "Metestrus", "Diestrus", "Uncertain"];
+const STAGES = ["Proestrus", "Estrus", "Metestrus", "Diestrus", "Uncertain", "Uncertain / transition"];
 
 const GRADIENT_FROM = "#c7d2fe";
 const GRADIENT_TO = "#7dd3fc";
@@ -87,7 +89,7 @@ export function CohortAnalysis({ insights }: { insights: CohortInsights }) {
 
   const timelineData = insights.timeline.map((item) => ({
     ...item,
-    label: format(new Date(item.date), "MMM d"),
+    label: format(new Date(`${item.date}T12:00:00`), "MMM d"),
   }));
 
   const confidenceData = insights.confidenceByStage.map((item) => ({
@@ -99,91 +101,86 @@ export function CohortAnalysis({ insights }: { insights: CohortInsights }) {
     <div className="space-y-4 sm:space-y-6 lg:space-y-8">
       <div className="grid gap-4 sm:gap-6 grid-cols-1 lg:grid-cols-3">
         <AnalyticsCard
-          title="Stage Mix"
-          subtitle={`${insights.totalLogs} total logs`}
+          title="New binary review"
+          subtitle="Reference-backed early-vs-late aid; exact stage remains scientist-controlled."
+          className="lg:col-span-2"
+        >
+          {insights.binaryModelReviews > 0 ? (
+            <div className="space-y-5">
+              <div className="grid grid-cols-3 gap-3">
+                <div className="border border-[#c9c7e7] bg-[#eeedf9] p-4">
+                  <p className="text-3xl font-semibold text-[#292b4c]">{insights.binaryModelReviews}</p>
+                  <p className="mt-1 text-xs text-[#625f58]">reviewed crops</p>
+                </div>
+                <div className="border border-emerald-200 bg-emerald-50 p-4">
+                  <p className="text-3xl font-semibold text-emerald-800">{insights.binarySuggestions}</p>
+                  <p className="mt-1 text-xs text-emerald-800/80">usable leads</p>
+                </div>
+                <div className="border border-amber-200 bg-amber-50 p-4">
+                  <p className="text-3xl font-semibold text-amber-800">{insights.binaryAbstentions}</p>
+                  <p className="mt-1 text-xs text-amber-800/80">abstentions</p>
+                </div>
+              </div>
+              <div>
+                <div className="mb-2 flex items-center justify-between text-xs font-semibold text-[#625f58]">
+                  <span>Early-group leads · {insights.binaryEarlyLeads}</span>
+                  <span>Late-group leads · {insights.binaryLateLeads}</span>
+                </div>
+                <div className="flex h-3 overflow-hidden rounded-full bg-[#e7e2d7]" aria-label={`${insights.binaryEarlyLeads} early-group and ${insights.binaryLateLeads} late-group leads`}>
+                  <div className="h-full bg-[#a44f73]" style={{ width: `${insights.binarySuggestions ? (insights.binaryEarlyLeads / insights.binarySuggestions) * 100 : 0}%` }} />
+                  <div className="h-full bg-[#454a9f]" style={{ width: `${insights.binarySuggestions ? (insights.binaryLateLeads / insights.binarySuggestions) * 100 : 0}%` }} />
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="flex min-h-48 items-center justify-center border border-dashed border-[#c9c7e7] bg-[#f8f7fc] px-6 text-center text-sm leading-6 text-[#625f58]">
+              New-model evidence will appear here after an external-photo ROI is reviewed. Manual and cytology records remain valid without it.
+            </div>
+          )}
+        </AnalyticsCard>
+
+        <AnalyticsCard
+          title="Saved stage mix"
+          subtitle={`${insights.totalLogs} scientist-confirmed records`}
         >
           <div className="h-48 sm:h-64">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
-                <Pie
-                  data={stageData}
-                  dataKey="value"
-                  nameKey="stage"
-                  innerRadius={70}
-                  outerRadius={100}
-                  paddingAngle={3}
-                >
-                  {stageData.map((entry, index) => (
-                    <Cell
-                      key={`cell-${index}`}
-                      fill={STAGE_COLORS[entry.stage] || "#cbd5f5"}
-                    />
-                  ))}
+                <Pie data={stageData} dataKey="value" nameKey="stage" innerRadius={55} outerRadius={85} paddingAngle={3} isAnimationActive={false}>
+                  {stageData.map((entry, index) => <Cell key={`cell-${index}`} fill={STAGE_COLORS[entry.stage] || "#cbd5f5"} />)}
                 </Pie>
-                <Tooltip
-                  formatter={(value: number, name: string) => [
-                    `${value} logs`,
-                    name,
-                  ]}
-                  contentStyle={{ borderRadius: 16, borderColor: "#e2e8f0" }}
-                />
+                <Tooltip formatter={(value: number, name: string) => [`${value} records`, name]} contentStyle={{ borderRadius: 12, borderColor: "#ded9cd" }} />
               </PieChart>
             </ResponsiveContainer>
           </div>
-          <div className="mt-3 sm:mt-4 flex flex-wrap gap-2 sm:gap-3">
-            {stageData.map((entry) => (
-              <div
-                key={entry.stage}
-                className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm font-medium text-slate-600"
-              >
-                <span
-                  className="w-2.5 h-2.5 rounded-full"
-                  style={{
-                    backgroundColor: STAGE_COLORS[entry.stage] || "#cbd5f5",
-                  }}
-                />
-                {entry.stage}{" "}
-                <span className="text-slate-400">({entry.value})</span>
-              </div>
-            ))}
-          </div>
-        </AnalyticsCard>
-
-        <AnalyticsCard
-          title="Confidence by Stage"
-          subtitle="Average AI confidence"
-          className="lg:col-span-2"
-        >
-          <div className="h-48 sm:h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={confidenceData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                <XAxis dataKey="stage" tick={{ fill: "#94a3b8" }} />
-                <YAxis
-                  domain={[0, 1]}
-                  tickFormatter={(value) => `${Math.round(value * 100)}%`}
-                  tick={{ fill: "#94a3b8" }}
-                />
-                <Tooltip
-                  formatter={(value: number, name: string, props) => [
-                    `${Math.round(value * 100)}%`,
-                    props?.payload?.stage,
-                  ]}
-                  contentStyle={{ borderRadius: 16, borderColor: "#e2e8f0" }}
-                />
-                <Bar dataKey="value" radius={[12, 12, 0, 0]}>
-                  {confidenceData.map((entry, index) => (
-                    <Cell
-                      key={`confidence-${index}`}
-                      fill={STAGE_COLORS[entry.stage] || "#818cf8"}
-                    />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {stageData.map((entry) => <span key={entry.stage} className="text-xs font-medium text-slate-600">{entry.stage} <span className="text-slate-400">{entry.value}</span></span>)}
           </div>
         </AnalyticsCard>
       </div>
+
+      {confidenceData.length > 0 && (
+        <details className="group border border-[#ded9cd] bg-[#fbfaf7]">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4 text-sm font-semibold text-[#4f4b45]">
+            Legacy four-stage model support
+            <ChevronDown className="h-4 w-4 transition group-open:rotate-180" />
+          </summary>
+          <div className="border-t border-[#ded9cd] p-5">
+            <p className="mb-4 text-xs leading-5 text-[#77736c]">Historical relative support only; not a calibrated probability and not the saved scientist decision.</p>
+            <div className="h-56">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={confidenceData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <XAxis dataKey="stage" tick={{ fill: "#77736c" }} />
+                  <YAxis domain={[0, 1]} tickFormatter={(value) => `${Math.round(value * 100)}%`} tick={{ fill: "#77736c" }} />
+                  <Tooltip formatter={(value: number, name: string, props) => [`${Math.round(value * 100)}%`, props?.payload?.stage]} />
+                  <Bar dataKey="value" radius={[8, 8, 0, 0]} isAnimationActive={false}>{confidenceData.map((entry, index) => <Cell key={`confidence-${index}`} fill={STAGE_COLORS[entry.stage] || "#818cf8"} />)}</Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </details>
+      )}
 
       <div className="grid gap-4 sm:gap-6 grid-cols-1 xl:grid-cols-3">
         <AnalyticsCard
@@ -227,6 +224,7 @@ export function CohortAnalysis({ insights }: { insights: CohortInsights }) {
                   strokeWidth={3}
                   fillOpacity={1}
                   fill="url(#timelineGradient)"
+                  isAnimationActive={false}
                 />
               </AreaChart>
             </ResponsiveContainer>
@@ -240,7 +238,7 @@ export function CohortAnalysis({ insights }: { insights: CohortInsights }) {
 
       <AnalyticsCard
         title="Recent Highlights"
-        subtitle="Latest classified scans"
+        subtitle="Latest saved observations"
       >
         <div className="space-y-4">
           {insights.recentLogs.map((log) => (
@@ -270,10 +268,18 @@ export function CohortAnalysis({ insights }: { insights: CohortInsights }) {
                 </div>
               </div>
               <div className="text-right">
-                <p className="text-sm font-semibold text-slate-800">
-                  {Math.round(log.confidence * 100)}%
-                </p>
-                <p className="text-xs text-slate-400">confidence</p>
+                {log.binaryDecisionStatus === "reference_backed_suggestion" ? (
+                  <>
+                    <p className="text-xs font-semibold text-[#454a9f]">
+                      {log.binaryGroup === "PROESTRUS_OR_ESTRUS" ? "Early-group lead" : "Late-group lead"}
+                    </p>
+                    <p className="text-[10px] text-slate-400">new model · review aid</p>
+                  </>
+                ) : log.binaryDecisionStatus ? (
+                  <p className="text-xs font-medium text-amber-700">New model abstained</p>
+                ) : (
+                  <p className="text-xs font-medium text-slate-500">Scientist-reviewed</p>
+                )}
               </div>
             </motion.div>
           ))}

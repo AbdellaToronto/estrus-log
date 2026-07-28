@@ -1,25 +1,24 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { motion } from "framer-motion";
+import Link from "next/link";
+import { format } from "date-fns";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import {
-  Search,
-  ChevronRight,
-  Calendar,
-  TrendingUp,
-  MoreHorizontal,
-} from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { EstrusIcon } from "@/components/estrus-icon";
+import { CalendarDays, Check, ChevronDown, Search, UserPlus } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { SUBJECT_COAT_COLOUR_LABELS } from "@/lib/subject-metadata";
 
 interface Subject {
   id: string;
   name: string;
-  status?: string;
+  coat_colour?: string | null;
+  strain?: string | null;
+  status?: string | null;
   created_at: string;
-  metadata?: Record<string, unknown>;
+  metadata?: Record<string, unknown> | null;
 }
 
 interface Log {
@@ -27,262 +26,257 @@ interface Log {
   mouse_id: string | null;
   stage: string;
   created_at: string;
-  image_url?: string;
+  capture_date?: string | null;
+  image_url?: string | null;
 }
 
-interface SubjectWithStats extends Subject {
-  logCount: number;
+type SubjectWithStats = Subject & {
+  logs: Log[];
   lastLog?: Log;
+  todayLog?: Log;
   stageBreakdown: Record<string, number>;
   recentStages: string[];
-}
+};
 
-const STAGE_COLORS: Record<string, string> = {
-  Proestrus: "bg-amber-100 text-amber-700 border-amber-200",
-  Estrus: "bg-rose-100 text-rose-700 border-rose-200",
-  Metestrus: "bg-purple-100 text-purple-700 border-purple-200",
-  Diestrus: "bg-blue-100 text-blue-700 border-blue-200",
+type ReviewFilter = "needs-observation" | "all" | "recorded";
+
+const STAGE_CLASSES: Record<string, string> = {
+  Proestrus: "stage-proestrus",
+  Estrus: "stage-estrus",
+  Metestrus: "stage-metestrus",
+  Diestrus: "stage-diestrus",
+  "Uncertain / transition": "stage-unknown",
+};
+
+const dateKey = (value: string) => {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value.slice(0, 10) : format(date, "yyyy-MM-dd");
 };
 
 export function CohortSubjects({
   subjects,
   logs,
+  todayKey: todayKeyOverride,
+  onAddSubject,
 }: {
   subjects: Subject[];
   logs: Log[];
+  todayKey?: string;
+  onAddSubject?: () => void;
 }) {
   const [searchTerm, setSearchTerm] = useState("");
-  const [selectedSubject, setSelectedSubject] = useState<string | null>(null);
+  const [reviewFilter, setReviewFilter] = useState<ReviewFilter>("needs-observation");
+  const todayKey = todayKeyOverride || format(new Date(), "yyyy-MM-dd");
+  const todayLabel = format(new Date(`${todayKey}T12:00:00`), "EEEE, MMMM d");
 
-  // Compute stats for each subject
-  const subjectsWithStats = useMemo(() => {
+  const subjectsWithStats = useMemo<SubjectWithStats[]>(() => {
     const logsBySubject = new Map<string, Log[]>();
-
     logs.forEach((log) => {
-      if (log.mouse_id) {
-        const existing = logsBySubject.get(log.mouse_id) || [];
-        existing.push(log);
-        logsBySubject.set(log.mouse_id, existing);
-      }
+      if (!log.mouse_id) return;
+      const existing = logsBySubject.get(log.mouse_id) ?? [];
+      existing.push(log);
+      logsBySubject.set(log.mouse_id, existing);
     });
 
     return subjects
       .map((subject) => {
-        const subjectLogs = logsBySubject.get(subject.id) || [];
-        const sortedLogs = [...subjectLogs].sort(
-          (a, b) =>
-            new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        const subjectLogs = [...(logsBySubject.get(subject.id) ?? [])].sort(
+          (left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime()
         );
-
-        const stageBreakdown: Record<string, number> = {};
-        subjectLogs.forEach((log) => {
-          stageBreakdown[log.stage] = (stageBreakdown[log.stage] || 0) + 1;
-        });
-
-        // Get last 5 stages for trend visualization
-        const recentStages = sortedLogs.slice(0, 5).map((l) => l.stage);
-
+        const stageBreakdown = subjectLogs.reduce<Record<string, number>>((counts, log) => {
+          counts[log.stage] = (counts[log.stage] ?? 0) + 1;
+          return counts;
+        }, {});
         return {
           ...subject,
-          logCount: subjectLogs.length,
-          lastLog: sortedLogs[0],
+          logs: subjectLogs,
+          lastLog: subjectLogs[0],
+          todayLog: subjectLogs.find((log) => dateKey(log.capture_date || log.created_at) === todayKey),
           stageBreakdown,
-          recentStages,
-        } as SubjectWithStats;
+          recentStages: subjectLogs.slice(0, 5).map((log) => log.stage),
+        };
       })
-      .sort((a, b) => b.logCount - a.logCount); // Sort by most logged first
-  }, [subjects, logs]);
+      .sort((left, right) => {
+        if (Boolean(left.todayLog) !== Boolean(right.todayLog)) return left.todayLog ? 1 : -1;
+        return left.name.localeCompare(right.name, undefined, { numeric: true });
+      });
+  }, [logs, subjects, todayKey]);
 
-  // Filter by search
-  const filteredSubjects = subjectsWithStats.filter((s) =>
-    s.name.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
-  const selectedData = selectedSubject
-    ? subjectsWithStats.find((s) => s.id === selectedSubject)
-    : null;
+  const recordedToday = subjectsWithStats.filter((subject) => subject.todayLog).length;
+  const remaining = Math.max(0, subjects.length - recordedToday);
+  const progress = subjects.length ? Math.round((recordedToday / subjects.length) * 100) : 0;
+  const filteredSubjects = subjectsWithStats.filter((subject) => {
+    const query = searchTerm.trim().toLowerCase();
+    const matchesSearch =
+      !query ||
+      subject.name.toLowerCase().includes(query) ||
+      subject.strain?.toLowerCase().includes(query) ||
+      (subject.coat_colour &&
+        SUBJECT_COAT_COLOUR_LABELS[
+          subject.coat_colour as keyof typeof SUBJECT_COAT_COLOUR_LABELS
+        ]?.toLowerCase().includes(query));
+    const matchesReview =
+      reviewFilter === "all" ||
+      (reviewFilter === "recorded" ? Boolean(subject.todayLog) : !subject.todayLog);
+    return matchesSearch && matchesReview;
+  });
 
   if (subjects.length === 0) {
     return (
-      <div className="text-center py-16">
-        <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
-          <Search className="w-8 h-8 text-slate-400" />
-        </div>
-        <h3 className="text-lg font-semibold text-slate-900 mb-2">
-          No Subjects Yet
-        </h3>
-        <p className="text-slate-500 max-w-md mx-auto">
-          Subjects are automatically created when you upload and analyze images.
-          The subject name is extracted from the filename.
+      <div className="border border-[#ded9cd] bg-[#fbfaf7] px-6 py-14 text-center">
+        <EstrusIcon name="animal-subject" className="mx-auto h-16 w-16" />
+        <h2 className="mt-4 font-serif text-2xl text-[#292b4c]">Add the first mouse</h2>
+        <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-[#625f58]">
+          A subject is required before an observation can become part of the lab record.
         </p>
+        {onAddSubject && (
+          <Button onClick={onAddSubject} className="mt-6 bg-[#454a9f] text-white hover:bg-[#383d89]">
+            <UserPlus className="mr-2 h-4 w-4" />
+            Add first mouse
+          </Button>
+        )}
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
-      {/* Search */}
-      <div className="relative max-w-md">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-        <Input
-          placeholder="Search subjects..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="pl-10 bg-white/50 border-slate-200"
-        />
-      </div>
-
-      {/* Stats Summary */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="bg-white/60 rounded-xl p-4 border border-slate-200/60">
-          <p className="text-2xl font-bold text-slate-900">{subjects.length}</p>
-          <p className="text-sm text-slate-500">Total Subjects</p>
-        </div>
-        <div className="bg-white/60 rounded-xl p-4 border border-slate-200/60">
-          <p className="text-2xl font-bold text-slate-900">{logs.length}</p>
-          <p className="text-sm text-slate-500">Total Logs</p>
-        </div>
-        <div className="bg-white/60 rounded-xl p-4 border border-slate-200/60">
-          <p className="text-2xl font-bold text-slate-900">
-            {subjects.length > 0
-              ? (logs.length / subjects.length).toFixed(1)
-              : 0}
+    <section className="space-y-5" aria-labelledby="today-review-heading">
+      <div className="grid gap-4 border border-[#ded9cd] bg-[#fbfaf7] p-5 sm:grid-cols-[1fr_auto] sm:items-center">
+        <div>
+          <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#66627a]">
+            <CalendarDays className="h-4 w-4" aria-hidden="true" />
+            {todayLabel}
+          </div>
+          <h2 id="today-review-heading" className="mt-2 font-serif text-3xl text-[#292b4c]">
+            Today&apos;s observations
+          </h2>
+          <div className="mt-4 h-2 max-w-xl overflow-hidden rounded-full bg-[#e7e2d7]">
+            <div className="h-full rounded-full bg-[#454a9f] transition-all" style={{ width: `${progress}%` }} />
+          </div>
+          <p className="mt-2 text-sm text-[#625f58]">
+            {recordedToday} of {subjects.length} recorded
           </p>
-          <p className="text-sm text-slate-500">Avg Logs/Subject</p>
         </div>
-        <div className="bg-white/60 rounded-xl p-4 border border-slate-200/60">
-          <p className="text-2xl font-bold text-slate-900">
-            {subjectsWithStats.filter((s) => s.status === "Active").length ||
-              subjects.length}
+        <div className={cn(
+          "min-w-32 border px-4 py-3 text-center",
+          remaining ? "border-[#d8b28d] bg-[#fff4df]" : "border-emerald-200 bg-emerald-50"
+        )}>
+          <p className={cn("text-3xl font-semibold", remaining ? "text-[#9a4f35]" : "text-emerald-800")}>
+            {remaining || <Check className="mx-auto h-7 w-7" />}
           </p>
-          <p className="text-sm text-slate-500">Active Subjects</p>
+          <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#625f58]">
+            {remaining ? "remaining" : "complete"}
+          </p>
         </div>
       </div>
 
-      {/* Subject Grid */}
-      <div className="grid gap-3">
-        {filteredSubjects.map((subject, i) => (
-          <motion.div
-            key={subject.id}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: i * 0.03 }}
-            onClick={() =>
-              setSelectedSubject(
-                selectedSubject === subject.id ? null : subject.id
-              )
-            }
-            className={cn(
-              "bg-white/80 rounded-xl p-4 border border-slate-200/60 cursor-pointer transition-all hover:shadow-md hover:border-blue-200",
-              selectedSubject === subject.id && "ring-2 ring-blue-500 border-blue-300"
-            )}
-          >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                {/* Subject Avatar */}
-                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold text-sm">
-                  {subject.name.slice(0, 2).toUpperCase()}
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="inline-flex w-fit rounded-xl border border-[#ded9cd] bg-[#f0ede5] p-1" aria-label="Filter daily observations">
+          {([
+            ["needs-observation", `Needs observation · ${remaining}`],
+            ["recorded", `Recorded · ${recordedToday}`],
+            ["all", `All · ${subjects.length}`],
+          ] as const).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              aria-pressed={reviewFilter === value}
+              onClick={() => setReviewFilter(value)}
+              className={cn(
+                "rounded-lg px-3 py-2 text-xs font-semibold transition",
+                reviewFilter === value ? "bg-white text-[#292b4c] shadow-sm" : "text-[#6a675f] hover:text-[#292b4c]"
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="relative w-full lg:max-w-xs">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#77736c]" aria-hidden="true" />
+          <Input
+            aria-label="Search mice"
+            placeholder="Find a mouse"
+            value={searchTerm}
+            onChange={(event) => setSearchTerm(event.target.value)}
+            className="border-[#ded9cd] bg-white pl-9"
+          />
+        </div>
+      </div>
+
+      <div className="divide-y divide-[#ded9cd] border border-[#ded9cd] bg-white">
+        {filteredSubjects.map((subject) => {
+          const metadataMissing = !subject.coat_colour || !subject.strain;
+          return (
+            <article key={subject.id} className="grid gap-4 p-4 transition hover:bg-[#fbfaf7] md:grid-cols-[minmax(0,1fr)_auto] md:items-center md:px-5">
+              <div className="flex min-w-0 items-start gap-3">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#eeedf9]">
+                  <EstrusIcon name="animal-subject" className="h-9 w-9" />
                 </div>
-
-                {/* Name & Stats */}
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h3 className="font-semibold text-slate-900">
-                      {subject.name}
-                    </h3>
-                    {subject.status && (
-                      <Badge
-                        variant="outline"
-                        className={cn(
-                          "text-xs",
-                          subject.status === "Active"
-                            ? "border-green-200 text-green-700 bg-green-50"
-                            : "border-slate-200 text-slate-500"
-                        )}
-                      >
-                        {subject.status}
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="font-semibold text-[#292b4c]">{subject.name}</h3>
+                    {subject.todayLog ? (
+                      <Badge className="border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-50">
+                        Recorded · {subject.todayLog.stage}
                       </Badge>
+                    ) : (
+                      <Badge className="border-[#d8b28d] bg-[#fff4df] text-[#8b4a32] hover:bg-[#fff4df]">Due today</Badge>
+                    )}
+                    {metadataMissing && (
+                      <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-800">Metadata needed</Badge>
                     )}
                   </div>
-                  <p className="text-sm text-slate-500">
-                    {subject.logCount} logs
-                    {subject.lastLog && (
-                      <span className="ml-2 text-slate-400">
-                        • Last:{" "}
-                        {new Date(subject.lastLog.created_at).toLocaleDateString()}
-                      </span>
+                  <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[#77736c]">
+                    <span>{subject.logs.length} observations</span>
+                    {subject.lastLog && <span>Last {format(new Date(subject.lastLog.created_at), "MMM d")}</span>}
+                    {subject.coat_colour && (
+                      <span>{SUBJECT_COAT_COLOUR_LABELS[subject.coat_colour as keyof typeof SUBJECT_COAT_COLOUR_LABELS] || subject.coat_colour}</span>
                     )}
-                  </p>
-                </div>
-              </div>
-
-              {/* Recent Stages Trend */}
-              <div className="flex items-center gap-2">
-                <div className="flex items-center gap-1">
-                  {subject.recentStages.map((stage, idx) => (
-                    <div
-                      key={idx}
-                      className={cn(
-                        "w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold border",
-                        STAGE_COLORS[stage] || "bg-slate-100 text-slate-600"
-                      )}
-                      title={stage}
-                    >
-                      {stage[0]}
+                    {subject.strain && <span>{subject.strain}</span>}
+                  </div>
+                  {subject.recentStages.length > 0 && (
+                    <div className="mt-2 flex items-center gap-1.5" aria-label={`Recent stages: ${subject.recentStages.join(", ")}`}>
+                      {subject.recentStages.map((stage, index) => (
+                        <span key={`${stage}-${index}`} className={cn("rounded-full px-2 py-0.5 text-[10px] font-semibold", STAGE_CLASSES[stage] || "stage-unknown")}>
+                          {stage}
+                        </span>
+                      ))}
                     </div>
-                  ))}
-                </div>
-                <ChevronRight
-                  className={cn(
-                    "w-5 h-5 text-slate-400 transition-transform",
-                    selectedSubject === subject.id && "rotate-90"
                   )}
-                />
+                </div>
               </div>
-            </div>
 
-            {/* Expanded Details */}
-            {selectedSubject === subject.id && (
-              <motion.div
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: "auto", opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                className="mt-4 pt-4 border-t border-slate-100"
-              >
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  {Object.entries(subject.stageBreakdown).map(([stage, count]) => (
-                    <div
-                      key={stage}
-                      className={cn(
-                        "rounded-lg p-3 border",
-                        STAGE_COLORS[stage] || "bg-slate-50 border-slate-200"
-                      )}
-                    >
-                      <p className="text-lg font-bold">{count}</p>
-                      <p className="text-xs opacity-80">{stage}</p>
+              <div className="flex items-center gap-2 md:justify-end">
+                <details className="group relative">
+                  <summary className="flex h-9 cursor-pointer list-none items-center gap-1 rounded-lg px-2 text-xs font-semibold text-[#625f58] hover:bg-[#f0ede5]">
+                    History <ChevronDown className="h-3.5 w-3.5 transition group-open:rotate-180" />
+                  </summary>
+                  <div className="absolute right-0 z-20 mt-2 w-56 border border-[#ded9cd] bg-white p-3 shadow-xl">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#77736c]">Saved stages</p>
+                    <div className="mt-2 space-y-1.5">
+                      {Object.entries(subject.stageBreakdown).length ? Object.entries(subject.stageBreakdown).map(([stage, count]) => (
+                        <div key={stage} className="flex items-center justify-between text-xs text-[#4f4b45]"><span>{stage}</span><span className="font-semibold">{count}</span></div>
+                      )) : <p className="text-xs text-[#77736c]">No observations yet.</p>}
                     </div>
-                  ))}
-                </div>
-
-                <div className="mt-4 flex items-center gap-2 text-sm text-slate-500">
-                  <Calendar className="w-4 h-4" />
-                  <span>
-                    Created:{" "}
-                    {new Date(subject.created_at).toLocaleDateString()}
-                  </span>
-                </div>
-              </motion.div>
-            )}
-          </motion.div>
-        ))}
+                  </div>
+                </details>
+                <Button asChild className={cn("h-9", subject.todayLog ? "bg-[#eeedf9] text-[#353a87] hover:bg-[#deddf3]" : "bg-[#454a9f] text-white hover:bg-[#383d89]")}>
+                  <Link href={subject.todayLog ? `/subjects/${subject.id}` : `/subjects/${subject.id}?new=1`}>
+                    {subject.todayLog ? "View record" : "Record observation"}
+                  </Link>
+                </Button>
+              </div>
+            </article>
+          );
+        })}
       </div>
 
-      {filteredSubjects.length === 0 && searchTerm && (
-        <div className="text-center py-8 text-slate-500">
-          No subjects matching "{searchTerm}"
+      {filteredSubjects.length === 0 && (
+        <div className="border border-dashed border-[#cfc9bd] bg-[#fbfaf7] py-10 text-center text-sm text-[#625f58]">
+          No mice match this view.
         </div>
       )}
-    </div>
+    </section>
   );
 }
-

@@ -1,22 +1,34 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { format } from "date-fns";
+import {
+  ArrowRight,
+  CalendarDays,
+  ChevronDown,
+  MoreHorizontal,
+  Plus,
+  Trash2,
+  Users,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Plus, TestTube, Calendar, Sparkles, Trash2 } from "lucide-react";
-import Link from "next/link";
+import { EstrusIcon } from "@/components/estrus-icon";
 import { createExperiment, deleteExperiment } from "@/app/actions";
-import { generateMockExperiment } from "@/app/actions-mock";
-import { useRouter } from "next/navigation";
+import { cn } from "@/lib/utils";
 
 type Experiment = {
   id: string;
@@ -26,7 +38,14 @@ type Experiment = {
   start_date: string | null;
   end_date: string | null;
   created_at: string;
+  experiment_cohorts?: { cohort_id: string }[];
 };
+
+const statusRank: Record<string, number> = { active: 0, planned: 1, completed: 2 };
+
+function displayDate(value: string | null) {
+  return value ? format(new Date(`${value}T12:00:00`), "MMM d, yyyy") : null;
+}
 
 export function ExperimentsClient({
   initialExperiments,
@@ -36,195 +55,212 @@ export function ExperimentsClient({
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [generating, setGenerating] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
+  const sorted = useMemo(
+    () => [...initialExperiments].sort((left, right) => {
+      const statusDifference = (statusRank[left.status || "planned"] ?? 3) - (statusRank[right.status || "planned"] ?? 3);
+      if (statusDifference) return statusDifference;
+      return new Date(right.created_at).getTime() - new Date(left.created_at).getTime();
+    }),
+    [initialExperiments]
+  );
+  const current = sorted.filter((experiment) => experiment.status !== "completed");
+  const completed = sorted.filter((experiment) => experiment.status === "completed");
+  const attachedCohorts = initialExperiments.reduce(
+    (sum, experiment) => sum + (experiment.experiment_cohorts?.length ?? 0),
+    0
+  );
+
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
     setLoading(true);
-    const formData = new FormData(e.currentTarget);
-    await createExperiment(formData);
-    setLoading(false);
-    setOpen(false);
-  };
-
-  const handleGenerateMock = async () => {
-    if (
-      !confirm(
-        "Generate a sample experiment with mock data? This may take a few seconds."
-      )
-    )
-      return;
-    setGenerating(true);
+    setFormError(null);
     try {
-      await generateMockExperiment();
+      await createExperiment(new FormData(event.currentTarget));
+      setOpen(false);
+      router.refresh();
     } catch (error) {
-      console.error(error);
-      alert("Failed to generate mock data");
+      setFormError(error instanceof Error ? error.message : "The experiment could not be created.");
     } finally {
-      setGenerating(false);
+      setLoading(false);
     }
   };
 
-  const handleDelete = async (e: React.MouseEvent, id: string) => {
-    e.preventDefault(); // Prevent Link navigation
-    e.stopPropagation();
-    if (!confirm("Are you sure you want to delete this experiment?")) return;
-    
+  const handleDelete = async (id: string) => {
+    if (!confirm("Delete this experiment workspace? Source cohort records will remain unchanged.")) return;
     try {
-        await deleteExperiment(id);
-        router.refresh();
-    } catch(error) {
-        console.error(error);
-        alert("Failed to delete experiment");
+      await deleteExperiment(id);
+      router.refresh();
+    } catch (error) {
+      console.error(error);
+      alert("The experiment could not be deleted.");
     }
   };
 
   return (
-    <div className="space-y-4 sm:space-y-6 lg:space-y-8">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold tracking-tight">Experiments</h1>
-          <p className="text-sm sm:text-base text-muted-foreground mt-1 sm:mt-2">
-            Manage and track your research experiments.
-          </p>
-        </div>
-        <div className="flex gap-2 flex-shrink-0">
-          <Button
-            variant="outline"
-            onClick={handleGenerateMock}
-            disabled={generating}
-            className="text-xs sm:text-sm h-9 sm:h-10"
-          >
-            <Sparkles className="mr-1.5 sm:mr-2 h-3.5 sm:h-4 w-3.5 sm:w-4" />
-            <span className="hidden sm:inline">{generating ? "Generating..." : "Mock Data"}</span>
-            <span className="sm:hidden">{generating ? "..." : "Mock"}</span>
-          </Button>
-          <Dialog open={open} onOpenChange={setOpen}>
+    <div className="page-shell space-y-6 pb-20">
+      <header className="border-b border-[#d9d4c8] pb-6 pt-2">
+        <p className="page-eyebrow">Research organization</p>
+        <div className="mt-2 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h1 className="font-serif text-4xl tracking-tight text-[#292b4c] sm:text-5xl">Study workspaces</h1>
+            <p className="mt-2 max-w-xl text-sm text-[#625f58]">Group cohorts for study-level review and reproducible export.</p>
+          </div>
+          <Dialog open={open} onOpenChange={(nextOpen) => { setOpen(nextOpen); if (nextOpen) setFormError(null); }}>
             <DialogTrigger asChild>
-              <Button className="text-xs sm:text-sm h-9 sm:h-10">
-                <Plus className="mr-1 sm:mr-2 h-3.5 sm:h-4 w-3.5 sm:w-4" />
-                <span className="hidden sm:inline">New Experiment</span>
-                <span className="sm:hidden">New</span>
+              <Button className="w-fit bg-[#454a9f] text-white hover:bg-[#383d89]">
+                <Plus className="h-4 w-4" />New experiment
               </Button>
             </DialogTrigger>
-            <DialogContent>
+            <DialogContent className="border-[#ded9cd] bg-[#fbfaf7] sm:max-w-xl">
               <DialogHeader>
-                <DialogTitle>Create New Experiment</DialogTitle>
+                <p className="page-eyebrow">New study workspace</p>
+                <DialogTitle className="font-serif text-3xl text-[#292b4c]">Create an experiment</DialogTitle>
+                <DialogDescription>Define the study window now. Attach the intended cohorts next.</DialogDescription>
               </DialogHeader>
-              <form onSubmit={handleSubmit} className="grid gap-4 py-4">
+              <form onSubmit={handleSubmit} className="grid gap-5 pt-2">
                 <div className="grid gap-2">
-                  <Label htmlFor="name">Name</Label>
-                  <Input
-                    id="name"
-                    name="name"
-                    placeholder="e.g. Drug Trial Phase 1"
-                    required
-                  />
+                  <Label htmlFor="name">Study name</Label>
+                  <Input id="name" name="name" placeholder="Diet intervention · Cycle timing" required maxLength={160} />
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="description">Description</Label>
-                  <Textarea
-                    id="description"
-                    name="description"
-                    placeholder="Optional description of the experiment design..."
-                  />
+                  <Label htmlFor="description">Study question or note <span className="font-normal text-[#77736c]">(optional)</span></Label>
+                  <Textarea id="description" name="description" placeholder="What comparison or collection window does this workspace represent?" maxLength={1200} />
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-4 sm:grid-cols-2">
                   <div className="grid gap-2">
-                    <Label htmlFor="start_date">Start Date</Label>
+                    <Label htmlFor="start_date">Start date <span className="font-normal text-[#77736c]">(optional)</span></Label>
                     <Input id="start_date" name="start_date" type="date" />
                   </div>
                   <div className="grid gap-2">
-                    <Label htmlFor="end_date">End Date</Label>
+                    <Label htmlFor="end_date">End date <span className="font-normal text-[#77736c]">(optional)</span></Label>
                     <Input id="end_date" name="end_date" type="date" />
                   </div>
                 </div>
-                <Button type="submit" disabled={loading}>
-                  {loading ? "Creating..." : "Create Experiment"}
-                </Button>
+                {formError && <p role="alert" className="border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">{formError}</p>}
+                <div className="flex justify-end gap-2 border-t border-[#ded9cd] pt-4">
+                  <Button type="button" variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
+                  <Button type="submit" disabled={loading} className="bg-[#454a9f] text-white hover:bg-[#383d89]">
+                    {loading ? "Creating…" : "Create experiment"}
+                  </Button>
+                </div>
               </form>
             </DialogContent>
           </Dialog>
         </div>
-      </div>
+      </header>
 
-      <div className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-        {initialExperiments.map((experiment) => (
-          <Link
-            key={experiment.id}
-            href={`/experiments/${experiment.id}`}
-            className="group block relative space-y-2 sm:space-y-3 p-4 sm:p-5 rounded-xl border bg-card text-card-foreground hover:border-primary/50 hover:shadow-md transition-all"
-          >
-            <div className="flex items-start justify-between">
-              <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
-                <TestTube className="h-5 w-5" />
-              </div>
-              <div className="flex items-center gap-2">
-                <div
-                  className={`px-2.5 py-0.5 rounded-full text-xs font-medium border ${
-                    experiment.status === "active"
-                      ? "bg-green-500/10 text-green-500 border-green-500/20"
-                      : experiment.status === "completed"
-                      ? "bg-blue-500/10 text-blue-500 border-blue-500/20"
-                      : "bg-muted text-muted-foreground border-muted-foreground/20"
-                  }`}
-                >
-                  {experiment.status || "Planned"}
-                </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-6 w-6 text-muted-foreground hover:text-destructive z-10"
-                  onClick={(e) => handleDelete(e, experiment.id)}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
+      <section className="grid gap-3 sm:grid-cols-3" aria-label="Experiment summary">
+        <Summary value={current.filter((experiment) => experiment.status === "active").length} label="active studies" />
+        <Summary value={current.filter((experiment) => experiment.status !== "active").length} label="planned studies" />
+        <Summary value={attachedCohorts} label="attached cohort slots" />
+      </section>
 
+      {current.length ? (
+        <section aria-labelledby="current-studies-heading">
+          <div className="mb-3 flex items-end justify-between gap-4">
             <div>
-              <h3 className="font-semibold leading-none tracking-tight group-hover:text-primary transition-colors">
-                {experiment.name}
-              </h3>
-              {experiment.description && (
-                <p className="text-sm text-muted-foreground line-clamp-2 mt-2">
-                  {experiment.description}
-                </p>
-              )}
+              <p className="page-eyebrow">Current work</p>
+              <h2 id="current-studies-heading" className="mt-1 font-serif text-3xl text-[#292b4c]">Active and planned</h2>
             </div>
-
-            {(experiment.start_date || experiment.end_date) && (
-              <div className="flex items-center text-xs text-muted-foreground mt-4 pt-4 border-t">
-                <Calendar className="mr-2 h-3 w-3" />
-                <span>
-                  {experiment.start_date
-                    ? new Date(experiment.start_date).toLocaleDateString()
-                    : "TBD"}
-                  {" - "}
-                  {experiment.end_date
-                    ? new Date(experiment.end_date).toLocaleDateString()
-                    : "TBD"}
-                </span>
-              </div>
-            )}
-          </Link>
-        ))}
-
-        {initialExperiments.length === 0 && (
-          <div className="col-span-full flex flex-col items-center justify-center p-8 sm:p-12 text-center border-2 border-dashed rounded-xl bg-muted/20">
-            <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-muted flex items-center justify-center mb-3 sm:mb-4">
-              <TestTube className="h-5 w-5 sm:h-6 sm:w-6 text-muted-foreground" />
-            </div>
-            <h3 className="text-base sm:text-lg font-medium">No experiments yet</h3>
-            <p className="text-sm sm:text-base text-muted-foreground mt-1 mb-4">
-              Create your first experiment to start tracking cohorts.
-            </p>
-            <Button onClick={() => setOpen(true)} variant="outline" className="text-sm">
-              Create Experiment
-            </Button>
+            <p className="text-xs text-[#625f58]">{current.length} {current.length === 1 ? "workspace" : "workspaces"}</p>
           </div>
-        )}
-      </div>
+          <div className="grid gap-4 lg:grid-cols-2">
+            {current.map((experiment) => (
+              <ExperimentCard key={experiment.id} experiment={experiment} onDelete={handleDelete} />
+            ))}
+          </div>
+        </section>
+      ) : (
+        <section className="border border-dashed border-[#cfc9bd] bg-[#fbfaf7] px-6 py-14 text-center">
+          <EstrusIcon name="cycle" className="mx-auto h-16 w-16" />
+          <h2 className="mt-4 font-serif text-2xl text-[#292b4c]">Create the first study workspace</h2>
+          <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-[#625f58]">Experiments group existing cohorts without copying or changing their source records.</p>
+          <Button onClick={() => setOpen(true)} className="mt-5 bg-[#454a9f] text-white hover:bg-[#383d89]">Create experiment</Button>
+        </section>
+      )}
+
+      {completed.length > 0 && (
+        <details className="group border border-[#ded9cd] bg-[#fbfaf7]">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4 text-sm font-semibold text-[#4f4b45]">
+            <span>Completed studies · {completed.length}</span>
+            <ChevronDown className="h-4 w-4 transition group-open:rotate-180" />
+          </summary>
+          <div className="grid gap-4 border-t border-[#ded9cd] p-5 lg:grid-cols-2">
+            {completed.map((experiment) => (
+              <ExperimentCard key={experiment.id} experiment={experiment} onDelete={handleDelete} compact />
+            ))}
+          </div>
+        </details>
+      )}
     </div>
+  );
+}
+
+function Summary({ value, label }: { value: number; label: string }) {
+  return (
+    <div className="border border-[#ded9cd] bg-[#fbfaf7] px-4 py-3">
+      <span className="font-serif text-2xl text-[#292b4c]">{value}</span>
+      <span className="ml-2 text-xs text-[#625f58]">{label}</span>
+    </div>
+  );
+}
+
+function ExperimentCard({
+  experiment,
+  onDelete,
+  compact = false,
+}: {
+  experiment: Experiment;
+  onDelete: (id: string) => void;
+  compact?: boolean;
+}) {
+  const start = displayDate(experiment.start_date);
+  const end = displayDate(experiment.end_date);
+  const cohortCount = experiment.experiment_cohorts?.length ?? 0;
+  const status = experiment.status || "planned";
+
+  return (
+    <article className="relative border border-[#ded9cd] bg-white p-5 transition hover:border-[#b8b7e1]">
+      <div className="flex items-start gap-4">
+        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#eeedf9]">
+          <EstrusIcon name="cycle" className="h-10 w-10" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="outline" className={cn(
+              "capitalize",
+              status === "active" && "border-emerald-200 bg-emerald-50 text-emerald-800",
+              status === "planned" && "border-[#c9c7e7] bg-[#eeedf9] text-[#454a9f]",
+              status === "completed" && "border-[#ded9cd] bg-[#f0ede5] text-[#625f58]"
+            )}>{status}</Badge>
+            <span className="inline-flex items-center gap-1 text-xs text-[#625f58]"><Users className="h-3.5 w-3.5" />{cohortCount} {cohortCount === 1 ? "cohort" : "cohorts"}</span>
+          </div>
+          <h3 className="mt-3 font-serif text-2xl text-[#292b4c]">{experiment.name}</h3>
+          {!compact && experiment.description && <p className="mt-2 line-clamp-2 text-sm leading-6 text-[#625f58]">{experiment.description}</p>}
+        </div>
+        <details className="group/actions relative">
+          <summary className="flex h-9 w-9 cursor-pointer list-none items-center justify-center rounded-lg text-[#77736c] hover:bg-[#f0ede5]" aria-label={`Actions for ${experiment.name}`}>
+            <MoreHorizontal className="h-4 w-4" />
+          </summary>
+          <div className="absolute right-0 z-20 mt-1 w-44 border border-[#ded9cd] bg-white p-1 shadow-xl">
+            <button type="button" onClick={() => onDelete(experiment.id)} className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-rose-700 hover:bg-rose-50">
+              <Trash2 className="h-4 w-4" />Delete workspace
+            </button>
+          </div>
+        </details>
+      </div>
+
+      <div className="mt-5 flex flex-col gap-3 border-t border-[#ded9cd] pt-4 sm:flex-row sm:items-center sm:justify-between">
+        <p className="inline-flex items-center gap-2 text-xs text-[#625f58]">
+          <CalendarDays className="h-4 w-4" />
+          {start ? `${start}${end ? ` – ${end}` : " – ongoing"}` : "Study window not set"}
+        </p>
+        <Button asChild variant="ghost" className="h-9 w-fit text-[#454a9f] hover:bg-[#eeedf9] hover:text-[#353a87]">
+          <Link href={`/experiments/${experiment.id}`}>Open workspace <ArrowRight className="h-4 w-4" /></Link>
+        </Button>
+      </div>
+    </article>
   );
 }

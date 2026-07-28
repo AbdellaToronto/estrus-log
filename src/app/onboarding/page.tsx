@@ -1,4 +1,4 @@
-import { auth } from "@clerk/nextjs/server";
+import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { OnboardingClient } from "./onboarding-client";
 import {
@@ -35,4 +35,3 @@ export default async function OnboardingPage() {
     />
   );
 }
-

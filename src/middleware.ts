@@ -18,6 +18,10 @@ const isPublicRoute = createRouteMatcher([
   "/sign-in",
   "/sign-up",
   "/onboarding(.*)",
+  "/dashboard-lab",
+  "/experiments-lab",
+  "/experiment-detail-lab",
+  "/onboarding-flow-lab",
   "/api/webhooks(.*)",
 ]);
 
@@ -29,6 +33,16 @@ const isOrgOptionalRoute = createRouteMatcher([
 ]);
 
 export default clerkMiddleware(async (auth, req) => {
+  // A dedicated local-only rehearsal command supplies a fixed scientist/lab
+  // identity. This keeps end-to-end UI validation off Clerk and production
+  // services while leaving the normal local and deployed auth paths intact.
+  if (
+    process.env.ESTRUS_LOCAL_DEVELOPMENT === "true" &&
+    process.env.ESTRUS_LOCAL_TEST_IDENTITY === "true"
+  ) {
+    return NextResponse.next();
+  }
+
   const { userId, orgId } = await auth();
   const url = req.nextUrl;
 

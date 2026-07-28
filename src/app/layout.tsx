@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import "@xyflow/react/dist/style.css";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -13,13 +14,14 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Estrus Log - AI-Powered Biological Image Classification",
-  description: "Track and classify biological samples with AI. Upload images, get instant classification, and gain insights into your research data.",
+  title: "Estrus Log - Daily mouse cycle records",
+  description: "Capture, review, and export scientist-confirmed mouse estrus-cycle observations.",
 };
 
 import { ClerkProvider } from '@clerk/nextjs'
 import { Sidebar } from "@/components/layout/sidebar";
 import { MobileNav } from "@/components/layout/mobile-nav";
+import { AppContent } from "@/components/layout/app-content";
 
 export default function RootLayout({
   children,
@@ -38,9 +40,7 @@ export default function RootLayout({
         >
           <Sidebar />
           <MobileNav />
-          <main className="px-4 py-4 pt-20 lg:pt-4 lg:pl-72 lg:pr-4 min-h-screen">
-            {children}
-          </main>
+          <AppContent>{children}</AppContent>
         </body>
       </html>
     </ClerkProvider>

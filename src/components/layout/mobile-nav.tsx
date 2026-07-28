@@ -53,8 +53,10 @@ export function MobileNav() {
   const { userMemberships, setActive } = useOrganizationList({
     userMemberships: { infinite: true },
   });
+  const isLocalRehearsal =
+    process.env.NEXT_PUBLIC_ESTRUS_LOCAL_TEST_IDENTITY === "true";
 
-  const hasOrg = !!organization;
+  const hasOrg = isLocalRehearsal || !!organization;
   const navItems = hasOrg ? ORG_NAV_ITEMS : EXPLORE_NAV_ITEMS;
 
   const handleSwitchOrg = async (orgId: string) => {
@@ -75,17 +77,17 @@ export function MobileNav() {
   };
 
   // Don't show on certain pages
-  const hiddenPaths = ["/sign-in", "/sign-up"];
+  const hiddenPaths = ["/sign-in", "/sign-up", "/onboarding", "/onboarding-flow-lab", "/workflow-lab", "/observation-lab", "/cohort-lab", "/dashboard-lab", "/experiments-lab", "/experiment-detail-lab"];
   if (hiddenPaths.some((path) => pathname.startsWith(path))) {
     return null;
   }
 
   return (
-    <div className="lg:hidden fixed top-0 left-0 right-0 z-50 glass-panel border-b border-white/20">
+    <div className="fixed left-0 right-0 top-0 z-50 border-b border-slate-200/80 bg-white/90 shadow-sm backdrop-blur-xl lg:hidden">
       <div className="flex items-center justify-between px-4 py-3">
         {/* Logo */}
         <Link href="/dashboard" className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-primary/20 flex items-center justify-center text-primary">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
             <FlaskConical className="w-5 h-5" />
           </div>
           <span className="font-bold text-base">Estrus Log</span>
@@ -93,7 +95,13 @@ export function MobileNav() {
 
         {/* Right side: User + Menu */}
         <div className="flex items-center gap-2">
-          <UserButton afterSignOutUrl="/" />
+          {isLocalRehearsal ? (
+            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-900 text-[11px] font-bold text-white">
+              LS
+            </div>
+          ) : (
+            <UserButton afterSignOutUrl="/" />
+          )}
           <Sheet open={open} onOpenChange={setOpen}>
             <SheetTrigger asChild>
               <Button variant="ghost" size="icon" className="h-9 w-9">
@@ -111,7 +119,19 @@ export function MobileNav() {
 
               <div className="flex flex-col h-full">
                 {/* Organization Section */}
-                {hasOrg ? (
+                {isLocalRehearsal ? (
+                  <div className="border-b border-white/10 p-4">
+                    <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+                      <div className="flex items-center gap-2 text-emerald-800">
+                        <Building2 className="h-4 w-4" />
+                        <span className="text-sm font-semibold">Estrus Lab</span>
+                      </div>
+                      <p className="mt-1 text-xs text-emerald-700">
+                        Local rehearsal · isolated data
+                      </p>
+                    </div>
+                  </div>
+                ) : hasOrg ? (
                   <div className="p-4 border-b border-white/10 space-y-2">
                     <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-1 mb-2">
                       Your Labs
@@ -272,10 +292,14 @@ export function MobileNav() {
                   <div className="flex items-center gap-3">
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium truncate">
-                        {user?.fullName || "User"}
+                        {isLocalRehearsal
+                          ? "Local Scientist"
+                          : user?.fullName || "User"}
                       </p>
                       <p className="text-xs text-muted-foreground truncate">
-                        {user?.primaryEmailAddress?.emailAddress}
+                        {isLocalRehearsal
+                          ? "scientist@estrus.local"
+                          : user?.primaryEmailAddress?.emailAddress}
                       </p>
                     </div>
                   </div>

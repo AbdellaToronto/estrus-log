@@ -1,9 +1,8 @@
 'use client';
 
-import Image from 'next/image';
-import Link from 'next/link';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { Camera } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from 'date-fns';
 
 type RecentActivityItem = {
@@ -15,11 +14,21 @@ type RecentActivityItem = {
   time: string;
 };
 
+const stageClass: Record<string, string> = {
+  Proestrus: 'stage-proestrus',
+  Estrus: 'stage-estrus',
+  Metestrus: 'stage-metestrus',
+  Diestrus: 'stage-diestrus',
+};
+
 export function RecentActivity({ activities }: { activities: RecentActivityItem[] }) {
   return (
     <Card className="col-span-1 lg:col-span-2">
-      <CardHeader>
-        <CardTitle>Recent Activity</CardTitle>
+      <CardHeader className="flex flex-row items-center justify-between space-y-0">
+        <div>
+          <CardTitle>Recent entries</CardTitle>
+          <p className="mt-1 text-sm text-muted-foreground">The latest confirmed or reviewed scans.</p>
+        </div>
       </CardHeader>
       <CardContent>
         <div className="space-y-4">
@@ -29,23 +38,23 @@ export function RecentActivity({ activities }: { activities: RecentActivityItem[
             </div>
           )}
           {activities.map((activity) => (
-            <div
+            <article
               key={activity.id}
-              className="flex items-center space-x-4 rounded-md border p-3 hover:bg-muted/50 transition-colors"
+              className="flex items-center gap-4 rounded-xl border border-border/80 p-3 transition-colors hover:bg-muted/50"
             >
-              <div className="relative h-12 w-12 flex-none overflow-hidden rounded-md bg-muted">
+              <div className="relative h-12 w-12 flex-none overflow-hidden rounded-lg bg-muted">
                  {activity.imageUrl ? (
                     <img
                       src={activity.imageUrl}
                       alt={activity.mouseName}
                       className="h-full w-full object-cover"
                       onError={(e) => {
-                        e.currentTarget.src = 'https://placehold.co/100x100?text=Mouse';
+                        e.currentTarget.style.display = 'none';
                       }}
                     />
                  ) : (
-                    <div className="flex h-full w-full items-center justify-center text-xs text-muted-foreground">
-                      No Img
+                    <div className="flex h-full w-full items-center justify-center text-muted-foreground">
+                      <Camera className="h-4 w-4" aria-hidden="true" />
                     </div>
                  )}
               </div>
@@ -58,22 +67,17 @@ export function RecentActivity({ activities }: { activities: RecentActivityItem[
                 </p>
               </div>
               <div className="flex-none">
-                 <Badge variant={
-                    activity.stage === 'Estrus' ? 'destructive' :
-                    activity.stage === 'Proestrus' ? 'default' :
-                    'secondary'
-                 }>
+                 <span className={cn('rounded-full px-2.5 py-1 text-xs font-semibold', stageClass[activity.stage] || 'stage-unknown')}>
                     {activity.stage}
-                 </Badge>
+                 </span>
               </div>
-            </div>
+            </article>
           ))}
         </div>
       </CardContent>
     </Card>
   );
 }
-
 
 
 

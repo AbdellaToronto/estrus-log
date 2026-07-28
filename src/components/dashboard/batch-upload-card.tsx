@@ -5,8 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { UploadCloud, ArrowRight, Sparkles } from "lucide-react";
-import { motion } from "framer-motion";
+import { UploadCloud, ArrowRight } from "lucide-react";
 
 interface CohortOption {
   id: string;
@@ -33,26 +32,25 @@ export function BatchUploadCard({ cohorts, className }: BatchUploadCardProps) {
   if (cohorts.length === 0) return null;
 
   return (
-    <Card className={`overflow-hidden relative group border-dashed border-2 ${className}`}>
-      <div className="absolute inset-0 bg-gradient-to-br from-blue-50/50 to-purple-50/50 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+    <Card className={`relative overflow-hidden border-primary/20 ${className}`}>
+      <div className="absolute inset-x-0 top-0 h-1 bg-primary" />
       
       <CardHeader className="relative">
         <div className="flex items-center justify-between">
-          <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary mb-2 group-hover:scale-110 transition-transform duration-300">
+          <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
             <UploadCloud className="w-6 h-6" />
           </div>
-          <Sparkles className="w-5 h-5 text-yellow-500 opacity-0 group-hover:opacity-100 transition-opacity duration-300 animate-pulse" />
         </div>
-        <CardTitle className="text-xl">Batch Analysis</CardTitle>
+        <CardTitle className="text-xl">Review a batch</CardTitle>
         <CardDescription>
-          Upload multiple images to automatically classify estrus stages using AI.
+          Upload images from one session and confirm each suggested stage before saving.
         </CardDescription>
       </CardHeader>
       
       <CardContent className="relative space-y-4">
         {cohorts.length > 1 ? (
           <div className="space-y-2">
-            <label className="text-xs font-medium text-muted-foreground">Select Cohort</label>
+            <label className="text-xs font-medium text-muted-foreground">Save to cohort</label>
             <Select value={selectedCohortId} onValueChange={setSelectedCohortId}>
               <SelectTrigger className="bg-white/50 backdrop-blur-sm">
                 <SelectValue placeholder="Select a cohort" />
@@ -68,17 +66,17 @@ export function BatchUploadCard({ cohorts, className }: BatchUploadCardProps) {
           </div>
         ) : (
           <div className="text-sm text-muted-foreground">
-            Target: <span className="font-medium text-foreground">{cohorts[0]?.name}</span>
+            Saving to <span className="font-medium text-foreground">{cohorts[0]?.name}</span>
           </div>
         )}
 
-        <Button 
-          className="w-full group-hover:shadow-lg transition-all duration-300 bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90" 
+        <Button
+          className="w-full"
           onClick={handleStart}
           disabled={!selectedCohortId}
         >
-          Start Upload
-          <ArrowRight className="w-4 h-4 ml-2 group-hover:translate-x-1 transition-transform" />
+          Choose images
+          <ArrowRight className="w-4 h-4 ml-2" />
         </Button>
       </CardContent>
     </Card>

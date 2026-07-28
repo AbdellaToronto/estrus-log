@@ -1,7 +1,14 @@
 import { batch, logger, task } from "@trigger.dev/sdk/v3";
 import { getServiceSupabase } from "@/lib/supabase-admin";
-import { getGcs } from "@/lib/gcs";
+import { getGcs, getGcsObjectLocation, toGcsObjectUri } from "@/lib/gcs";
 import type { Tables } from "@/lib/database-types";
+import {
+  ESTRUS_STAGES,
+  normalizeClassificationFeatures,
+  normalizeConfidenceScores,
+  type ClassificationResult,
+  type ClassificationStage,
+} from "@/lib/classification";
 import { z } from "zod";
 
 const supabase = () => getServiceSupabase();
@@ -29,9 +36,18 @@ const ClassificationSchema = z.object({
       Diestrus: z.number().min(0).max(1),
     })
     .describe("Confidence scores for each stage (must sum to roughly 1)"),
+  review_required: z.boolean().optional(),
+  review_reasons: z.array(z.string()).optional(),
+  evidence: z
+    .object({
+      method: z.string(),
+      reference_count: z.number().int().nonnegative().optional(),
+      nearest_similarity: z.number().optional(),
+      mean_similarity: z.number().optional(),
+    })
+    .optional(),
+  model_version: z.string().optional(),
 });
-
-type ClassificationResult = z.infer<typeof ClassificationSchema>;
 
 type ScanItemRow = Tables<"scan_items">;
 
@@ -47,6 +63,13 @@ type BatchChildRun = {
 const gcs = getGcs();
 
 async function fetchImageAsBlob(url: string): Promise<Blob> {
+  const location = getGcsObjectLocation(url);
+  if (url.startsWith("gs://") && location) {
+    const file = gcs.storage.bucket(location.bucketName).file(location.objectPath);
+    const [buffer] = await file.download();
+    const [metadata] = await file.getMetadata();
+    return new Blob([new Uint8Array(buffer)], { type: metadata?.contentType || "image/jpeg" });
+  }
   try {
     const response = await fetch(url);
     if (!response.ok) {
@@ -54,17 +77,55 @@ async function fetchImageAsBlob(url: string): Promise<Blob> {
     }
     return await response.blob();
   } catch (networkError) {
-    const prefix = `https://storage.googleapis.com/${gcs.bucket.name}/`;
-    if (!url.startsWith(prefix)) {
+    if (!location) {
       throw networkError;
     }
-    const objectPath = url.slice(prefix.length).split("?")[0];
-    const file = gcs.bucket.file(objectPath);
+    const file = gcs.storage.bucket(location.bucketName).file(location.objectPath);
     const [buffer] = await file.download();
     const [metadata] = await file.getMetadata();
     const contentType = metadata?.contentType || "image/jpeg";
     return new Blob([new Uint8Array(buffer)], { type: contentType });
   }
+}
+
+async function generateSuggestedRoi({
+  imageBlob,
+  sessionId,
+  scanItemId,
+}: {
+  imageBlob: Blob;
+  sessionId: string;
+  scanItemId: string;
+}) {
+  const sam3Url =
+    process.env.SAM3_API_URL ||
+    "https://abdellaalioncan--estrus-pipeline-segment-endpoint.modal.run";
+  const arrayBuffer = await imageBlob.arrayBuffer();
+  const base64Image = Buffer.from(arrayBuffer).toString("base64");
+
+  const response = await fetch(sam3Url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      image: base64Image,
+      prompt: "mouse external genital region",
+      bg_mode: "mask_crop",
+    }),
+  });
+
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`SAM3 crop proposal failed: ${response.status} ${detail}`);
+  }
+
+  const result = (await response.json()) as { image: string; format: string };
+  const format = result.format === "png" ? "png" : "jpg";
+  const contentType = format === "png" ? "image/png" : "image/jpeg";
+  const objectPath = `scans/${sessionId}/${scanItemId}_suggested_roi.${format}`;
+  const file = gcs.bucket.file(objectPath);
+  await file.save(Buffer.from(result.image, "base64"), { contentType });
+
+  return toGcsObjectUri(gcs.bucket.name, objectPath);
 }
 
 interface Neighbor {
@@ -75,6 +136,152 @@ interface Neighbor {
   metadata: Record<string, unknown>;
 }
 
+type ReferenceMatchRpcClient = {
+  rpc: (
+    functionName: "match_reference_images",
+    args: {
+      query_embedding: number[];
+      match_threshold: number;
+      match_count: number;
+    }
+  ) => Promise<{ data: Neighbor[] | null; error: unknown }>;
+};
+
+const MIN_REFERENCE_SIMILARITY = 0.18;
+const LOW_SIMILARITY_REVIEW_THRESHOLD = 0.4;
+
+function toStage(label: string): ClassificationStage | undefined {
+  return ESTRUS_STAGES.find(
+    (stage) => stage.toLowerCase() === label.trim().toLowerCase()
+  );
+}
+
+function buildWeightedClassification(neighbors: Neighbor[]): ClassificationResult {
+  const scores: Record<ClassificationStage, number> = {
+    Proestrus: 0,
+    Estrus: 0,
+    Metestrus: 0,
+    Diestrus: 0,
+  };
+  const validNeighbors = neighbors
+    .map((neighbor) => ({ ...neighbor, stage: toStage(neighbor.label) }))
+    .filter(
+      (neighbor): neighbor is Neighbor & { stage: ClassificationStage } =>
+        Boolean(neighbor.stage) && Number.isFinite(neighbor.similarity)
+    );
+
+  if (validNeighbors.length === 0) {
+    throw new Error("Reference images did not contain a recognized estrus-stage label");
+  }
+
+  // A closer neighbor contributes more evidence than a distant one. This is
+  // deliberately not called a calibrated probability: it is only relative
+  // support among the available reference images.
+  validNeighbors.forEach((neighbor) => {
+    const weight = Math.max(0, neighbor.similarity - MIN_REFERENCE_SIMILARITY);
+    scores[neighbor.stage] += weight;
+  });
+
+  const confidence_scores = normalizeConfidenceScores(scores);
+  const rankedStages = [...ESTRUS_STAGES].sort(
+    (left, right) => confidence_scores[right] - confidence_scores[left]
+  );
+  const winner = rankedStages[0];
+  const runnerUp = rankedStages[1];
+  const similarities = validNeighbors.map((neighbor) => neighbor.similarity);
+  const nearestSimilarity = Math.max(...similarities);
+  const meanSimilarity =
+    similarities.reduce((sum, similarity) => sum + similarity, 0) /
+    similarities.length;
+  const reviewReasons: string[] = [];
+
+  if (validNeighbors.length < 3) {
+    reviewReasons.push("Fewer than three labeled reference images were available.");
+  }
+  if (nearestSimilarity < LOW_SIMILARITY_REVIEW_THRESHOLD) {
+    reviewReasons.push("The closest reference image was only weakly similar.");
+  }
+  if (meanSimilarity < LOW_SIMILARITY_REVIEW_THRESHOLD) {
+    reviewReasons.push("The reference set was weakly similar overall.");
+  }
+  if (confidence_scores[winner] - confidence_scores[runnerUp] < 0.2) {
+    reviewReasons.push("The leading stage was not clearly separated from the next stage.");
+  }
+  if (process.env.CLASSIFIER_AUTO_ACCEPT !== "true") {
+    reviewReasons.push(
+      "Human confirmation is required until this classifier is validated for this colony and imaging protocol."
+    );
+  }
+
+  const neighborSummary = validNeighbors
+    .map((neighbor) => `${neighbor.stage} (${(neighbor.similarity * 100).toFixed(1)}%)`)
+    .join(", ");
+
+  return ClassificationSchema.parse({
+    estrus_stage: winner,
+    confidence_scores,
+    features: normalizeClassificationFeatures(undefined),
+    reasoning:
+      "BioCLIP embedding matched against labeled reference images using similarity-weighted k-NN. " +
+      `Reference support: ${neighborSummary}.`,
+    review_required: reviewReasons.length > 0,
+    review_reasons: reviewReasons,
+    evidence: {
+      method: "BioCLIP similarity-weighted k-NN",
+      reference_count: validNeighbors.length,
+      nearest_similarity: nearestSimilarity,
+      mean_similarity: meanSimilarity,
+    },
+    model_version: "bioclip-weighted-knn-v2",
+  }) as ClassificationResult;
+}
+
+export const proposeScanItemRoiTask = task({
+  id: "propose-scan-item-roi",
+  maxDuration: 600,
+  run: async ({ scanItemId }: { scanItemId: string }) => {
+    const client = supabase();
+    const { data: scanItem, error } = await client
+      .from("scan_items")
+      .select("id, image_url, session_id")
+      .eq("id", scanItemId)
+      .single();
+
+    if (error || !scanItem) throw new Error(`Scan item ${scanItemId} not found`);
+    await client.from("scan_items").update({ status: "proposing_roi" }).eq("id", scanItemId);
+
+    try {
+      const original = await fetchImageAsBlob(scanItem.image_url);
+      const croppedImageUrl = await generateSuggestedRoi({
+        imageBlob: original,
+        sessionId: scanItem.session_id,
+        scanItemId,
+      });
+
+      await client
+        .from("scan_items")
+        .update({
+          status: "roi_review",
+          cropped_image_url: croppedImageUrl,
+          ai_result: {
+            crop_review: {
+              method: "SAM3 text-prompt proposal",
+              prompt: "mouse external genital region",
+              confirmed: false,
+            },
+          },
+        })
+        .eq("id", scanItemId);
+
+      return { croppedImageUrl };
+    } catch (proposalError) {
+      await client.from("scan_items").update({ status: "crop_error" }).eq("id", scanItemId);
+      logger.error("Failed to propose ROI", { scanItemId, error: proposalError });
+      throw proposalError;
+    }
+  },
+});
+
 export const analyzeScanItemTask = task({
   id: "analyze-scan-item",
   maxDuration: 600,
@@ -83,7 +290,7 @@ export const analyzeScanItemTask = task({
 
     const { data: scanItem, error } = await client
       .from("scan_items")
-      .select("id, image_url, session_id, status, ai_result")
+      .select("id, image_url, cropped_image_url, session_id, status, ai_result")
       .eq("id", scanItemId)
       .single();
 
@@ -99,8 +306,12 @@ export const analyzeScanItemTask = task({
       .eq("id", scanItemId);
 
     try {
-      // 1. Fetch Image
-      const imageBlob = await fetchImageAsBlob(typedScanItem.image_url);
+      if (typedScanItem.status !== "roi_confirmed" || !typedScanItem.cropped_image_url) {
+        throw new Error("A scientist-confirmed ROI is required before batch analysis");
+      }
+
+      // 1. Fetch the prepared ROI, never the unconfirmed original frame.
+      const imageBlob = await fetchImageAsBlob(typedScanItem.cropped_image_url);
 
       // 2. Generate Embedding via Modal Cloud BioCLIP Service
       const bioclipUrl =
@@ -134,61 +345,15 @@ export const analyzeScanItemTask = task({
         embedding: number[];
       };
 
-      // 2b. Generate SAM3 cropped image for visual artifact (optional, non-blocking)
-      let croppedImageUrl: string | null = null;
-      try {
-        const sam3Url =
-          process.env.SAM3_API_URL ||
-          "https://abdellaalioncan--estrus-pipeline-segment-endpoint.modal.run";
-
-        logger.log("Generating SAM3 cropped image...");
-
-        const sam3Response = await fetch(sam3Url, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            image: base64Image,
-            prompt: "mouse body",
-            bg_mode: "mask_crop",
-          }),
-        });
-
-        if (sam3Response.ok) {
-          const sam3Result = (await sam3Response.json()) as {
-            image: string;
-            format: string;
-          };
-
-          // Upload cropped image to GCS
-          const croppedBuffer = Buffer.from(sam3Result.image, "base64");
-          const croppedFileName = `scans/${typedScanItem.session_id}/${scanItemId}_cropped.${sam3Result.format}`;
-          const croppedFile = gcs.bucket.file(croppedFileName);
-
-          await croppedFile.save(croppedBuffer, {
-            contentType:
-              sam3Result.format === "png" ? "image/png" : "image/jpeg",
-          });
-
-          croppedImageUrl = `https://storage.googleapis.com/${gcs.bucket.name}/${croppedFileName}`;
-          logger.log("SAM3 cropped image saved", { croppedImageUrl });
-        } else {
-          logger.warn("SAM3 cropping failed, continuing without cropped image");
-        }
-      } catch (sam3Error) {
-        logger.warn("SAM3 cropping error, continuing without cropped image", {
-          error: sam3Error,
-        });
-      }
-
       // 3. Find Neighbors (k-NN)
       logger.log("Finding similar reference images...");
 
-      // Cast to any because the RPC function is not yet in the generated types
-      const { data: neighborsData, error: matchError } = await (
-        client as any
-      ).rpc("match_reference_images", {
+      // The local generated database types predate this SQL RPC.
+      const referenceMatchClient = client as unknown as ReferenceMatchRpcClient;
+      const { data: neighborsData, error: matchError } = await referenceMatchClient.rpc("match_reference_images", {
         query_embedding: embedding,
-        match_threshold: 0.0, // Return top k regardless of similarity
+        // Do not convert unrelated reference images into a confident stage.
+        match_threshold: MIN_REFERENCE_SIMILARITY,
         match_count: 3,
       });
 
@@ -200,96 +365,15 @@ export const analyzeScanItemTask = task({
       const neighbors = neighborsData as Neighbor[] | null;
 
       if (!neighbors || neighbors.length === 0) {
-        logger.warn(
-          "No reference images found. Defaulting to Diestrus (Uncertain)."
+        throw new Error(
+          "No sufficiently similar labeled reference images were found. Add reviewed references before using this classifier."
         );
-        // Fallback result
-        const result: ClassificationResult = {
-          estrus_stage: "Diestrus",
-          confidence_scores: {
-            Proestrus: 0,
-            Estrus: 0,
-            Metestrus: 0,
-            Diestrus: 1,
-          },
-          features: {
-            swelling: "Unknown",
-            color: "Unknown",
-            opening: "Unknown",
-            moistness: "Unknown",
-          },
-          reasoning: "No reference images available for comparison.",
-        };
-
-        await client
-          .from("scan_items")
-          .update({ status: "complete", ai_result: result })
-          .eq("id", scanItemId);
-        return result;
       }
 
-      // 4. Voting Logic
-      const votes: Record<string, number> = {
-        Proestrus: 0,
-        Estrus: 0,
-        Metestrus: 0,
-        Diestrus: 0,
-      };
-
-      neighbors.forEach((n) => {
-        if (votes[n.label] !== undefined) {
-          votes[n.label]++;
-        } else {
-          // Handle potential case mismatches or new labels
-          votes[n.label] = 1;
-        }
-      });
-
-      // Determine Winner
-      let winner: "Proestrus" | "Estrus" | "Metestrus" | "Diestrus" =
-        "Diestrus"; // Default
-      let maxVotes = -1;
-
-      // Check for majority (>=2 out of 3) or plurality
-      for (const [stage, count] of Object.entries(votes)) {
-        if (count > maxVotes) {
-          maxVotes = count;
-          // Cast string to enum type if valid, else fallback
-          if (
-            ["Proestrus", "Estrus", "Metestrus", "Diestrus"].includes(stage)
-          ) {
-            winner = stage as any;
-          }
-        }
-      }
-
-      // Calculate confidence based on vote share
-      const totalVotes = neighbors.length;
-      const confidence_scores = {
-        Proestrus: (votes.Proestrus || 0) / totalVotes,
-        Estrus: (votes.Estrus || 0) / totalVotes,
-        Metestrus: (votes.Metestrus || 0) / totalVotes,
-        Diestrus: (votes.Diestrus || 0) / totalVotes,
-      };
-
-      const neighborSummary = neighbors
-        .map((n) => `${n.label} (${(n.similarity * 100).toFixed(1)}%)`)
-        .join(", ");
-
-      const classification: ClassificationResult = {
-        estrus_stage: winner,
-        confidence_scores,
-        features: {
-          swelling: "N/A (BioCLIP Analysis)",
-          color: "N/A (BioCLIP Analysis)",
-          opening: "N/A (BioCLIP Analysis)",
-          moistness: "N/A (BioCLIP Analysis)",
-        },
-        reasoning: `Classified using BioCLIP (Frozen Feature Extractor) + k-NN (k=3). Neighbors: ${neighborSummary}.`,
-      };
-
-      // Validate result
-      const validatedResult = ClassificationSchema.parse(classification);
+      // 4. Similarity-weighted evidence aggregation. Equal votes turn three
+      // barely-related images into an apparently certain result, which is not
+      // appropriate for a research log.
+      const validatedResult = buildWeightedClassification(neighbors);
 
       await client
         .from("scan_items")
@@ -298,14 +382,22 @@ export const analyzeScanItemTask = task({
           ai_result: {
             ...validatedResult,
             thoughts: validatedResult.reasoning,
+            crop_review: {
+              method: "SAM3 text-prompt proposal",
+              confirmed: true,
+              analyzed_as_model_input: true,
+            },
           },
-          cropped_image_url: croppedImageUrl,
         })
         .eq("id", scanItemId);
 
-      logger.log("Scan item analyzed", { scanItemId, result: winner });
+      logger.log("Scan item analyzed", {
+        scanItemId,
+        result: validatedResult.estrus_stage,
+        reviewRequired: validatedResult.review_required,
+      });
 
-      return classification;
+      return validatedResult;
     } catch (error) {
       await client
         .from("scan_items")
@@ -334,6 +426,54 @@ function normalizeBatchRuns(result: unknown): BatchChildRun[] {
   return [];
 }
 
+export const proposeScanSessionRoisTask = task({
+  id: "propose-scan-session-rois",
+  maxDuration: 3600,
+  run: async ({ sessionId }: { sessionId: string }) => {
+    const client = supabase();
+    const { data: session, error } = await client
+      .from("scan_sessions")
+      .select("id, modality")
+      .eq("id", sessionId)
+      .single();
+
+    if (error || !session) throw new Error("Scan session not found");
+    if (session.modality !== "external_photo") {
+      throw new Error("ROI proposals are available only for external genital-photo sessions");
+    }
+
+    const { data: items, error: itemsError } = await client
+      .from("scan_items")
+      .select("id, status")
+      .eq("session_id", sessionId)
+      .in("status", ["uploaded", "crop_error"]);
+    if (itemsError) throw itemsError;
+
+    const pending = items ?? [];
+    const chunkSize = 5;
+    for (let index = 0; index < pending.length; index += chunkSize) {
+      const chunk = pending.slice(index, index + chunkSize);
+      const result = await batch.triggerAndWait<typeof proposeScanItemRoiTask>(
+        chunk.map((item) => ({
+          id: "propose-scan-item-roi",
+          payload: { scanItemId: item.id },
+        }))
+      );
+      normalizeBatchRuns(result).forEach((run, runIndex) => {
+        if (!run.ok) {
+          logger.error("ROI proposal child task failed", {
+            scanItemId: chunk[runIndex]?.id,
+            error: run.error,
+          });
+        }
+      });
+    }
+
+    await client.from("scan_sessions").update({ status: "crop_review" }).eq("id", sessionId);
+    return { proposed: pending.length };
+  },
+});
+
 export const analyzeScanSessionTask = task({
   id: "analyze-scan-session",
   maxDuration: 3600,
@@ -342,19 +482,22 @@ export const analyzeScanSessionTask = task({
 
     const { data: session, error } = await client
       .from("scan_sessions")
-      .select("id, status")
+      .select("id, status, modality")
       .eq("id", sessionId)
       .single();
 
     if (error || !session) {
       throw new Error("Scan session not found");
     }
+    if (session.modality !== "external_photo") {
+      throw new Error("Batch analysis only supports external genital-photo sessions");
+    }
 
     const { data: items, error: itemsError } = await client
       .from("scan_items")
       .select("id, status")
       .eq("session_id", sessionId)
-      .in("status", ["uploaded", "error"]);
+      .in("status", ["roi_confirmed"]);
 
     if (itemsError) throw itemsError;
     const typedItems = (items ?? []) as Array<

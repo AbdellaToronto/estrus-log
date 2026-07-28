@@ -1,7 +1,7 @@
 'use client';
 
 import { motion, AnimatePresence } from 'framer-motion';
-import { useEffect, useState, useMemo } from 'react';
+import { useMemo } from 'react';
 import { StageConfig } from '@/lib/config-types';
 
 interface CycleWheelProps {
@@ -32,12 +32,6 @@ export function CycleWheel({
   size = 280,
   stages = DEFAULT_STAGES,
 }: CycleWheelProps) {
-  const [mounted, setMounted] = useState(false);
-  
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
   // Calculate angles for each stage based on count
   const stagesWithAngles = useMemo(() => {
     const count = stages.length;
@@ -132,7 +126,7 @@ export function CycleWheel({
               }}
               transition={{ 
                 duration: 0.5, 
-                delay: mounted ? i * 0.1 : 0,
+                delay: i * 0.1,
                 ease: "easeOut"
               }}
               className={predictedStage === stage.name ? 'drop-shadow-lg' : ''}

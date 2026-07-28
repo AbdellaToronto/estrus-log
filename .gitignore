@@ -12,6 +12,9 @@
 
 # testing
 /coverage
+/work/
+/tmp/rehearsal-uploads/
+/tmp/rehearsal-specimens/
 
 # next.js
 /.next/

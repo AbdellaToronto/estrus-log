@@ -1,4 +1,5 @@
 import { createClient, SupabaseClient } from "@supabase/supabase-js"
+import "server-only"
 
 export type SupabaseConfig = {
   url: string
@@ -15,6 +16,25 @@ export type SupabaseConfig = {
  */
 export function createAuthClient(accessToken: string): SupabaseClient {
   const config = configFromEnv()
+  const localDevelopment = process.env.ESTRUS_LOCAL_DEVELOPMENT === "true"
+
+  // Clerk's development JWT is intentionally not signed by local Supabase.
+  // For the private local stack, server actions keep Clerk as the identity
+  // provider and use the local service key solely to avoid a fake RLS setup.
+  // This flag is set only by scripts/dev-local.sh, never by deployed builds.
+  if (localDevelopment) {
+    if (!config.serviceRoleKey) {
+      throw new Error("SUPABASE_SERVICE_ROLE_KEY is required for local development")
+    }
+
+    return createClient(config.url, config.serviceRoleKey, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+        detectSessionInUrl: false,
+      },
+    })
+  }
   
   return createClient(config.url, config.anonKey, {
     auth: {

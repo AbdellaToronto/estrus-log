@@ -12,6 +12,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Local research artifacts include vendored Python environments and are not web source.
+    "work/**",
+    "tmp/**",
   ]),
 ]);
 

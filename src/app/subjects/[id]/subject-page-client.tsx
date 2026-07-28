@@ -1,13 +1,31 @@
 "use client";
 
 import Image from "next/image";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Search, ZoomIn, ZoomOut, Maximize2 } from "lucide-react";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { ChevronDown, Loader2, Pencil, Search } from "lucide-react";
 import { LogEntryModal } from "@/components/log-entry-modal";
+import { EstrusIcon } from "@/components/estrus-icon";
+import type { ClassificationEvidence } from "@/lib/classification";
 import { format } from "date-fns";
 import {
   ResponsiveContainer,
@@ -19,6 +37,14 @@ import {
   Cell,
 } from "recharts";
 import { motion, type HTMLMotionProps } from "framer-motion";
+import { updateSubjectResearchMetadata } from "@/app/actions";
+import { useRouter, useSearchParams } from "next/navigation";
+import {
+  SUBJECT_COAT_COLOURS,
+  SUBJECT_COAT_COLOUR_LABELS,
+  isSubjectCoatColour,
+  type SubjectCoatColour,
+} from "@/lib/subject-metadata";
 
 // Workaround for framer-motion + React 19 type incompatibility
 const MotionDiv = motion.div as React.FC<
@@ -33,13 +59,33 @@ type SubjectLog = {
   confidence: ConfidenceShape;
   created_at: string;
   image_url: string | null;
+  reference_image_url?: string | null;
+  reference_modality?: string | null;
+  reference_sample_id?: string | null;
   notes?: string | null;
   data?: Record<string, unknown> | null;
+  capture_metadata?: Record<string, unknown> | null;
+};
+
+type ExternalBinaryEvidence = NonNullable<ClassificationEvidence["external_binary"]>;
+type ModelInputReference = {
+  readable_image_url?: string | null;
+  modality?: string;
+  crop?: {
+    zoom?: number;
+    source_width?: number;
+    source_height?: number;
+    output_width?: number;
+    output_height?: number;
+    processor_field_fraction?: number;
+  } | null;
 };
 
 type SubjectSummary = {
   id: string;
   name: string;
+  coat_colour?: string | null;
+  strain?: string | null;
   cohorts?: { name?: string | null } | null;
 };
 
@@ -60,6 +106,55 @@ const STAGE_COLORS: Record<string, string> = {
   Diestrus: "#34d399",
 };
 
+type ObservationContext = {
+  modality?: string;
+  capture_date?: string;
+  label_status?: string;
+  confirmation_source?: string;
+};
+
+const getObservationContext = (log: SubjectLog): ObservationContext | null => {
+  const context = log.data?.observation_context;
+  if (!context || typeof context !== "object" || Array.isArray(context)) return null;
+  return context as ObservationContext;
+};
+
+const formatModality = (modality?: string) => {
+  if (modality === "external_photo") return "External genital photo";
+  if (modality === "vaginal_cytology") return "Vaginal cytology / smear";
+  return null;
+};
+
+const CAPTURE_METADATA_LABELS: Record<string, string> = {
+  capture_session: "Session",
+  imaging_device: "Camera / microscope",
+  magnification: "Magnification",
+  stain_or_preparation: "Stain / preparation",
+};
+
+const getCaptureMetadata = (log: SubjectLog): Record<string, string> => {
+  const metadata = log.capture_metadata;
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return {};
+  return Object.entries(metadata).reduce<Record<string, string>>((result, [key, value]) => {
+    if (typeof value === "string" && value.trim()) result[key] = value;
+    return result;
+  }, {});
+};
+
+const getExternalBinaryEvidence = (log: SubjectLog): ExternalBinaryEvidence | null => {
+  const evidence = log.data?.evidence;
+  if (!evidence || typeof evidence !== "object" || Array.isArray(evidence)) return null;
+  const binary = (evidence as Record<string, unknown>).external_binary;
+  if (!binary || typeof binary !== "object" || Array.isArray(binary)) return null;
+  return binary as ExternalBinaryEvidence;
+};
+
+const getModelInputReference = (log: SubjectLog): ModelInputReference | null => {
+  const reference = log.data?.model_input_reference;
+  if (!reference || typeof reference !== "object" || Array.isArray(reference)) return null;
+  return reference as ModelInputReference;
+};
+
 export function SubjectPageClient({
   subject,
   initialLogs,
@@ -67,6 +162,8 @@ export function SubjectPageClient({
   subject: SubjectSummary;
   initialLogs: SubjectLog[];
 }) {
+  const searchParams = useSearchParams();
+  const router = useRouter();
   const logs = useMemo<SubjectLog[]>(
     () => (Array.isArray(initialLogs) ? initialLogs : []),
     [initialLogs]
@@ -74,11 +171,50 @@ export function SubjectPageClient({
   const [selectedLog, setSelectedLog] = useState<SubjectLog | null>(
     logs[0] || null
   );
+  const initialCoatColour = isSubjectCoatColour(subject.coat_colour)
+    ? subject.coat_colour
+    : null;
+  const [coatColour, setCoatColour] = useState<SubjectCoatColour | null>(
+    initialCoatColour
+  );
+  const [strain, setStrain] = useState(subject.strain || "");
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [profileError, setProfileError] = useState<string | null>(null);
+  const [dialogsMounted, setDialogsMounted] = useState(false);
+  const [trendsOpen, setTrendsOpen] = useState(false);
+
+  // Radix generates dialog control IDs in render order. Deferring these two
+  // portals until after hydration keeps direct `?new=1` record links from
+  // producing different server and client IDs in React 19.
+  useEffect(() => setDialogsMounted(true), []);
 
   const handleLogCreated = () => {
-    // In a real app, we'd re-fetch or use a server action to get the new log
-    // For now, we'll just reload the page to get fresh data
-    window.location.reload();
+    // Remove the deep-link flag before refreshing. Leaving `?new=1` in place
+    // caused a successful save to immediately reopen an empty capture dialog.
+    router.replace(`/subjects/${subject.id}`);
+    router.refresh();
+  };
+
+  const saveResearchMetadata = async () => {
+    setProfileSaving(true);
+    setProfileError(null);
+    try {
+      const updated = await updateSubjectResearchMetadata({
+        subjectId: subject.id,
+        coatColour,
+        strain,
+      });
+      setCoatColour(isSubjectCoatColour(updated.coat_colour) ? updated.coat_colour : null);
+      setStrain(updated.strain || "");
+      setProfileOpen(false);
+    } catch (error) {
+      setProfileError(
+        error instanceof Error ? error.message : "Could not update subject metadata"
+      );
+    } finally {
+      setProfileSaving(false);
+    }
   };
 
   const timelineData = useMemo<TimelinePoint[]>(
@@ -116,36 +252,142 @@ export function SubjectPageClient({
   const mostFrequentColor =
     STAGE_COLORS[mostFrequentStage] || STAGE_COLORS.Uncertain;
 
-  const getConfidence = (log: SubjectLog): number => {
-    if (typeof log.confidence === "number") return log.confidence;
-    if (log.confidence && typeof log.confidence === "object") {
-      const confidenceObj = log.confidence as Record<string, number>;
-      const val =
-        confidenceObj[log.stage] ?? (confidenceObj as { score?: number }).score;
-      if (typeof val === "number") return val;
-    }
-    return 0;
-  };
-
-  const confidenceScore = selectedLog ? getConfidence(selectedLog) : 0;
+  const selectedContext = selectedLog ? getObservationContext(selectedLog) : null;
+  const selectedCaptureMetadata = selectedLog ? getCaptureMetadata(selectedLog) : {};
+  const selectedScores = selectedLog?.data?.confidence_scores;
+  const selectedExternalBinary = selectedLog ? getExternalBinaryEvidence(selectedLog) : null;
+  const selectedModelInput = selectedLog ? getModelInputReference(selectedLog) : null;
+  const hasModelScores = Boolean(
+    selectedScores &&
+      typeof selectedScores === "object" &&
+      Object.values(selectedScores).some((value) => typeof value === "number")
+  );
+  const isManualReview = selectedContext?.confirmation_source === "scientist_review" && !hasModelScores;
+  const isPairedCytology = selectedContext?.confirmation_source === "paired_cytology_review"
+    || selectedLog?.reference_modality === "vaginal_cytology";
 
   return (
-    <div className="space-y-4 sm:space-y-6 md:space-y-8 pb-8">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-        <h1 className="text-lg sm:text-xl md:text-2xl font-bold text-foreground/80 line-clamp-2">
-          Analysis: {subject.name}
-        </h1>
-        <div className="hidden sm:flex items-center gap-4">
-          <Avatar className="h-9 w-9 border-2 border-white/20 shadow-sm">
-            <AvatarImage src="https://github.com/shadcn.png" />
-            <AvatarFallback>LW</AvatarFallback>
-          </Avatar>
+    <div className="page-shell flex flex-col gap-6 pb-20">
+      <header className="border-b border-[#d9d4c8] pb-6 pt-2">
+        <p className="page-eyebrow">Mouse record</p>
+        <div className="mt-2 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h1 className="font-serif text-4xl tracking-tight text-[#292b4c] sm:text-5xl">{subject.name}</h1>
+            <p className="mt-2 text-sm text-[#625f58]">
+              {subject.cohorts?.name || "Unassigned cohort"} · {logs.length} observation{logs.length === 1 ? "" : "s"}
+            </p>
+          </div>
+          {dialogsMounted && <LogEntryModal
+            subjectId={subject.id}
+            onLogCreated={handleLogCreated}
+            initialOpen={searchParams.get("new") === "1"}
+          />}
         </div>
-      </div>
+      </header>
 
-      {/* Top Row: Charts & Overview */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+      <section className="flex flex-col gap-3 border border-[#ded9cd] bg-[#fbfaf7] p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#77736c]">
+            Research identity
+          </p>
+          <div className="mt-1.5 flex flex-wrap items-center gap-2 text-sm text-slate-700">
+            {coatColour ? (
+              <Badge variant="outline" className="border-slate-200 bg-white">
+                Coat: {SUBJECT_COAT_COLOUR_LABELS[coatColour]}
+              </Badge>
+            ) : (
+              <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-700">
+                Coat colour needed
+              </Badge>
+            )}
+            <span>{strain ? `Strain: ${strain}` : "Strain not recorded"}</span>
+          </div>
+          <p className="mt-1 text-xs text-[#77736c]">
+            Scientist-entered metadata; never inferred from an image.
+          </p>
+        </div>
+        {dialogsMounted && <Dialog open={profileOpen} onOpenChange={(open) => {
+          setProfileOpen(open);
+          if (!open) setProfileError(null);
+        }}>
+          <DialogTrigger asChild>
+            <Button variant="outline" size="sm" className="shrink-0">
+              <Pencil className="mr-2 h-3.5 w-3.5" /> Edit metadata
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Subject research metadata</DialogTitle>
+              <DialogDescription>
+                Coat colour enables real subgroup validation. Record what the colony or animal record states rather than estimating it from this photograph.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-4 py-2">
+              <div className="grid gap-2">
+                <Label htmlFor="subject-coat-colour">Coat colour</Label>
+                <Select
+                  value={coatColour || "not_recorded"}
+                  onValueChange={(value) =>
+                    setCoatColour(isSubjectCoatColour(value) ? value : null)
+                  }
+                >
+                  <SelectTrigger id="subject-coat-colour">
+                    <SelectValue placeholder="Choose coat colour" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="not_recorded">Not recorded</SelectItem>
+                    {SUBJECT_COAT_COLOURS.map((value) => (
+                      <SelectItem key={value} value={value}>
+                        {SUBJECT_COAT_COLOUR_LABELS[value]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="subject-strain">Strain or stock</Label>
+                <Input
+                  id="subject-strain"
+                  value={strain}
+                  onChange={(event) => setStrain(event.target.value)}
+                  maxLength={120}
+                  placeholder="e.g. C57BL/6J or BALB/c"
+                />
+              </div>
+              {profileError && (
+                <p className="text-sm text-red-600" role="alert">{profileError}</p>
+              )}
+            </div>
+            <DialogFooter>
+              <Button onClick={saveResearchMetadata} disabled={profileSaving}>
+                {profileSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {profileSaving ? "Saving…" : "Save metadata"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>}
+      </section>
+
+      {logs.length === 0 ? (
+        <section className="order-3 border border-[#ded9cd] bg-white px-6 py-14 text-center">
+          <EstrusIcon name="camera" className="mx-auto h-16 w-16" />
+          <h2 className="mt-4 font-serif text-3xl text-[#292b4c]">No observations yet</h2>
+          <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-[#625f58]">
+            Start this mouse&apos;s record from the action above. The capture date, image, scientist stage, and evidence will stay together.
+          </p>
+        </section>
+      ) : (<>
+      {/* Secondary analytical summary */}
+      <details
+        className="group order-4 border border-[#ded9cd] bg-[#fbfaf7]"
+        open={trendsOpen}
+        onToggle={(event) => setTrendsOpen(event.currentTarget.open)}
+      >
+        <summary className="flex cursor-pointer list-none items-center justify-between px-5 py-4 text-sm font-semibold text-[#4f4b45]">
+          <span>Cycle trends and summary</span>
+          <ChevronDown className="h-4 w-4 transition group-open:rotate-180" />
+        </summary>
+        {trendsOpen && <div className="grid gap-4 border-t border-[#ded9cd] p-5 sm:grid-cols-2 lg:grid-cols-3">
         <MotionDiv
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
@@ -248,49 +490,17 @@ export function SubjectPageClient({
             </div>
           </div>
         </MotionDiv>
-      </div>
+        </div>}
+      </details>
 
       {/* Main Split View */}
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] xl:grid-cols-[1fr_400px] gap-4 sm:gap-6 lg:gap-8">
+      <div className="order-3 grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
         {/* Left: Image Viewer */}
-        <div className="glass-panel rounded-2xl sm:rounded-3xl p-3 sm:p-4 relative flex flex-col overflow-hidden border border-white/40 shadow-sm bg-white/60 backdrop-blur-xl min-h-[300px] sm:min-h-[400px] lg:min-h-[600px]">
-          <div className="absolute top-3 sm:top-6 left-3 sm:left-6 z-10 flex flex-col gap-1.5 sm:gap-2">
-            <Button
-              variant="secondary"
-              size="icon"
-              className="h-8 w-8 sm:h-10 sm:w-10 rounded-lg sm:rounded-xl bg-white/80 backdrop-blur shadow-sm hover:bg-white border border-white/50"
-            >
-              <ZoomIn className="h-4 w-4 sm:h-5 sm:w-5 text-slate-700" />
-            </Button>
-            <Button
-              variant="secondary"
-              size="icon"
-              className="h-8 w-8 sm:h-10 sm:w-10 rounded-lg sm:rounded-xl bg-white/80 backdrop-blur shadow-sm hover:bg-white border border-white/50"
-            >
-              <ZoomOut className="h-4 w-4 sm:h-5 sm:w-5 text-slate-700" />
-            </Button>
-            <Button
-              variant="secondary"
-              size="icon"
-              className="h-8 w-8 sm:h-10 sm:w-10 rounded-lg sm:rounded-xl bg-white/80 backdrop-blur shadow-sm hover:bg-white border border-white/50"
-            >
-              <Maximize2 className="h-4 w-4 sm:h-5 sm:w-5 text-slate-700" />
-            </Button>
-          </div>
-
-          {selectedLog && (
-            <div className="absolute top-3 sm:top-6 right-3 sm:right-6 z-10">
-              <Badge
-                variant="secondary"
-                className="bg-white/90 backdrop-blur-xl text-slate-800 px-2 sm:px-3 py-1 sm:py-1.5 rounded-md sm:rounded-lg shadow-sm border border-white/50 text-xs sm:text-sm"
-              >
-                <span className="mr-1 sm:mr-2">✨</span> AI Detected
-              </Badge>
-            </div>
-          )}
+        <figure className="order-2 flex min-h-[440px] flex-col overflow-hidden border border-[#ded9cd] bg-[#f4f1e9] p-3 lg:min-h-[620px] xl:order-1">
+          <figcaption className="px-1 pb-3 text-[10px] font-bold uppercase tracking-[0.16em] text-[#77736c]">Observation image</figcaption>
 
           {/* Main Image Area */}
-          <div className="flex-1 bg-slate-50/50 rounded-xl sm:rounded-2xl flex items-center justify-center overflow-hidden relative border border-slate-100/50">
+          <div className="relative flex flex-1 items-center justify-center overflow-hidden border border-[#ded9cd] bg-white">
             {selectedLog ? (
               <div className="relative h-full w-full">
                 {selectedLog.image_url ? (
@@ -298,8 +508,9 @@ export function SubjectPageClient({
                     src={selectedLog.image_url}
                     alt={`${selectedLog.stage} scan`}
                     fill
+                    priority
                     sizes="(max-width: 768px) 95vw, (max-width: 1024px) 90vw, 60vw"
-                    className="object-contain rounded-lg shadow-lg"
+                    className="object-contain"
                   />
                 ) : (
                   <div className="flex h-full w-full items-center justify-center text-slate-400">
@@ -318,45 +529,83 @@ export function SubjectPageClient({
               </div>
             )}
           </div>
-        </div>
+        </figure>
 
         {/* Right: Analysis Panel */}
-        <div className="flex flex-col gap-4 sm:gap-6">
+        <div className="order-1 flex flex-col xl:order-2">
           {/* Result Card */}
           {selectedLog ? (
-            <div className="glass-panel rounded-2xl sm:rounded-3xl p-4 sm:p-6 space-y-4 sm:space-y-6 border border-white/40 shadow-sm bg-white/60 backdrop-blur-xl">
+            <article className="space-y-5 border border-[#ded9cd] bg-white p-5 sm:p-6">
               <div>
-                <div className="text-xs font-bold uppercase text-slate-400 tracking-wider mb-1 sm:mb-2">
-                  Estrus Stage
+                <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#77736c]">Latest observation</p>
+                <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
+                  <h2 className="font-serif text-4xl tracking-tight text-[#292b4c]">{selectedLog.stage}</h2>
+                  <Badge variant="outline" className="border-[#b8b7e1] bg-[#eeedf9] text-[#353a87]">
+                    {isPairedCytology ? "Cytology-confirmed" : isManualReview ? "Scientist-reviewed" : "Model-assisted review"}
+                  </Badge>
                 </div>
-                <div className="text-2xl sm:text-4xl font-bold text-slate-900 tracking-tight">
-                  {selectedLog.stage}
-                </div>
+                <p className="mt-2 text-sm text-[#625f58]">
+                  {selectedContext?.capture_date
+                    ? format(new Date(`${selectedContext.capture_date}T00:00:00`), "MMMM d, yyyy")
+                    : format(new Date(selectedLog.created_at), "MMMM d, yyyy")}
+                </p>
+              </div>
 
-                <div className="flex justify-between text-sm mt-3 sm:mt-4 mb-2">
-                  <span className="text-slate-500 font-medium">
-                    Confidence Score
-                  </span>
-                  <span className="font-bold text-slate-900">
-                    {(Math.min(1, Math.max(0, confidenceScore)) * 100).toFixed(
-                      1
+              <section className="border-y border-[#ebe6dc] py-4">
+                <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#77736c]">Scientist note</p>
+                <p className="mt-2 text-sm leading-6 text-[#4f4b45]">
+                  {selectedLog.notes || "No note was added to this observation."}
+                </p>
+              </section>
+
+                {selectedExternalBinary && (
+                  <details data-testid="saved-binary-crosscheck" className="border border-[#b8b7e1] bg-[#eeedf9] p-4 text-sm">
+                    <summary className="flex cursor-pointer list-none items-center justify-between font-semibold text-[#30345f]">
+                      <span>Model cross-check · {selectedExternalBinary.decision_status === "reference_backed_suggestion" ? "reference-backed lead" : "abstained safely"}</span>
+                      <ChevronDown className="h-4 w-4" />
+                    </summary>
+                    <div className="mt-3 space-y-2 border-t border-[#d5d2e5] pt-3 text-xs leading-5 text-[#5e5d75]">
+                      <p><span className="font-semibold text-[#30345f]">Group:</span> {selectedExternalBinary.reference_backed_binary_suggestion === "PROESTRUS_OR_ESTRUS" ? "Proestrus / estrus" : selectedExternalBinary.reference_backed_binary_suggestion === "METESTRUS_OR_DIESTRUS" ? "Metestrus / diestrus" : "No reference-backed group"}</p>
+                      <p><span className="font-semibold text-[#30345f]">Raw early-group support:</span> {Math.round(selectedExternalBinary.probability_proestrus_or_estrus * 100)}%</p>
+                      <p><span className="font-semibold text-[#30345f]">Model:</span> <span className="font-mono">{selectedExternalBinary.model_version}</span></p>
+                      <p>This binary external-photo result is corroborating evidence only; it does not replace the saved four-stage decision or cytology.</p>
+                      {selectedModelInput?.readable_image_url && (
+                        <div className="border-t border-[#d5d2e5] pt-3">
+                          <div className="flex items-center justify-between gap-3"><p className="font-semibold text-[#30345f]">Prepared model input</p><span>{selectedModelInput.crop?.output_width || 640} × {selectedModelInput.crop?.output_height || 640}</span></div>
+                          <div className="relative mt-2 aspect-square overflow-hidden border border-[#b8b7e1] bg-white">
+                            <Image src={selectedModelInput.readable_image_url} alt="Prepared external-photo model input" fill sizes="280px" className="object-contain" />
+                            <div className="pointer-events-none absolute inset-[6.25%] border border-dashed border-white shadow-[0_0_0_999px_rgba(25,24,20,0.12)]" aria-hidden="true" />
+                          </div>
+                          <p className="mt-2">The original photo remains the observation image. This prepared ROI is the separate crop analyzed by the model.</p>
+                        </div>
+                      )}
+                    </div>
+                  </details>
+                )}
+
+                {selectedContext && (
+                  <details className="border border-[#ded9cd] bg-[#fbfaf7] p-4 text-sm text-[#4f4b45]">
+                    <summary className="flex cursor-pointer list-none items-center justify-between font-semibold text-[#4f4b45]">
+                      <span>Evidence and provenance</span><ChevronDown className="h-4 w-4" />
+                    </summary>
+                    <dl className="mt-2 grid gap-x-4 gap-y-1 sm:grid-cols-2">
+                      {formatModality(selectedContext.modality) && <><dt className="text-slate-500">Modality</dt><dd>{formatModality(selectedContext.modality)}</dd></>}
+                      {selectedContext.capture_date && <><dt className="text-slate-500">Captured</dt><dd>{format(new Date(`${selectedContext.capture_date}T00:00:00`), "MMM d, yyyy")}</dd></>}
+                      {selectedContext.label_status === "uncertain_or_transition" && <><dt className="text-slate-500">Label status</dt><dd>Uncertain / transition</dd></>}
+                      {isPairedCytology && <><dt className="text-slate-500">Confirmation</dt><dd>Paired vaginal cytology</dd></>}
+                      {selectedLog.reference_sample_id && <><dt className="text-slate-500">Reference sample</dt><dd>{selectedLog.reference_sample_id}</dd></>}
+                      {Object.entries(selectedCaptureMetadata).map(([key, value]) => <><dt key={`${key}-label`} className="text-slate-500">{CAPTURE_METADATA_LABELS[key] || key}</dt><dd key={`${key}-value`}>{value}</dd></>)}
+                    </dl>
+                    {selectedLog.reference_image_url && (
+                      <div className="mt-3 border-t border-slate-200 pt-3">
+                        <p className="mb-2 text-xs font-medium text-slate-500">Paired cytology reference</p>
+                        <div className="relative h-32 overflow-hidden rounded-lg border border-slate-200 bg-white">
+                          <Image src={selectedLog.reference_image_url} alt="Paired vaginal cytology reference" fill sizes="280px" className="object-contain" />
+                        </div>
+                      </div>
                     )}
-                    %
-                  </span>
-                </div>
-                {/* Progress bar */}
-                <div className="h-2.5 sm:h-3 bg-slate-100 rounded-full overflow-hidden shadow-inner mb-4 sm:mb-6">
-                  <MotionDiv
-                    initial={{ width: 0 }}
-                    animate={{ width: `${confidenceScore * 100}%` }}
-                    transition={{ duration: 0.5, ease: "easeOut" }}
-                    className="h-full rounded-full"
-                    style={{
-                      backgroundColor:
-                        STAGE_COLORS[selectedLog.stage] || "#3b82f6",
-                    }}
-                  />
-                </div>
+                  </details>
+                )}
 
                 {/* All Scores Breakdown */}
                 {(() => {
@@ -366,10 +615,9 @@ export function SubjectPageClient({
                   const typedScores = scores as Record<string, number>;
 
                   return (
-                    <div className="space-y-2">
-                      <div className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-2">
-                        Full Breakdown
-                      </div>
+                    <details className="border border-[#ded9cd] bg-[#fbfaf7] p-4">
+                      <summary className="cursor-pointer text-sm font-semibold text-[#4f4b45]">Legacy four-stage scores</summary>
+                      <div className="mt-3 space-y-2 border-t border-[#ded9cd] pt-3">
                       {Object.entries(typedScores).map(([stage, score]) => (
                         <div
                           key={stage}
@@ -394,7 +642,8 @@ export function SubjectPageClient({
                           </div>
                         </div>
                       ))}
-                    </div>
+                      </div>
+                    </details>
                   );
                 })()}
 
@@ -403,10 +652,9 @@ export function SubjectPageClient({
                   selectedLog.confidence &&
                   typeof selectedLog.confidence === "object" &&
                   Object.keys(selectedLog.confidence).length > 1 && (
-                    <div className="space-y-2">
-                      <div className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-2">
-                        Full Breakdown
-                      </div>
+                    <details className="border border-[#ded9cd] bg-[#fbfaf7] p-4">
+                      <summary className="cursor-pointer text-sm font-semibold text-[#4f4b45]">Legacy four-stage scores</summary>
+                      <div className="mt-3 space-y-2 border-t border-[#ded9cd] pt-3">
                       {Object.entries(selectedLog.confidence).map(
                         ([stage, score]) => {
                           if (stage === "score") return null; // Skip legacy field
@@ -438,68 +686,50 @@ export function SubjectPageClient({
                           );
                         }
                       )}
-                    </div>
+                      </div>
+                    </details>
                   )}
-              </div>
-
-              <div className="space-y-2 sm:space-y-3 pt-3 sm:pt-4 border-t border-slate-100">
-                <div className="text-xs font-bold uppercase text-slate-400 tracking-wider">
-                  Analysis Notes
-                </div>
-                <div className="text-sm text-slate-600 leading-relaxed bg-white/50 p-3 sm:p-4 rounded-lg sm:rounded-xl border border-white/50">
-                  {selectedLog.notes || "No notes available for this scan."}
-                </div>
-              </div>
-            </div>
+            </article>
           ) : (
             <div className="glass-panel rounded-2xl sm:rounded-3xl p-6 sm:p-8 flex flex-col items-center justify-center text-center text-slate-400 border border-white/40 shadow-sm bg-white/60 backdrop-blur-xl min-h-[200px] lg:h-full">
               <p className="text-sm sm:text-base">No scan selected</p>
             </div>
           )}
 
-          <LogEntryModal
-            subjectId={subject.id}
-            onLogCreated={handleLogCreated}
-          />
         </div>
       </div>
+      </>)}
 
       {/* Bottom: Data Library */}
-      <div className="glass-panel rounded-2xl sm:rounded-3xl p-4 sm:p-6 lg:p-8 flex flex-col gap-4 sm:gap-6 border border-white/40 shadow-sm bg-white/60 backdrop-blur-xl">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      {logs.length > 0 && <section className="order-5 flex flex-col gap-4 border border-[#ded9cd] bg-white p-5">
+        <div className="flex items-end justify-between gap-3">
           <div>
-            <div className="text-xs font-bold uppercase text-slate-400 tracking-wider mb-1">
-              Project: {subject.cohorts?.name || "Unassigned"}
-            </div>
-            <h2 className="text-xl sm:text-2xl font-bold text-slate-900">
-              Data Library
+            <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#77736c]">Saved record</p>
+            <h2 className="mt-1 font-serif text-2xl text-[#292b4c]">
+              All observations
             </h2>
           </div>
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-            <Input
-              placeholder="Search scans..."
-              className="pl-10 bg-white/70 border-slate-200 rounded-full w-full sm:w-72 focus:bg-white transition-all shadow-sm"
-            />
-          </div>
+          <span className="text-sm font-semibold text-[#625f58]">{logs.length}</span>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4 lg:gap-6">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
           {logs.map((log) => (
-            <div
+            <button
+              type="button"
               key={log.id}
-              className={`group cursor-pointer transition-all duration-200 ${
+              aria-pressed={selectedLog?.id === log.id}
+              className={`group text-left transition ${
                 selectedLog?.id === log.id
-                  ? "scale-[1.02] sm:scale-105"
-                  : "hover:scale-[1.01] sm:hover:scale-102"
+                  ? "text-[#353a87]"
+                  : "text-[#625f58] hover:text-[#292b4c]"
               }`}
               onClick={() => setSelectedLog(log)}
             >
               <div
-                className={`aspect-video rounded-lg sm:rounded-2xl bg-slate-100 overflow-hidden relative mb-1.5 sm:mb-2 border shadow-sm transition-all ${
+                className={`relative mb-2 aspect-video overflow-hidden border bg-[#f4f1e9] transition ${
                   selectedLog?.id === log.id
-                    ? "ring-2 ring-offset-1 sm:ring-offset-2 ring-primary border-primary"
-                    : "border-white/50 group-hover:shadow-md"
+                    ? "border-[#454a9f] ring-2 ring-[#454a9f]/20"
+                    : "border-[#ded9cd] group-hover:border-[#b8b7e1]"
                 }`}
               >
                 {log.image_url ? (
@@ -515,8 +745,6 @@ export function SubjectPageClient({
                     No preview
                   </div>
                 )}
-                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
-
                 <div className="absolute top-1.5 sm:top-2 right-1.5 sm:right-2">
                   <Badge
                     className={`
@@ -538,21 +766,15 @@ export function SubjectPageClient({
                   </Badge>
                 </div>
               </div>
-              <div className="flex justify-between items-center px-0.5 sm:px-1 mt-1 sm:mt-2">
-                <span
-                  className={`text-[10px] sm:text-xs font-medium ${
-                    selectedLog?.id === log.id
-                      ? "text-primary"
-                      : "text-slate-500"
-                  }`}
-                >
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-medium">
                   {format(new Date(log.created_at), "MMM d, yyyy")}
                 </span>
               </div>
-            </div>
+            </button>
           ))}
         </div>
-      </div>
+      </section>}
     </div>
   );
 }

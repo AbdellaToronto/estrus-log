@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Plus, Users, MoreHorizontal } from "lucide-react";
+import { Plus, MoreHorizontal } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,31 +20,43 @@ import Link from "next/link";
 type Cohort = {
   id: string;
   name: string;
-  description: string;
+  description: string | null;
   color: string;
 };
 
-export function CohortManager({ cohorts, onAddCohort }: { cohorts: Cohort[], onAddCohort: (c: Cohort) => void }) {
+export type NewCohort = {
+  name: string;
+  description: string;
+};
+
+export function CohortManager({ cohorts, onAddCohort }: { cohorts: Cohort[], onAddCohort: (c: NewCohort) => Promise<void> }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
+  const [isCreating, setIsCreating] = useState(false);
 
-  const handleAdd = () => {
-    onAddCohort({
-      id: Math.random().toString(36).substring(7),
-      name,
-      description,
-      color: 'bg-blue-500' // Randomize later
-    });
-    setOpen(false);
-    setName('');
-    setDescription('');
+  const handleAdd = async () => {
+    const trimmedName = name.trim();
+    if (!trimmedName) return;
+
+    setIsCreating(true);
+    try {
+      await onAddCohort({ name: trimmedName, description: description.trim() });
+      setOpen(false);
+      setName('');
+      setDescription('');
+    } finally {
+      setIsCreating(false);
+    }
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold tracking-tight">Cohorts</h2>
+        <div>
+          <h2 className="text-lg font-semibold tracking-tight">Your cohorts</h2>
+          <p className="mt-1 text-sm text-muted-foreground">Open a cohort to add subjects, upload images, or review its activity.</p>
+        </div>
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
             <Button variant="outline" size="sm">
@@ -64,7 +76,9 @@ export function CohortManager({ cohorts, onAddCohort }: { cohorts: Cohort[], onA
                 <Label htmlFor="desc">Description</Label>
                 <Input id="desc" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Optional description" />
               </div>
-              <Button onClick={handleAdd}>Create Cohort</Button>
+              <Button onClick={handleAdd} disabled={!name.trim() || isCreating}>
+                {isCreating ? 'Creating…' : 'Create Cohort'}
+              </Button>
             </div>
           </DialogContent>
         </Dialog>
@@ -72,7 +86,7 @@ export function CohortManager({ cohorts, onAddCohort }: { cohorts: Cohort[], onA
 
       <div className="grid gap-2">
         {cohorts.map((cohort) => (
-          <div key={cohort.id} className="flex items-center justify-between p-3 border rounded-lg bg-card hover:bg-accent/50 transition-colors group">
+          <div key={cohort.id} className="group flex items-center justify-between rounded-xl border border-border/80 bg-background p-3 transition-colors hover:border-primary/30 hover:bg-primary/[0.02]">
             <Link href={`/cohorts/${cohort.id}`} className="flex items-center gap-3 flex-1">
               <div className={`w-3 h-3 rounded-full ${cohort.color}`} />
               <div>

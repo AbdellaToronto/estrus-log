@@ -3,459 +3,323 @@
 import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { motion, AnimatePresence } from "framer-motion";
 import {
+  AlertTriangle,
   ArrowLeft,
-  Calendar,
-  Clock,
+  ArrowRight,
+  Check,
   ImageIcon,
-  CheckCircle2,
-  AlertCircle,
-  Loader2,
-  Users,
-  Download,
-  Grid,
-  List,
-  FlaskConical,
-  Sparkles,
-  Eye,
+  Microscope,
+  Plus,
+  UserRound,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import type { ScanSessionDetail } from "@/app/actions";
 
-const STAGE_COLORS: Record<string, string> = {
-  Proestrus: "#F472B6",
-  Estrus: "#EF4444",
-  Metestrus: "#A855F7",
-  Diestrus: "#3B82F6",
+const STAGE_TONES: Record<string, string> = {
+  Proestrus: "border-pink-200 bg-pink-50 text-pink-800",
+  Estrus: "border-rose-200 bg-rose-50 text-rose-800",
+  Metestrus: "border-violet-200 bg-violet-50 text-violet-800",
+  Diestrus: "border-blue-200 bg-blue-50 text-blue-800",
 };
 
-const STAGE_BG: Record<string, string> = {
-  Proestrus: "bg-pink-100",
-  Estrus: "bg-red-100",
-  Metestrus: "bg-purple-100",
-  Diestrus: "bg-blue-100",
-};
-
-function formatDateTime(dateString: string) {
-  const date = new Date(dateString);
-  return date.toLocaleString(undefined, {
+function formatDate(value: string) {
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(value)
+    ? new Date(`${value}T00:00:00`)
+    : new Date(value);
+  return date.toLocaleDateString(undefined, {
     weekday: "long",
-    year: "numeric",
     month: "long",
     day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
+    year: "numeric",
   });
 }
 
-function formatShortDate(dateString: string) {
-  const date = new Date(dateString);
-  return date.toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
+function modelLead(item: ScanSessionDetail["items"][number]) {
+  const model = item.binaryModel;
+  if (!model) return null;
+  if (model.decisionStatus === "abstain") return "Model: no suggestion";
 
-function SessionStatusBadge({ status }: { status: string }) {
-  const config: Record<
-    string,
-    { label: string; className: string; icon: React.ReactNode }
-  > = {
-    pending: {
-      label: "In Progress",
-      className: "bg-amber-100 text-amber-700 border-amber-200",
-      icon: <Loader2 className="w-3 h-3 animate-spin" />,
-    },
-    processing: {
-      label: "Processing",
-      className: "bg-blue-100 text-blue-700 border-blue-200",
-      icon: <Loader2 className="w-3 h-3 animate-spin" />,
-    },
-    review: {
-      label: "Needs Review",
-      className: "bg-orange-100 text-orange-700 border-orange-200",
-      icon: <AlertCircle className="w-3 h-3" />,
-    },
-    completed: {
-      label: "Completed",
-      className: "bg-green-100 text-green-700 border-green-200",
-      icon: <CheckCircle2 className="w-3 h-3" />,
-    },
-  };
-
-  const { label, className, icon } = config[status] || config.pending;
-
-  return (
-    <Badge variant="outline" className={`${className} gap-1 text-sm px-3 py-1`}>
-      {icon}
-      {label}
-    </Badge>
-  );
-}
-
-function StageDistributionChart({
-  breakdown,
-  total,
-}: {
-  breakdown: Record<string, number>;
-  total: number;
-}) {
-  if (total === 0) {
-    return (
-      <div className="text-center py-8 text-slate-500">
-        No classifications yet
-      </div>
-    );
+  const suggestion = model.suggestion?.toLowerCase() || "";
+  if (suggestion.includes("proestrus") || suggestion.includes("estrus") || suggestion.includes("early")) {
+    return "Model lead: earlier-cycle";
   }
+  if (suggestion.includes("metestrus") || suggestion.includes("diestrus") || suggestion.includes("late")) {
+    return "Model lead: later-cycle";
+  }
+  return "Model suggestion available";
+}
+
+function StageSummary({ breakdown }: { breakdown: Record<string, number> }) {
+  const entries = Object.entries(breakdown).filter(([, count]) => count > 0);
+  if (!entries.length) return null;
 
   return (
-    <div className="space-y-3">
-      {Object.entries(STAGE_COLORS).map(([stage, color]) => {
-        const count = breakdown[stage] || 0;
-        const percent = total > 0 ? (count / total) * 100 : 0;
-
-        return (
-          <div key={stage} className="space-y-1">
-            <div className="flex justify-between text-sm">
-              <span className="font-medium text-slate-700">{stage}</span>
-              <span className="text-slate-500">
-                {count} ({percent.toFixed(0)}%)
-              </span>
-            </div>
-            <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-              <motion.div
-                initial={{ width: 0 }}
-                animate={{ width: `${percent}%` }}
-                transition={{ duration: 0.5, ease: "easeOut" }}
-                className="h-full rounded-full"
-                style={{ backgroundColor: color }}
-              />
-            </div>
-          </div>
-        );
-      })}
-    </div>
+    <details className="border-t border-[#ded9cd] px-5 py-4">
+      <summary className="cursor-pointer text-sm font-medium text-[#353a87]">
+        Scientist-confirmed stage distribution
+      </summary>
+      <div className="mt-4 flex flex-wrap gap-2">
+        {entries.map(([stage, count]) => (
+          <span
+            key={stage}
+            className={`rounded-full border px-3 py-1 text-sm ${STAGE_TONES[stage] || "border-slate-200 bg-slate-50 text-slate-700"}`}
+          >
+            {stage} {count}
+          </span>
+        ))}
+      </div>
+    </details>
   );
 }
 
-function ImageGrid({
+function PhotoGrid({
   items,
+  recordsAreSaved,
 }: {
   items: ScanSessionDetail["items"];
+  recordsAreSaved: boolean;
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selected = items.find((item) => item.id === selectedId) || null;
 
   return (
     <>
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {items.map((item, index) => {
-          const result = item.ai_result as {
-            stage?: string;
-            confidence?: number;
-          } | null;
-          const stage = result?.stage || "Unknown";
-          const confidence = result?.confidence || 0;
-
+          const aid = modelLead(item);
           return (
-            <motion.div
+            <button
               key={item.id}
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ delay: index * 0.02 }}
-              className="group relative aspect-square rounded-xl overflow-hidden bg-slate-100 cursor-pointer"
+              type="button"
               onClick={() => setSelectedId(item.id)}
+              className="group overflow-hidden border border-[#ded9cd] bg-white text-left transition-colors hover:border-[#9b9dcc] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#454a9f] focus-visible:ring-offset-2"
+              aria-label={`Open photo ${index + 1}${item.mouse_name ? ` for ${item.mouse_name}` : ""}`}
             >
-              {item.image_url ? (
-                <Image
-                  src={item.image_url}
-                  alt={`Scan ${index + 1}`}
-                  fill
-                  className="object-cover group-hover:scale-105 transition-transform duration-300"
-                  sizes="(max-width: 640px) 50vw, (max-width: 768px) 33vw, (max-width: 1024px) 25vw, 20vw"
-                />
-              ) : (
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <ImageIcon className="w-8 h-8 text-slate-300" />
-                </div>
-              )}
-
-              {/* Stage badge overlay */}
-              <div className="absolute bottom-0 left-0 right-0 p-2 bg-gradient-to-t from-black/60 to-transparent">
-                <div className="flex items-center justify-between">
-                  <Badge
-                    className="text-xs"
-                    style={{
-                      backgroundColor: `${STAGE_COLORS[stage]}`,
-                      color: "white",
-                    }}
-                  >
-                    {stage}
-                  </Badge>
-                  {confidence > 0 && (
-                    <span className="text-xs text-white/80">
-                      {(confidence * 100).toFixed(0)}%
+              <div className="relative aspect-[4/3] bg-[#f1eee7]">
+                {item.image_url ? (
+                  <Image
+                    src={item.image_url}
+                    alt={`Batch photo ${index + 1}`}
+                    fill
+                    className="object-contain"
+                    sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+                  />
+                ) : (
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <ImageIcon className="h-8 w-8 text-[#aaa59b]" />
+                  </div>
+                )}
+              </div>
+              <div className="space-y-2 border-t border-[#ded9cd] p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-semibold text-[#292b4c]">
+                      {item.mouse_name || `Photo ${index + 1}`}
+                    </p>
+                    <p className="mt-0.5 text-xs text-[#77736c]">
+                      {recordsAreSaved ? "Saved observation" : "Awaiting scientist review"}
+                    </p>
+                  </div>
+                  {recordsAreSaved && item.savedStage ? (
+                    <span className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-medium ${STAGE_TONES[item.savedStage] || "border-slate-200 bg-slate-50 text-slate-700"}`}>
+                      {item.savedStage}
+                    </span>
+                  ) : (
+                    <span className="shrink-0 rounded-full bg-[#fff1dc] px-2.5 py-1 text-xs font-medium text-[#8d4834]">
+                      Review
                     </span>
                   )}
                 </div>
+                {aid && (
+                  <p className="text-xs text-[#625f58]">{aid}</p>
+                )}
               </div>
-
-              {/* Subject name */}
-              {item.mouse_name && (
-                <div className="absolute top-2 left-2">
-                  <Badge variant="secondary" className="text-xs bg-white/90">
-                    {item.mouse_name}
-                  </Badge>
-                </div>
-              )}
-
-              {/* Hover overlay */}
-              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
-                <Eye className="w-6 h-6 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
-              </div>
-            </motion.div>
+            </button>
           );
         })}
       </div>
 
-      {/* Lightbox */}
-      <AnimatePresence>
-        {selectedId && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4"
-            onClick={() => setSelectedId(null)}
-          >
-            {(() => {
-              const item = items.find((i) => i.id === selectedId);
-              if (!item) return null;
-              const result = item.ai_result as {
-                stage?: string;
-                confidence?: number;
-              } | null;
-
-              return (
-                <motion.div
-                  initial={{ scale: 0.9 }}
-                  animate={{ scale: 1 }}
-                  exit={{ scale: 0.9 }}
-                  className="relative max-w-4xl max-h-[90vh] w-full"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  {item.image_url && (
-                    <Image
-                      src={item.image_url}
-                      alt="Scan detail"
-                      width={1200}
-                      height={900}
-                      className="rounded-xl object-contain w-full h-auto max-h-[80vh]"
-                    />
-                  )}
-                  <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      {result?.stage && (
-                        <Badge
-                          className="text-sm px-3 py-1"
-                          style={{
-                            backgroundColor: STAGE_COLORS[result.stage],
-                            color: "white",
-                          }}
-                        >
-                          {result.stage}
-                        </Badge>
-                      )}
-                      {item.mouse_name && (
-                        <Badge variant="secondary" className="text-sm px-3 py-1">
-                          {item.mouse_name}
-                        </Badge>
-                      )}
-                    </div>
-                    {result?.confidence && (
-                      <span className="text-white text-sm">
-                        {(result.confidence * 100).toFixed(1)}% confidence
-                      </span>
-                    )}
+      <Dialog open={Boolean(selected)} onOpenChange={(open) => !open && setSelectedId(null)}>
+        <DialogContent className="max-h-[92vh] max-w-4xl overflow-y-auto p-0">
+          {selected && (
+            <>
+              <div className="relative aspect-[4/3] max-h-[68vh] w-full bg-[#171717]">
+                {selected.image_url ? (
+                  <Image
+                    src={selected.image_url}
+                    alt={selected.mouse_name ? `Observation for ${selected.mouse_name}` : "Batch observation"}
+                    fill
+                    className="object-contain"
+                    sizes="90vw"
+                    priority
+                  />
+                ) : (
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <ImageIcon className="h-10 w-10 text-white/40" />
                   </div>
-                </motion.div>
-              );
-            })()}
-          </motion.div>
-        )}
-      </AnimatePresence>
+                )}
+              </div>
+              <div className="space-y-4 p-6">
+                <DialogHeader>
+                  <DialogTitle className="font-serif text-3xl text-[#292b4c]">
+                    {selected.mouse_name || "Batch photo"}
+                  </DialogTitle>
+                  <DialogDescription>
+                    {recordsAreSaved && selected.savedStage
+                      ? `Scientist-confirmed stage: ${selected.savedStage}`
+                      : "This photo still needs scientist review before it becomes a record."}
+                  </DialogDescription>
+                </DialogHeader>
+                {selected.notes && (
+                  <div className="border-l-2 border-[#b8b7e1] pl-4 text-sm text-[#625f58]">
+                    {selected.notes}
+                  </div>
+                )}
+                {selected.binaryModel && (
+                  <details className="border border-[#ded9cd] bg-[#fbfaf7] p-4">
+                    <summary className="cursor-pointer text-sm font-medium text-[#353a87]">
+                      Binary model review aid
+                    </summary>
+                    <div className="mt-3 space-y-1 text-sm text-[#625f58]">
+                      <p>{modelLead(selected)}</p>
+                      {typeof selected.binaryModel.probabilityEarly === "number" && (
+                        <p>
+                          Earlier-cycle probability: {Math.round(selected.binaryModel.probabilityEarly * 100)}%
+                        </p>
+                      )}
+                      {selected.binaryModel.modelVersion && <p>Model: {selected.binaryModel.modelVersion}</p>}
+                      <p className="pt-1 text-xs">
+                        This is supporting evidence only. It does not assign the four-stage record.
+                      </p>
+                    </div>
+                  </details>
+                )}
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
 
-export function ScanReceiptClient({
-  session,
-}: {
-  session: ScanSessionDetail;
-}) {
-  const successRate =
-    session.itemCount > 0
-      ? ((session.completedCount / session.itemCount) * 100).toFixed(0)
-      : "0";
+export function ScanReceiptClient({ session }: { session: ScanSessionDetail }) {
+  const recordsAreSaved = session.workflowStatus === "saved";
+  const captureDate = session.captureDate || session.created_at;
+  const cohortId = session.cohort?.id;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-blue-50/30">
-      {/* Header */}
-      <div className="border-b bg-white/80 backdrop-blur-sm sticky top-0 z-10">
-        <div className="max-w-6xl mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              {session.cohort && (
-                <Link
-                  href={`/cohorts/${session.cohort.id}/scans`}
-                  className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
-                >
-                  <ArrowLeft className="w-5 h-5 text-slate-600" />
-                </Link>
-              )}
-              <div>
-                <div className="flex items-center gap-3">
-                  <h1 className="text-xl font-bold text-slate-900">
-                    {session.name || "Scan Session"}
-                  </h1>
-                  <SessionStatusBadge status={session.status} />
-                </div>
-                <p className="text-sm text-slate-500">
-                  {session.cohort?.name} • {formatDateTime(session.created_at)}
-                </p>
-              </div>
+    <div className="page-shell space-y-6 pb-20">
+      <header className="border-b border-[#d9d4c8] pb-6 pt-2">
+        {session.cohort && (
+          <Link
+            href={`/cohorts/${session.cohort.id}/scans`}
+            className="mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-[#625f58] hover:text-[#353a87]"
+          >
+            <ArrowLeft className="h-4 w-4" /> Batch history
+          </Link>
+        )}
+        <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+          <div>
+            <p className="page-eyebrow">{recordsAreSaved ? "Batch receipt" : "Batch session"}</p>
+            <h1 className="mt-2 font-serif text-4xl tracking-tight text-[#292b4c] sm:text-5xl">
+              {session.name || "Untitled batch"}
+            </h1>
+            <p className="mt-2 text-sm text-[#625f58]">
+              {session.cohort?.name || "Cohort"} · Captured {formatDate(captureDate)}
+            </p>
+          </div>
+          {cohortId && (
+            <Button asChild className="w-fit bg-[#454a9f] text-white hover:bg-[#383d86]">
+              <Link href={`/cohorts/${cohortId}/batch`}>
+                {recordsAreSaved ? <Plus className="h-4 w-4" /> : <ArrowRight className="h-4 w-4" />}
+                {recordsAreSaved ? "New batch" : "Resume review"}
+              </Link>
+            </Button>
+          )}
+        </div>
+      </header>
+
+      <section className={`border ${recordsAreSaved ? "border-[#cddfd4] bg-[#f6fbf7]" : "border-[#dfc3a7] bg-[#fff8ed]"}`}>
+        <div className="grid gap-5 p-5 md:grid-cols-[auto_minmax(0,1fr)_auto] md:items-center">
+          <div className={`flex h-12 w-12 items-center justify-center rounded-full ${recordsAreSaved ? "bg-emerald-100 text-emerald-800" : "bg-[#ffe7c4] text-[#8d4834]"}`}>
+            {recordsAreSaved ? <Check className="h-6 w-6" /> : <AlertTriangle className="h-6 w-6" />}
+          </div>
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#77736c]">
+              {recordsAreSaved ? "Saved to the study record" : "Action needed"}
+            </p>
+            <h2 className="mt-1 font-serif text-3xl text-[#292b4c]">
+              {recordsAreSaved
+                ? `${session.completedCount} scientist-confirmed record${session.completedCount === 1 ? "" : "s"}`
+                : `${session.actionCount} photo${session.actionCount === 1 ? "" : "s"} still need review`}
+            </h2>
+            <p className="mt-1 text-sm text-[#625f58]">
+              {recordsAreSaved
+                ? "These stages were saved by a scientist after review."
+                : "Confirm each subject, stage, and note before saving the batch."}
+            </p>
+          </div>
+          <div className="flex gap-6 md:text-right">
+            <div>
+              <p className="text-2xl font-semibold text-[#292b4c]">{session.itemCount}</p>
+              <p className="text-xs text-[#77736c]">photos</p>
             </div>
-            <div className="flex items-center gap-2">
-              {session.cohort && (
-                <Link href={`/cohorts/${session.cohort.id}/batch`}>
-                  <Button variant="outline" className="gap-2">
-                    <Sparkles className="w-4 h-4" />
-                    Re-analyze
-                  </Button>
-                </Link>
-              )}
+            <div>
+              <p className="text-2xl font-semibold text-[#292b4c]">{session.subjectsLogged.length}</p>
+              <p className="text-xs text-[#77736c]">subjects</p>
             </div>
           </div>
         </div>
-      </div>
+        {recordsAreSaved && <StageSummary breakdown={session.stageBreakdown} />}
+      </section>
 
-      <div className="max-w-6xl mx-auto px-4 py-8">
-        {/* Receipt Card */}
-        <Card className="mb-8 overflow-hidden">
-          <div className="bg-gradient-to-r from-rose-500 to-pink-500 px-6 py-4">
-            <div className="flex items-center gap-3 text-white">
-              <div className="p-2 bg-white/20 rounded-lg">
-                <FlaskConical className="w-6 h-6" />
-              </div>
-              <div>
-                <h2 className="text-lg font-semibold">Scan Receipt</h2>
-                <p className="text-rose-100 text-sm">
-                  Session ID: {session.id.slice(0, 8)}...
-                </p>
-              </div>
-            </div>
+      {recordsAreSaved && session.subjectsLogged.length > 0 && (
+        <section className="border border-[#ded9cd] bg-white p-5" aria-labelledby="subjects-heading">
+          <div className="flex items-center gap-2">
+            <UserRound className="h-4 w-4 text-[#625f58]" />
+            <h2 id="subjects-heading" className="text-sm font-semibold text-[#292b4c]">Subjects in this batch</h2>
           </div>
-          <CardContent className="p-6">
-            <div className="grid md:grid-cols-3 gap-6">
-              {/* Summary Stats */}
-              <div className="space-y-4">
-                <h3 className="font-semibold text-slate-900 flex items-center gap-2">
-                  <ImageIcon className="w-4 h-4 text-slate-500" />
-                  Summary
-                </h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="p-3 bg-slate-50 rounded-lg">
-                    <p className="text-2xl font-bold text-slate-900">
-                      {session.itemCount}
-                    </p>
-                    <p className="text-xs text-slate-500">Images Uploaded</p>
-                  </div>
-                  <div className="p-3 bg-green-50 rounded-lg">
-                    <p className="text-2xl font-bold text-green-600">
-                      {session.completedCount}
-                    </p>
-                    <p className="text-xs text-slate-500">Classified</p>
-                  </div>
-                  <div className="p-3 bg-blue-50 rounded-lg col-span-2">
-                    <p className="text-2xl font-bold text-blue-600">
-                      {successRate}%
-                    </p>
-                    <p className="text-xs text-slate-500">Success Rate</p>
-                  </div>
-                </div>
-              </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {session.subjectsLogged.map((subject) => (
+              <Link
+                key={subject.id}
+                href={`/subjects/${subject.id}`}
+                className="rounded-full border border-[#d5d0c5] bg-[#fbfaf7] px-3 py-1.5 text-sm text-[#353a87] hover:border-[#9b9dcc]"
+              >
+                {subject.name} · {subject.logCount}
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
 
-              {/* Stage Distribution */}
-              <div className="space-y-4">
-                <h3 className="font-semibold text-slate-900 flex items-center gap-2">
-                  <Sparkles className="w-4 h-4 text-slate-500" />
-                  Stage Distribution
-                </h3>
-                <StageDistributionChart
-                  breakdown={session.stageBreakdown}
-                  total={session.completedCount}
-                />
-              </div>
-
-              {/* Subjects Logged */}
-              <div className="space-y-4">
-                <h3 className="font-semibold text-slate-900 flex items-center gap-2">
-                  <Users className="w-4 h-4 text-slate-500" />
-                  Subjects Logged ({session.subjectsLogged.length})
-                </h3>
-                {session.subjectsLogged.length > 0 ? (
-                  <div className="space-y-2 max-h-48 overflow-y-auto">
-                    {session.subjectsLogged.map((subject) => (
-                      <Link
-                        key={subject.id}
-                        href={`/subjects/${subject.id}`}
-                        className="flex items-center justify-between p-2 hover:bg-slate-50 rounded-lg transition-colors"
-                      >
-                        <span className="font-medium text-slate-700">
-                          {subject.name}
-                        </span>
-                        <Badge variant="secondary">{subject.logCount} scans</Badge>
-                      </Link>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-sm text-slate-500">
-                    No subjects assigned yet
-                  </p>
-                )}
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Images Grid */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Grid className="w-5 h-5" />
-              Scan Images ({session.items.length})
-            </CardTitle>
-            <CardDescription>
-              Click any image to view details
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ImageGrid items={session.items} />
-          </CardContent>
-        </Card>
-      </div>
+      <section aria-labelledby="batch-photos-heading">
+        <div className="mb-4 flex items-end justify-between gap-4 border-b border-[#d9d4c8] pb-3">
+          <div>
+            <p className="page-eyebrow">Visual record</p>
+            <h2 id="batch-photos-heading" className="mt-1 font-serif text-3xl text-[#292b4c]">
+              {recordsAreSaved ? "Saved observations" : "Photos awaiting review"}
+            </h2>
+          </div>
+          <Microscope className="h-5 w-5 text-[#77736c]" />
+        </div>
+        {session.items.length > 0 ? (
+          <PhotoGrid items={session.items} recordsAreSaved={recordsAreSaved} />
+        ) : (
+          <div className="border border-dashed border-[#cfc9bc] bg-[#fbfaf7] p-10 text-center text-sm text-[#625f58]">
+            No photos are attached to this session.
+          </div>
+        )}
+      </section>
     </div>
   );
 }
-

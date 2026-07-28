@@ -84,9 +84,17 @@ export function CohortSubjectsList({ subjects }: { subjects: Subject[] }) {
               </TableRow>
             ) : (
               filteredSubjects.map((subject) => {
-                const metadata = (subject.metadata || {}) as Record<string, any>;
+                const metadata = subject.metadata ?? {};
+                const getMetadataValue = (key: string) => {
+                  const value = metadata[key];
+                  return typeof value === "string" || typeof value === "number"
+                    ? String(value)
+                    : null;
+                };
+                const cageNumber = getMetadataValue("cage_number");
+                const genotype = getMetadataValue("genotype");
                 // Check both top-level column and metadata for DOB
-                const dob = subject.dob || metadata.dob;
+                const dob = subject.dob || getMetadataValue("dob");
                 
                 return (
                   <TableRow key={subject.id} className="group hover:bg-white/60 transition-colors border-slate-100">
@@ -102,18 +110,18 @@ export function CohortSubjectsList({ subjects }: { subjects: Subject[] }) {
                       </Link>
                     </TableCell>
                     <TableCell>
-                      {metadata.cage_number ? (
+                      {cageNumber ? (
                         <Badge variant="secondary" className="bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200 font-mono text-xs">
-                          {metadata.cage_number}
+                          {cageNumber}
                         </Badge>
                       ) : (
                         <span className="text-slate-400 text-sm">-</span>
                       )}
                     </TableCell>
                     <TableCell>
-                      {metadata.genotype ? (
+                      {genotype ? (
                         <span className="font-mono text-xs font-medium bg-purple-50 text-purple-700 px-2.5 py-1 rounded-md border border-purple-100">
-                          {metadata.genotype}
+                          {genotype}
                         </span>
                       ) : (
                         <span className="text-slate-400 text-sm">-</span>
@@ -159,7 +167,6 @@ export function CohortSubjectsList({ subjects }: { subjects: Subject[] }) {
     </div>
   );
 }
-
 
 
 

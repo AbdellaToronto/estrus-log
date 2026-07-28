@@ -1,170 +1,96 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { Building2, CalendarDays, FlaskConical, Settings, TestTube, Users } from "lucide-react";
+import { UserButton, useOrganization } from "@clerk/nextjs";
 import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
-import { 
-  LayoutDashboard, 
-  Users, 
-  Library, 
-  Settings, 
-  FlaskConical,
-  TestTube,
-  Search,
-  Building2,
-} from "lucide-react";
-import { UserButton, OrganizationSwitcher, useUser, useOrganization } from "@clerk/nextjs";
 
-// Navigation items when user HAS an organization
 const ORG_NAV_ITEMS = [
-  { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-  { label: 'Cohorts', href: '/cohorts', icon: Users },
-  { label: 'Experiments', href: '/experiments', icon: TestTube },
-  { label: 'Library', href: '/library', icon: Library },
-  { label: 'Settings', href: '/settings', icon: Settings },
+  { label: "Today", href: "/dashboard", icon: CalendarDays },
+  { label: "Cohorts", href: "/cohorts", icon: Users },
+  { label: "Studies", href: "/experiments", icon: TestTube },
+] as const;
+
+const HIDDEN_PATHS = [
+  "/sign-in",
+  "/sign-up",
+  "/onboarding",
+  "/onboarding-flow-lab",
+  "/workflow-lab",
+  "/observation-lab",
+  "/cohort-lab",
+  "/dashboard-lab",
+  "/experiments-lab",
+  "/experiment-detail-lab",
 ];
 
-// Navigation items when user has NO organization (exploring)
-const EXPLORE_NAV_ITEMS = [
-  { label: 'Find a Lab', href: '/discover', icon: Search },
-];
-
+/**
+ * Kept under the historical Sidebar export to avoid touching the root layout,
+ * but deliberately rendered as the quiet, persistent lab header used by the
+ * Daily Brief and Batch Review designs.
+ */
 export function Sidebar() {
   const pathname = usePathname();
-  const { user } = useUser();
   const { organization } = useOrganization();
+  const isLocalRehearsal = process.env.NEXT_PUBLIC_ESTRUS_LOCAL_TEST_IDENTITY === "true";
+  const hasOrg = isLocalRehearsal || Boolean(organization);
 
-  const hasOrg = !!organization;
-  const navItems = hasOrg ? ORG_NAV_ITEMS : EXPLORE_NAV_ITEMS;
-
-  // Don't show sidebar on certain pages
-  const hiddenPaths = ['/sign-in', '/sign-up'];
-  if (hiddenPaths.some(path => pathname.startsWith(path))) {
-    return null;
-  }
+  if (HIDDEN_PATHS.some((path) => pathname.startsWith(path))) return null;
 
   return (
-    <aside className="fixed left-4 top-4 bottom-4 w-64 rounded-3xl glass-panel flex flex-col p-6 z-50">
-      {/* Logo */}
-      <div className="flex items-center gap-3 mb-8 px-2">
-        <div className="w-10 h-10 rounded-xl bg-primary/20 flex items-center justify-center text-primary">
-          <FlaskConical className="w-6 h-6" />
-        </div>
-        <div>
-          <h1 className="font-bold text-lg leading-none">Estrus Log</h1>
-          <p className="text-xs text-muted-foreground">Research Platform</p>
+    <header className="fixed inset-x-0 top-0 z-40 hidden h-16 border-b border-[#ded9cd] bg-[#fbfaf7]/95 backdrop-blur-lg lg:block">
+      <div className="mx-auto flex h-full max-w-[1440px] items-center px-7">
+        <Link href={hasOrg ? "/dashboard" : "/discover"} className="mr-12 flex items-center gap-2 text-[#292b4c]">
+          <FlaskConical className="h-5 w-5" aria-hidden="true" />
+          <span className="font-serif text-xl font-semibold tracking-tight">Estrus Log</span>
+        </Link>
+
+        <nav className="flex h-full items-center gap-1" aria-label="Primary navigation">
+          {(hasOrg ? ORG_NAV_ITEMS : [{ label: "Find a lab", href: "/discover", icon: Building2 }]).map((item) => {
+            const active = pathname === item.href || (item.href !== "/dashboard" && pathname.startsWith(item.href));
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                aria-current={active ? "page" : undefined}
+                className={cn(
+                  "relative flex h-full items-center gap-2 px-4 text-sm font-medium transition-colors",
+                  active ? "text-[#292b4c]" : "text-[#68645d] hover:text-[#353a87]"
+                )}
+              >
+                <item.icon className="h-4 w-4" aria-hidden="true" />
+                {item.label}
+                {active && <span className="absolute inset-x-3 bottom-0 h-0.5 bg-[#454a9f]" />}
+              </Link>
+            );
+          })}
+        </nav>
+
+        <div className="ml-auto flex items-center gap-3">
+          {isLocalRehearsal && (
+            <span className="hidden rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-emerald-800 xl:inline-flex">
+              Local rehearsal
+            </span>
+          )}
+          {hasOrg && (
+            <Link href="/settings" aria-label="Settings" className="rounded-lg p-2 text-[#68645d] hover:bg-[#f0ede5] hover:text-[#353a87]">
+              <Settings className="h-4 w-4" />
+            </Link>
+          )}
+          {isLocalRehearsal ? (
+            <div className="flex items-center gap-2 border-l border-[#ded9cd] pl-3">
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#e8e7f5] text-xs font-bold text-[#353a87]">LS</div>
+              <div className="hidden leading-tight xl:block">
+                <p className="text-xs font-semibold text-[#292b4c]">Local Scientist</p>
+                <p className="text-[10px] text-[#77736c]">Estrus Lab</p>
+              </div>
+            </div>
+          ) : (
+            <UserButton afterSignOutUrl="/" />
+          )}
         </div>
       </div>
-      
-      {/* Organization Switcher - only show if user has orgs */}
-      {hasOrg ? (
-        <div className="mb-6 px-2">
-          <OrganizationSwitcher 
-            hidePersonal={true}
-            afterCreateOrganizationUrl="/dashboard"
-            afterSelectOrganizationUrl="/dashboard"
-            afterSelectPersonalUrl="/onboarding"
-            organizationProfileMode="navigation"
-            organizationProfileUrl="/organization"
-            appearance={{
-              elements: {
-                rootBox: "w-full",
-                organizationSwitcherTrigger: "w-full flex items-center justify-between p-2 rounded-xl hover:bg-white/5 transition-colors",
-                organizationPreviewTextContainer: "mr-auto",
-                organizationPreviewMainIdentifier: "text-sm font-medium text-foreground",
-                organizationPreviewSecondaryIdentifier: "text-xs text-muted-foreground"
-              }
-            }}
-          />
-        </div>
-      ) : (
-        <div className="mb-6 px-2">
-          <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20">
-            <div className="flex items-center gap-2 text-amber-600 mb-1">
-              <Building2 className="w-4 h-4" />
-              <span className="text-sm font-medium">No Lab Selected</span>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Join or create a lab to access all features
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* Main Navigation */}
-      <nav className="flex-1 space-y-1">
-        {/* Section Label */}
-        <div className="px-4 py-2">
-          <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-            {hasOrg ? 'Lab Tools' : 'Explore'}
-          </span>
-        </div>
-        
-        {navItems.map((item) => {
-          const isActive = pathname === item.href || 
-            (item.href !== '/' && pathname.startsWith(item.href));
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                "flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group",
-                isActive 
-                  ? "bg-primary text-primary-foreground shadow-lg shadow-primary/25" 
-                  : "text-muted-foreground hover:text-foreground hover:bg-white/5"
-              )}
-            >
-              <item.icon className={cn(
-                "w-5 h-5 transition-colors",
-                isActive ? "text-primary-foreground" : "text-muted-foreground group-hover:text-primary"
-              )} />
-              <span className="font-medium">{item.label}</span>
-              {isActive && (
-                <div className="ml-auto w-1.5 h-1.5 rounded-full bg-white/50" />
-              )}
-            </Link>
-          );
-        })}
-
-        {/* Divider and secondary nav for users with orgs */}
-        {hasOrg && (
-          <>
-            <div className="my-4 mx-4 border-t border-white/10" />
-            <div className="px-4 py-2">
-              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                Community
-              </span>
-            </div>
-            <Link
-              href="/discover"
-              className={cn(
-                "flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group",
-                pathname === '/discover'
-                  ? "bg-primary text-primary-foreground shadow-lg shadow-primary/25" 
-                  : "text-muted-foreground hover:text-foreground hover:bg-white/5"
-              )}
-            >
-              <Search className={cn(
-                "w-5 h-5 transition-colors",
-                pathname === '/discover' ? "text-primary-foreground" : "text-muted-foreground group-hover:text-primary"
-              )} />
-              <span className="font-medium">Discover Labs</span>
-            </Link>
-          </>
-        )}
-      </nav>
-
-      {/* User Profile */}
-      <div className="mt-auto pt-6 border-t border-white/10">
-        <div className="flex items-center gap-3 px-2">
-          <UserButton afterSignOutUrl="/" />
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium truncate">{user?.fullName || 'User'}</p>
-            <p className="text-xs text-muted-foreground truncate">{user?.primaryEmailAddress?.emailAddress}</p>
-          </div>
-        </div>
-      </div>
-    </aside>
+    </header>
   );
 }

@@ -26,9 +26,10 @@ import type { LogDisplay, SubjectDisplay } from "@/lib/types";
 interface Log extends LogDisplay {
   subjectName?: string;
   mice?: { name: string } | null;
+  data?: Record<string, unknown> | null;
 }
 
-const STAGES = ["Proestrus", "Estrus", "Metestrus", "Diestrus", "Uncertain"];
+const STAGES = ["Proestrus", "Estrus", "Metestrus", "Diestrus", "Uncertain", "Uncertain / transition"];
 
 export function CohortLibrary({
   logs,
@@ -40,18 +41,7 @@ export function CohortLibrary({
   const [search, setSearch] = useState("");
   const [stageFilter, setStageFilter] = useState("all");
   const [subjectFilter, setSubjectFilter] = useState("all");
-  const [sortBy, setSortBy] = useState<"date" | "confidence">("date");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
-
-  // Helper to extract numeric confidence
-  const getConfidence = (log: Log) => {
-    const c = log.confidence;
-    if (typeof c === "number") return c;
-    if (c && typeof c === "object" && "score" in c) {
-      return (c as { score: number }).score;
-    }
-    return 0;
-  };
 
   const filteredLogs = useMemo(() => {
     return logs
@@ -72,17 +62,11 @@ export function CohortLibrary({
         return matchesSearch && matchesStage && matchesSubject;
       })
       .sort((a, b) => {
-        if (sortBy === "date") {
-          return sortOrder === "desc"
-            ? new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-            : new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-        } else {
-          const confA = getConfidence(a);
-          const confB = getConfidence(b);
-          return sortOrder === "desc" ? confB - confA : confA - confB;
-        }
+        return sortOrder === "desc"
+          ? new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+          : new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
       });
-  }, [logs, search, stageFilter, subjectFilter, sortBy, sortOrder]);
+  }, [logs, search, stageFilter, subjectFilter, sortOrder]);
 
   return (
     <div className="space-y-6">
@@ -131,26 +115,13 @@ export function CohortLibrary({
         </div>
 
         <div className="flex items-center gap-2">
-          <Select
-            value={sortBy}
-            onValueChange={(v: any) => setSortBy(v)}
-          >
-            <SelectTrigger className="w-[130px] rounded-xl bg-white border-slate-200">
-              <div className="flex items-center gap-2 text-slate-600">
-                <ArrowUpDown className="w-3.5 h-3.5" />
-                <SelectValue />
-              </div>
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="date">Date</SelectItem>
-              <SelectItem value="confidence">Confidence</SelectItem>
-            </SelectContent>
-          </Select>
+          <span className="text-xs font-medium text-[#77736c]">Capture date</span>
           <Button
-            variant="ghost"
+            variant="outline"
             size="icon"
             onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
-            className="rounded-xl"
+            aria-label={sortOrder === "desc" ? "Show oldest records first" : "Show newest records first"}
+            className="rounded-xl border-[#ded9cd] bg-white"
           >
             <ArrowUpDown
               className={cn(
@@ -170,7 +141,7 @@ export function CohortLibrary({
           <p className="text-sm">Try adjusting your filters</p>
         </div>
       ) : (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           <AnimatePresence mode="popLayout">
             {filteredLogs.map((log) => (
               <motion.div
@@ -180,41 +151,27 @@ export function CohortLibrary({
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.9 }}
                 transition={{ duration: 0.2 }}
-                className="group relative aspect-square rounded-2xl overflow-hidden bg-white border border-slate-100 shadow-sm hover:shadow-lg transition-all"
+                className="overflow-hidden border border-[#ded9cd] bg-white transition hover:border-[#b8b7e1] hover:shadow-md"
               >
-                {log.image_url ? (
-                  <Image
-                    src={log.image_url}
-                    alt=""
-                    fill
-                    className="object-cover transition-transform duration-500 group-hover:scale-105"
-                  />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center bg-slate-50 text-slate-300">
-                    No Image
-                  </div>
-                )}
-
-                {/* Overlay */}
-                <div className="absolute inset-0 bg-linear-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 p-4 flex flex-col justify-end">
-                  <div className="flex items-center justify-between mb-1">
-                    <Badge
-                      className={cn(
-                        "border-0 backdrop-blur-md",
-                        getStageColor(log.stage)
-                      )}
-                    >
-                      {log.stage}
-                    </Badge>
-                    <span className="text-xs font-bold text-white/90">
-                      {Math.round(getConfidence(log) * 100)}%
+                <div className="relative aspect-[4/3] bg-[#f0ede5]">
+                  {log.image_url ? (
+                    <Image src={log.image_url} alt="" fill className="object-contain p-2" />
+                  ) : (
+                    <div className="flex h-full items-center justify-center text-sm text-[#77736c]">No image</div>
+                  )}
+                  <Badge className={cn("absolute left-3 top-3 border-0", getStageColor(log.stage))}>
+                    {log.stage}
+                  </Badge>
+                </div>
+                <div className="p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate font-semibold text-[#292b4c]">{log.subjectName || log.mice?.name || "Unassigned"}</p>
+                      <p className="mt-1 text-xs text-[#77736c]">{format(new Date(log.created_at), "MMM d, yyyy · h:mm a")}</p>
+                    </div>
+                    <span className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.12em] text-[#66627a]">
+                      {getConfirmationLabel(log)}
                     </span>
-                  </div>
-                  <div className="flex items-center justify-between text-white/80 text-xs">
-                    <span className="font-medium truncate max-w-[60%]">
-                      {log.subjectName || log.mice?.name || "Unassigned"}
-                    </span>
-                    <span>{format(new Date(log.created_at), "MMM d")}</span>
                   </div>
                 </div>
               </motion.div>
@@ -241,3 +198,10 @@ function getStageColor(stage: string) {
   }
 }
 
+function getConfirmationLabel(log: Log) {
+  const context = log.data?.observation_context;
+  if (!context || typeof context !== "object" || Array.isArray(context)) return "Reviewed";
+  return (context as Record<string, unknown>).confirmation_source === "paired_cytology_review"
+    ? "Cytology paired"
+    : "Scientist reviewed";
+}

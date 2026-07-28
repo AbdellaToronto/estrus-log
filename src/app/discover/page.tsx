@@ -1,4 +1,4 @@
-import { auth } from "@clerk/nextjs/server";
+import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { DiscoverClient } from "./discover-client";
 import {
@@ -33,4 +33,3 @@ export default async function DiscoverPage() {
     />
   );
 }
-

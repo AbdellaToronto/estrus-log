@@ -63,41 +63,68 @@ export type Database = {
       }
       estrus_logs: {
         Row: {
+          capture_date: string | null
+          capture_metadata: Json
           cohort_id: string | null
+          confirmation_source: string | null
           confidence: Json | null
           created_at: string
           data: Json | null
           features: Json | null
           id: string
           image_url: string | null
+          label_status: string | null
+          modality: string | null
           mouse_id: string | null
           notes: string | null
+          reference_image_url: string | null
+          reference_modality: string | null
+          reference_sample_id: string | null
+          reviewer_id: string | null
           session_id: string | null
           stage: string
         }
         Insert: {
+          capture_date?: string | null
+          capture_metadata?: Json
           cohort_id?: string | null
+          confirmation_source?: string | null
           confidence?: Json | null
           created_at?: string
           data?: Json | null
           features?: Json | null
           id?: string
           image_url?: string | null
+          label_status?: string | null
+          modality?: string | null
           mouse_id?: string | null
           notes?: string | null
+          reference_image_url?: string | null
+          reference_modality?: string | null
+          reference_sample_id?: string | null
+          reviewer_id?: string | null
           session_id?: string | null
           stage: string
         }
         Update: {
+          capture_date?: string | null
+          capture_metadata?: Json
           cohort_id?: string | null
+          confirmation_source?: string | null
           confidence?: Json | null
           created_at?: string
           data?: Json | null
           features?: Json | null
           id?: string
           image_url?: string | null
+          label_status?: string | null
+          modality?: string | null
           mouse_id?: string | null
           notes?: string | null
+          reference_image_url?: string | null
+          reference_modality?: string | null
+          reference_sample_id?: string | null
+          reviewer_id?: string | null
           session_id?: string | null
           stage?: string
         }
@@ -255,6 +282,7 @@ export type Database = {
       }
       mice: {
         Row: {
+          coat_colour: string | null
           cohort_id: string | null
           created_at: string
           dob: string | null
@@ -264,9 +292,11 @@ export type Database = {
           notes: string | null
           org_id: string | null
           status: string | null
+          strain: string | null
           user_id: string
         }
         Insert: {
+          coat_colour?: string | null
           cohort_id?: string | null
           created_at?: string
           dob?: string | null
@@ -276,9 +306,11 @@ export type Database = {
           notes?: string | null
           org_id?: string | null
           status?: string | null
+          strain?: string | null
           user_id: string
         }
         Update: {
+          coat_colour?: string | null
           cohort_id?: string | null
           created_at?: string
           dob?: string | null
@@ -288,6 +320,7 @@ export type Database = {
           notes?: string | null
           org_id?: string | null
           status?: string | null
+          strain?: string | null
           user_id?: string
         }
         Relationships: [
@@ -432,25 +465,31 @@ export type Database = {
       }
       scan_sessions: {
         Row: {
+          capture_date: string | null
           cohort_id: string
           created_at: string
           id: string
+          modality: string | null
           name: string | null
           status: string | null
           user_id: string
         }
         Insert: {
+          capture_date?: string | null
           cohort_id: string
           created_at?: string
           id?: string
+          modality?: string | null
           name?: string | null
           status?: string | null
           user_id: string
         }
         Update: {
+          capture_date?: string | null
           cohort_id?: string
           created_at?: string
           id?: string
+          modality?: string | null
           name?: string | null
           status?: string | null
           user_id?: string

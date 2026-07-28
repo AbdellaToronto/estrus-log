@@ -1,6 +1,29 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useMemo, useState, type CSSProperties } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import {
+  ArrowLeft,
+  CalendarDays,
+  CheckCircle2,
+  ChevronRight,
+  CircleAlert,
+  Download,
+  FolderCog,
+  Plus,
+  ShieldCheck,
+  Trash2,
+  Users,
+} from "lucide-react";
+import {
+  addCohortToExperiment,
+  deleteExperiment,
+  getExperimentExportData,
+  removeCohortFromExperiment,
+  type ExperimentInsights,
+} from "@/app/actions";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -18,6 +41,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -25,42 +49,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Plus,
-  Users,
-  ArrowLeft,
-  Trash2,
-  Activity,
-  FileSpreadsheet,
-  Grid,
-  Table as TableIcon,
-} from "lucide-react";
-import Link from "next/link";
-import {
-  addCohortToExperiment,
-  removeCohortFromExperiment,
-  getExperimentExportData,
-  deleteExperiment,
-  type ExperimentInsights,
-} from "@/app/actions";
-import { useRouter } from "next/navigation";
-import {
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
-  AreaChart,
-  Area,
-  CartesianGrid,
-} from "recharts";
-import { motion, AnimatePresence } from "framer-motion";
-
-// --- Types ---
+import { cn } from "@/lib/utils";
 
 type Cohort = {
   id: string;
@@ -82,6 +72,21 @@ type Experiment = {
   }[];
 };
 
+type VisualizationLog = {
+  id: string;
+  mouse_id: string | null;
+  cohort_id?: string | null;
+  stage: string;
+  date: string;
+  capture_date?: string | null;
+  modality?: string | null;
+  label_status?: string | null;
+  confirmation_source?: string | null;
+  reference_modality?: string | null;
+  binary_decision_status?: string | null;
+  binary_group_suggestion?: string | null;
+};
+
 type VisualizationData = {
   cohorts: {
     id: string;
@@ -89,64 +94,91 @@ type VisualizationData = {
     color: string;
     mice: { id: string; name: string }[];
   }[];
-  logs: {
-    id: string;
-    mouse_id: string;
-    stage: string;
-    date: string; // YYYY-MM-DD
-    confidence: number | { score: number };
-    features?: Record<string, unknown>;
-  }[];
+  logs: VisualizationLog[];
 };
 
-// --- Colors ---
-const COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6"];
-const STAGE_COLORS: Record<string, string> = {
-  Proestrus: "#f59e0b", // Amber
-  Estrus: "#ef4444", // Red
-  Metestrus: "#10b981", // Emerald
-  Diestrus: "#3b82f6", // Blue
+const STAGE_STYLES: Record<string, string> = {
+  Proestrus: "stage-proestrus",
+  Estrus: "stage-estrus",
+  Metestrus: "stage-metestrus",
+  Diestrus: "stage-diestrus",
 };
 
-// --- Helper: CSV Download ---
-function downloadCSV(data: Record<string, unknown>[], filename: string) {
-  if (!data || data.length === 0) {
-    alert("No data available to export.");
-    return;
+const STAGE_CELL_STYLES: Record<string, string> = {
+  Proestrus: "bg-violet-200 text-violet-950 ring-violet-300",
+  Estrus: "bg-rose-200 text-rose-950 ring-rose-300",
+  Metestrus: "bg-amber-200 text-amber-950 ring-amber-300",
+  Diestrus: "bg-sky-200 text-sky-950 ring-sky-300",
+};
+
+function formatDate(value: string | null) {
+  if (!value) return "Not set";
+  return new Intl.DateTimeFormat("en", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(`${value}T00:00:00Z`));
+}
+
+function formatShortDate(value: string) {
+  return new Intl.DateTimeFormat("en", {
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(`${value}T00:00:00Z`));
+}
+
+function enumerateDates(start: string, end: string) {
+  const dates: string[] = [];
+  const cursor = new Date(`${start}T00:00:00Z`);
+  const last = new Date(`${end}T00:00:00Z`);
+  while (cursor <= last) {
+    dates.push(cursor.toISOString().slice(0, 10));
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
   }
+  return dates;
+}
 
+function readableSource(source?: string | null) {
+  if (source === "paired_cytology_review") return "Paired cytology";
+  if (source === "scientist_batch_review") return "Scientist · batch";
+  if (source === "scientist_review") return "Scientist · single";
+  return "Legacy / unspecified";
+}
+
+function readableBinaryReview(log: VisualizationLog) {
+  if (log.binary_decision_status === "abstain") return "Abstained";
+  if (log.binary_decision_status === "reference_backed_suggestion") {
+    return log.binary_group_suggestion === "PROESTRUS_OR_ESTRUS"
+      ? "Early-group suggestion"
+      : "Late-group suggestion";
+  }
+  return "Not run";
+}
+
+function downloadCsv(data: Record<string, unknown>[], filename: string) {
+  if (data.length === 0) return;
   const headers = Object.keys(data[0]);
-  const csvContent = [
+  const csv = [
     headers.join(","),
     ...data.map((row) =>
       headers
         .map((header) => {
-          const cell =
-            row[header] === null || row[header] === undefined
-              ? ""
-              : row[header];
-          const stringCell = String(cell);
-          if (
-            stringCell.includes(",") ||
-            stringCell.includes('"') ||
-            stringCell.includes("\n")
-          ) {
-            return `"${stringCell.replace(/"/g, '""')}"`;
-          }
-          return stringCell;
+          const value = row[header] == null ? "" : String(row[header]);
+          return /[",\n]/.test(value)
+            ? `"${value.replaceAll('"', '""')}"`
+            : value;
         })
         .join(",")
     ),
   ].join("\n");
-
-  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.setAttribute("href", url);
-  link.setAttribute("download", filename);
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
+  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
 }
 
 export function ExperimentDetailClient({
@@ -161,789 +193,517 @@ export function ExperimentDetailClient({
   visualizationData: VisualizationData;
 }) {
   const router = useRouter();
-  const [addOpen, setAddOpen] = useState(false);
-  const [selectedCohortId, setSelectedCohortId] = useState<string>("");
-  const [loading, setLoading] = useState(false);
-  const [exporting, setExporting] = useState(false);
-  const [deleting, setDeleting] = useState(false);
+  const [activeTab, setActiveTab] = useState("summary");
+  const [scopeOpen, setScopeOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [selectedCohortId, setSelectedCohortId] = useState("");
+  const [busy, setBusy] = useState(false);
 
-  // Filter out cohorts already in the experiment
-  const existingCohortIds = new Set(
-    experiment.experiment_cohorts.map((ec) => ec.cohort_id)
+  const existingCohortIds = useMemo(
+    () => new Set(experiment.experiment_cohorts.map((item) => item.cohort_id)),
+    [experiment.experiment_cohorts]
   );
   const availableCohorts = allCohorts.filter(
-    (c) => !existingCohortIds.has(c.id)
+    (cohort) => !existingCohortIds.has(cohort.id)
   );
 
-  const handleAddCohort = async () => {
-    if (!selectedCohortId) return;
-    setLoading(true);
-    try {
-      await addCohortToExperiment(experiment.id, selectedCohortId);
-      setAddOpen(false);
-      setSelectedCohortId("");
-      router.refresh();
-    } catch (error) {
-      console.error(error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleRemoveCohort = async (cohortId: string) => {
-    if (
-      !confirm(
-        "Are you sure you want to remove this cohort from the experiment?"
-      )
-    )
-      return;
-    try {
-      await removeCohortFromExperiment(experiment.id, cohortId);
-      router.refresh();
-    } catch (error) {
-      console.error(error);
-    }
-  };
-
-  const handleDeleteExperiment = async () => {
-    if (
-      !confirm(
-        "Are you sure you want to delete this experiment? This action cannot be undone."
-      )
-    )
-      return;
-    setDeleting(true);
-    try {
-      await deleteExperiment(experiment.id);
-      router.push("/experiments");
-    } catch (error) {
-      console.error(error);
-      alert("Failed to delete experiment");
-      setDeleting(false);
-    }
-  };
-
-  const handleExport = async () => {
-    setExporting(true);
-    try {
-      const data = await getExperimentExportData(experiment.id);
-      const filename = `${experiment.name.replace(/\s+/g, "_")}_export_${
-        new Date().toISOString().split("T")[0]
-      }.csv`;
-      downloadCSV(data, filename);
-    } catch (e) {
-      console.error("Export failed", e);
-      alert("Failed to export data. Please try again.");
-    } finally {
-      setExporting(false);
-    }
-  };
-
-  // --- Heatmap Logic ---
-  const heatmapData = useMemo(() => {
-    // 1. Get unique dates sorted
-    const dates = Array.from(
-      new Set(visualizationData.logs.map((l) => l.date))
-    ).sort();
-
-    // 2. Map logs by mouse_id + date
-    const logMap = new Map<string, string>();
-    visualizationData.logs.forEach((l) => {
-      logMap.set(`${l.mouse_id}|${l.date}`, l.stage);
+  const mouseLookup = useMemo(() => {
+    const lookup = new Map<string, { name: string; cohortName: string }>();
+    visualizationData.cohorts.forEach((cohort) => {
+      cohort.mice.forEach((mouse) =>
+        lookup.set(mouse.id, { name: mouse.name, cohortName: cohort.name })
+      );
     });
+    return lookup;
+  }, [visualizationData.cohorts]);
 
-    // 3. Structure for rendering: List of cohorts -> List of mice -> List of days
+  const atlasDates = useMemo(() => {
+    if (insights.dateRange) {
+      return enumerateDates(insights.dateRange.start, insights.dateRange.end);
+    }
+    return Array.from(new Set(visualizationData.logs.map((log) => log.date))).sort();
+  }, [insights.dateRange, visualizationData.logs]);
+
+  const atlasRows = useMemo(() => {
+    const logMap = new Map(
+      visualizationData.logs.map((log) => [`${log.mouse_id}|${log.date}`, log])
+    );
     return visualizationData.cohorts.map((cohort) => ({
       ...cohort,
-      rows: cohort.mice.map((mouse) => ({
-        mouse,
-        cells: dates.map((date) => ({
+      mice: cohort.mice.map((mouse) => ({
+        ...mouse,
+        cells: atlasDates.map((date) => ({
           date,
-          stage: logMap.get(`${mouse.id}|${date}`) || "No Data",
+          log: logMap.get(`${mouse.id}|${date}`),
         })),
       })),
     }));
-  }, [visualizationData]);
+  }, [atlasDates, visualizationData]);
 
-  const allDates = useMemo(
-    () => Array.from(new Set(visualizationData.logs.map((l) => l.date))).sort(),
-    [visualizationData]
-  );
+  const expectedRecords = Math.max(insights.totalSubjects * atlasDates.length, 0);
+  const coverage = expectedRecords
+    ? Math.round((insights.totalLogs / expectedRecords) * 100)
+    : 0;
+  const reviewedByBinary = insights.binarySuggestions + insights.binaryAbstentions;
 
-  // --- Stacked Area Logic ---
-  const stackedData = useMemo(() => {
-    // Group logs by date and count stages
-    const dateMap = new Map<string, Record<string, number>>();
+  async function addCohort() {
+    if (!selectedCohortId) return;
+    setBusy(true);
+    try {
+      await addCohortToExperiment(experiment.id, selectedCohortId);
+      setSelectedCohortId("");
+      setScopeOpen(false);
+      router.refresh();
+    } finally {
+      setBusy(false);
+    }
+  }
 
-    visualizationData.logs.forEach((log) => {
-      const date = log.date;
-      if (!dateMap.has(date)) {
-        dateMap.set(date, {
-          Proestrus: 0,
-          Estrus: 0,
-          Metestrus: 0,
-          Diestrus: 0,
-          Uncertain: 0,
-        });
-      }
-      const entry = dateMap.get(date)!;
-      const stage = STAGE_COLORS[log.stage] ? log.stage : "Uncertain";
-      entry[stage] = (entry[stage] || 0) + 1;
-    });
+  async function removeCohort(cohortId: string) {
+    if (
+      !window.confirm(
+        "Remove this cohort from the study workspace? Its subjects and observations remain unchanged in the cohort record."
+      )
+    ) {
+      return;
+    }
+    await removeCohortFromExperiment(experiment.id, cohortId);
+    router.refresh();
+  }
 
-    return Array.from(dateMap.entries())
-      .map(([date, counts]) => ({
-        date,
-        ...counts,
-      }))
-      .sort((a, b) => a.date.localeCompare(b.date));
-  }, [visualizationData]);
+  async function exportManifest() {
+    setBusy(true);
+    try {
+      const rows = await getExperimentExportData(experiment.id);
+      downloadCsv(
+        rows,
+        `${experiment.name.replace(/\s+/g, "_")}_provenance_${new Date()
+          .toISOString()
+          .slice(0, 10)}.csv`
+      );
+      setExportOpen(false);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function removeExperiment() {
+    if (
+      !window.confirm(
+        "Delete this study workspace? Attached cohorts, subjects, images, and observations will not be deleted."
+      )
+    ) {
+      return;
+    }
+    setBusy(true);
+    await deleteExperiment(experiment.id);
+    router.push("/experiments");
+  }
 
   return (
-    <div className="h-screen flex flex-col bg-background">
-      {/* Sticky Header */}
-      <div className="border-b bg-card shadow-sm z-10">
-        <div className="container py-4 max-w-7xl flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <Link
-              href="/experiments"
-              className="inline-flex items-center justify-center w-8 h-8 rounded-full hover:bg-muted transition-colors"
-            >
-              <ArrowLeft className="h-4 w-4 text-muted-foreground" />
-            </Link>
-            <div>
-              <div className="flex items-center gap-3">
-                <h1 className="text-xl font-bold tracking-tight">
+    <div className="min-h-screen bg-[linear-gradient(180deg,rgba(255,255,255,0.72),rgba(247,244,237,0.92))]">
+      <div className="page-shell space-y-6 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+        <Link
+          href="/experiments"
+          className="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Study workspaces
+        </Link>
+
+        <section className="rounded-3xl border border-slate-200/80 bg-white/90 p-5 shadow-sm sm:p-7">
+          <div className="flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between">
+            <div className="max-w-3xl space-y-4">
+              <div className="flex flex-wrap items-center gap-3">
+                <p className="page-eyebrow">Experiment workspace</p>
+                <Badge
+                  variant="outline"
+                  className={cn(
+                    "rounded-full px-2.5 py-1 text-[11px] uppercase tracking-[0.12em]",
+                    experiment.status === "active" &&
+                      "border-emerald-200 bg-emerald-50 text-emerald-800"
+                  )}
+                >
+                  {experiment.status || "planned"}
+                </Badge>
+              </div>
+              <div>
+                <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
                   {experiment.name}
                 </h1>
-                <div
-                  className={`px-2 py-0.5 rounded-full text-[10px] uppercase tracking-wider font-semibold border ${
-                    experiment.status === "active"
-                      ? "bg-green-500/10 text-green-600 border-green-500/20"
-                      : "bg-muted text-muted-foreground border-muted-foreground/20"
-                  }`}
-                >
-                  {experiment.status || "Planned"}
-                </div>
-              </div>
-              {experiment.description && (
-                <p className="text-xs text-muted-foreground mt-1 line-clamp-1 max-w-md">
-                  {experiment.description}
+                <p className="mt-3 max-w-2xl text-base leading-7 text-muted-foreground">
+                  {experiment.description || "No study question has been recorded yet."}
                 </p>
-              )}
+              </div>
+              <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
+                <span className="inline-flex items-center gap-2">
+                  <CalendarDays className="h-4 w-4 text-primary" />
+                  {formatDate(experiment.start_date)} – {formatDate(experiment.end_date)}
+                </span>
+                <span className="inline-flex items-center gap-2 text-muted-foreground">
+                  <Users className="h-4 w-4" />
+                  {experiment.experiment_cohorts.length} cohorts · {insights.totalSubjects} subjects
+                </span>
+              </div>
             </div>
-          </div>
 
-          <div className="flex items-center gap-2">
-            <Dialog open={addOpen} onOpenChange={setAddOpen}>
-              <DialogTrigger asChild>
-                <Button size="sm" variant="outline">
-                  <Plus className="mr-2 h-3.5 w-3.5" /> Add Cohort
-                </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Add Cohort to Experiment</DialogTitle>
-                  <DialogDescription>
-                    Select a cohort to track within this experiment.
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="grid gap-4 py-4">
-                  <div className="grid gap-2">
-                    <Label>Select Cohort</Label>
-                    <Select
-                      value={selectedCohortId}
-                      onValueChange={setSelectedCohortId}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Choose a cohort..." />
+            <div className="flex flex-wrap gap-2">
+              <Button onClick={() => setActiveTab("atlas")}>
+                Review cycle atlas <ChevronRight className="ml-2 h-4 w-4" />
+              </Button>
+
+              <Dialog open={exportOpen} onOpenChange={setExportOpen}>
+                <DialogTrigger asChild>
+                  <Button variant="outline" disabled={insights.totalLogs === 0}>
+                    <Download className="mr-2 h-4 w-4" /> Export manifest
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Export this study’s provenance manifest</DialogTitle>
+                    <DialogDescription>
+                      One CSV row per observation, scoped to the attached cohorts. Image and
+                      paired-cytology references remain object references rather than public links.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="grid grid-cols-3 gap-3 rounded-2xl bg-muted/60 p-4 text-sm">
+                    <div><strong className="block text-lg">{insights.totalLogs}</strong>records</div>
+                    <div><strong className="block text-lg">{insights.totalSubjects}</strong>subjects</div>
+                    <div><strong className="block text-lg">{experiment.experiment_cohorts.length}</strong>cohorts</div>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Includes saved stage, capture date, modality, confirmation source, reviewer,
+                    paired reference, prepared ROI, and model-review fields.
+                  </p>
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => setExportOpen(false)}>Cancel</Button>
+                    <Button onClick={exportManifest} disabled={busy}>
+                      {busy ? "Preparing…" : "Download provenance CSV"}
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+
+              <Dialog open={scopeOpen} onOpenChange={setScopeOpen}>
+                <DialogTrigger asChild>
+                  <Button variant="outline">
+                    <FolderCog className="mr-2 h-4 w-4" /> Manage scope
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Manage study scope</DialogTitle>
+                    <DialogDescription>
+                      Attach an existing cohort. This changes the study view and export scope; it
+                      does not copy or alter source observations.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-2 py-2">
+                    <Label htmlFor="study-cohort">Cohort to attach</Label>
+                    <Select value={selectedCohortId} onValueChange={setSelectedCohortId}>
+                      <SelectTrigger id="study-cohort">
+                        <SelectValue placeholder="Choose a cohort" />
                       </SelectTrigger>
                       <SelectContent>
                         {availableCohorts.map((cohort) => (
-                          <SelectItem key={cohort.id} value={cohort.id}>
-                            {cohort.name}
-                          </SelectItem>
+                          <SelectItem key={cohort.id} value={cohort.id}>{cohort.name}</SelectItem>
                         ))}
-                        {availableCohorts.length === 0 && (
-                          <SelectItem value="none" disabled>
-                            No available cohorts
-                          </SelectItem>
-                        )}
                       </SelectContent>
                     </Select>
-                  </div>
-                </div>
-                <DialogFooter>
-                  <Button
-                    onClick={handleAddCohort}
-                    disabled={!selectedCohortId || loading}
-                  >
-                    {loading ? "Adding..." : "Add Cohort"}
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={handleExport}
-              disabled={exporting || insights.totalLogs === 0}
-            >
-              {exporting ? (
-                "Exporting..."
-              ) : (
-                <>
-                  <FileSpreadsheet className="mr-2 h-3.5 w-3.5" /> Export
-                </>
-              )}
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="text-muted-foreground hover:text-destructive"
-              onClick={handleDeleteExperiment}
-              disabled={deleting}
-            >
-              <Trash2 className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
-      </div>
-
-      {/* Scrollable Content Area */}
-      <div className="flex-1 overflow-hidden">
-        <Tabs defaultValue="dashboard" className="h-full flex flex-col">
-          <div className="container max-w-7xl py-2 border-b bg-background">
-            <TabsList>
-              <TabsTrigger value="dashboard">
-                <Activity className="mr-2 h-4 w-4" /> Dashboard
-              </TabsTrigger>
-              <TabsTrigger value="heatmap">
-                <Grid className="mr-2 h-4 w-4" /> Cycle Plot
-              </TabsTrigger>
-              <TabsTrigger value="cohorts">
-                <Users className="mr-2 h-4 w-4" /> Cohorts
-              </TabsTrigger>
-              <TabsTrigger value="raw">
-                <TableIcon className="mr-2 h-4 w-4" /> Data
-              </TabsTrigger>
-            </TabsList>
-          </div>
-
-          <div className="flex-1 overflow-auto bg-muted/5 p-4 md:p-8">
-            <div className="container max-w-7xl mx-auto h-full">
-              <AnimatePresence mode="wait">
-                {/* --- Dashboard Tab --- */}
-                <TabsContent
-                  value="dashboard"
-                  className="mt-0 h-full space-y-6"
-                >
-                  <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -10 }}
-                    className="space-y-6"
-                  >
-                    {/* KPI Cards */}
-                    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-                      <Card>
-                        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                          <CardTitle className="text-sm font-medium">
-                            Total Subjects
-                          </CardTitle>
-                          <Users className="h-4 w-4 text-muted-foreground" />
-                        </CardHeader>
-                        <CardContent>
-                          <div className="text-2xl font-bold">
-                            {insights.totalSubjects}
-                          </div>
-                          <p className="text-xs text-muted-foreground">
-                            Across {experiment.experiment_cohorts.length}{" "}
-                            cohorts
-                          </p>
-                        </CardContent>
-                      </Card>
-                      <Card>
-                        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                          <CardTitle className="text-sm font-medium">
-                            Total Logs
-                          </CardTitle>
-                          <Activity className="h-4 w-4 text-muted-foreground" />
-                        </CardHeader>
-                        <CardContent>
-                          <div className="text-2xl font-bold">
-                            {insights.totalLogs}
-                          </div>
-                          <p className="text-xs text-muted-foreground">
-                            Data points collected
-                          </p>
-                        </CardContent>
-                      </Card>
-                    </div>
-
-                    {/* Charts Row 1 */}
-                    <div className="grid gap-4 md:grid-cols-2 h-[400px]">
-                      <Card className="col-span-1 flex flex-col">
-                        <CardHeader>
-                          <CardTitle>Activity Over Time</CardTitle>
-                          <CardDescription>Daily log frequency</CardDescription>
-                        </CardHeader>
-                        <CardContent className="flex-1 min-h-0">
-                          <ResponsiveContainer width="100%" height="100%">
-                            <AreaChart data={insights.timeline}>
-                              <defs>
-                                <linearGradient
-                                  id="colorValue"
-                                  x1="0"
-                                  y1="0"
-                                  x2="0"
-                                  y2="1"
-                                >
-                                  <stop
-                                    offset="5%"
-                                    stopColor="#3b82f6"
-                                    stopOpacity={0.3}
-                                  />
-                                  <stop
-                                    offset="95%"
-                                    stopColor="#3b82f6"
-                                    stopOpacity={0}
-                                  />
-                                </linearGradient>
-                              </defs>
-                              <CartesianGrid
-                                strokeDasharray="3 3"
-                                vertical={false}
-                                stroke="rgba(0,0,0,0.05)"
-                              />
-                              <XAxis
-                                dataKey="date"
-                                fontSize={12}
-                                tickLine={false}
-                                axisLine={false}
-                                tickFormatter={(value) =>
-                                  new Date(value).toLocaleDateString(
-                                    undefined,
-                                    { month: "short", day: "numeric" }
-                                  )
-                                }
-                              />
-                              <YAxis
-                                fontSize={12}
-                                tickLine={false}
-                                axisLine={false}
-                                allowDecimals={false}
-                              />
-                              <Tooltip
-                                contentStyle={{
-                                  backgroundColor: "rgba(255, 255, 255, 0.9)",
-                                  border: "1px solid #e5e7eb",
-                                  borderRadius: "8px",
-                                  boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)",
-                                }}
-                              />
-                              <Area
-                                type="monotone"
-                                dataKey="value"
-                                stroke="#3b82f6"
-                                strokeWidth={2}
-                                fillOpacity={1}
-                                fill="url(#colorValue)"
-                              />
-                            </AreaChart>
-                          </ResponsiveContainer>
-                        </CardContent>
-                      </Card>
-
-                      <Card className="col-span-1 flex flex-col">
-                        <CardHeader>
-                          <CardTitle>Stage Distribution</CardTitle>
-                          <CardDescription>
-                            Overall proportion of estrus stages
-                          </CardDescription>
-                        </CardHeader>
-                        <CardContent className="flex-1 min-h-0">
-                          <ResponsiveContainer width="100%" height="100%">
-                            <PieChart>
-                              <Pie
-                                data={insights.stageDistribution}
-                                cx="50%"
-                                cy="50%"
-                                innerRadius={80}
-                                outerRadius={110}
-                                paddingAngle={2}
-                                dataKey="value"
-                                label={({
-                                  payload,
-                                  percent,
-                                }: {
-                                  payload?: { stage: string };
-                                  percent?: number;
-                                }) =>
-                                  `${payload?.stage ?? ""} ${(
-                                    (percent ?? 0) * 100
-                                  ).toFixed(0)}%`
-                                }
-                              >
-                                {insights.stageDistribution.map(
-                                  (entry, index) => (
-                                    <Cell
-                                      key={`cell-${index}`}
-                                      fill={
-                                        STAGE_COLORS[entry.stage] ||
-                                        COLORS[index % COLORS.length]
-                                      }
-                                    />
-                                  )
-                                )}
-                              </Pie>
-                              <Tooltip
-                                contentStyle={{
-                                  backgroundColor: "rgba(255, 255, 255, 0.9)",
-                                  border: "1px solid #e5e7eb",
-                                  borderRadius: "8px",
-                                  boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)",
-                                }}
-                              />
-                            </PieChart>
-                          </ResponsiveContainer>
-                        </CardContent>
-                      </Card>
-                    </div>
-
-                    {/* Chart Row 2: Stacked Area */}
-                    <Card className="h-[400px] flex flex-col">
-                      <CardHeader>
-                        <CardTitle>Stage Distribution Over Time</CardTitle>
-                        <CardDescription>
-                          Proportion of subjects in each stage per day
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent className="flex-1 min-h-0">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <AreaChart data={stackedData}>
-                            <CartesianGrid
-                              strokeDasharray="3 3"
-                              vertical={false}
-                              stroke="rgba(0,0,0,0.05)"
-                            />
-                            <XAxis
-                              dataKey="date"
-                              fontSize={12}
-                              tickLine={false}
-                              axisLine={false}
-                              tickFormatter={(value) =>
-                                new Date(value).toLocaleDateString(undefined, {
-                                  month: "short",
-                                  day: "numeric",
-                                })
-                              }
-                            />
-                            <YAxis
-                              fontSize={12}
-                              tickLine={false}
-                              axisLine={false}
-                              allowDecimals={false}
-                            />
-                            <Tooltip
-                              contentStyle={{
-                                backgroundColor: "rgba(255, 255, 255, 0.9)",
-                                border: "1px solid #e5e7eb",
-                                borderRadius: "8px",
-                                boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)",
-                              }}
-                            />
-                            {Object.keys(STAGE_COLORS).map((stage) => (
-                              <Area
-                                key={stage}
-                                type="monotone"
-                                dataKey={stage}
-                                stackId="1"
-                                stroke={STAGE_COLORS[stage]}
-                                fill={STAGE_COLORS[stage]}
-                              />
-                            ))}
-                          </AreaChart>
-                        </ResponsiveContainer>
-                      </CardContent>
-                    </Card>
-                  </motion.div>
-                </TabsContent>
-
-                {/* --- Heatmap Tab --- */}
-                <TabsContent value="heatmap" className="mt-0 h-full">
-                  <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -10 }}
-                    className="h-full flex flex-col gap-4"
-                  >
-                    <Card className="flex-1 flex flex-col overflow-hidden">
-                      <CardHeader>
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <CardTitle>Cycle Plots (Actogram)</CardTitle>
-                            <CardDescription>
-                              Daily estrus stage for each subject.
-                            </CardDescription>
-                          </div>
-                          <div className="flex gap-2 text-xs">
-                            {Object.entries(STAGE_COLORS).map(
-                              ([stage, color]) => (
-                                <div
-                                  key={stage}
-                                  className="flex items-center gap-1"
-                                >
-                                  <div
-                                    className="w-3 h-3 rounded-sm"
-                                    style={{ backgroundColor: color }}
-                                  />
-                                  <span className="text-muted-foreground">
-                                    {stage}
-                                  </span>
-                                </div>
-                              )
-                            )}
-                          </div>
-                        </div>
-                      </CardHeader>
-                      <CardContent className="flex-1 overflow-auto pb-6">
-                        <div className="min-w-[800px]">
-                          {/* Header Row (Dates) */}
-                          <div className="flex mb-2 sticky top-0 bg-card z-10 pb-2 border-b">
-                            <div className="w-32 shrink-0 font-semibold text-sm text-muted-foreground">
-                              Subject
-                            </div>
-                            <div className="flex-1 flex justify-between text-xs text-muted-foreground">
-                              {allDates.map((date, i) => (
-                                <div
-                                  key={date}
-                                  className="w-6 text-center -rotate-45 origin-bottom-left translate-y-2"
-                                >
-                                  {i % 2 === 0 ? date.slice(5) : ""}
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-
-                          {/* Rows */}
-                          <div className="space-y-6 mt-8">
-                            {heatmapData.map((cohort) => (
-                              <div key={cohort.id} className="space-y-1">
-                                <div
-                                  className="font-semibold px-2 py-1 rounded w-fit text-xs uppercase tracking-wider mb-2"
-                                  style={{
-                                    backgroundColor:
-                                      cohort.color?.replace("bg-", "") ||
-                                      "#e5e7eb",
-                                    opacity: 0.8,
-                                  }}
-                                >
-                                  {cohort.name}
-                                </div>
-                                {cohort.rows.map((row) => (
-                                  <div
-                                    key={row.mouse.id}
-                                    className="flex items-center hover:bg-muted/50 transition-colors rounded px-1"
-                                  >
-                                    <div className="w-32 shrink-0 text-sm font-medium truncate pr-2">
-                                      {row.mouse.name}
-                                    </div>
-                                    <div className="flex-1 flex justify-between gap-[2px]">
-                                      {row.cells.map((cell) => (
-                                        <div
-                                          key={`${row.mouse.id}-${cell.date}`}
-                                          className="w-full h-6 rounded-[2px] transition-all hover:scale-110 hover:z-10 cursor-pointer"
-                                          title={`${row.mouse.name} - ${cell.date}: ${cell.stage}`}
-                                          style={{
-                                            backgroundColor:
-                                              STAGE_COLORS[cell.stage] ||
-                                              (cell.stage === "No Data"
-                                                ? "#f3f4f6"
-                                                : "#9ca3af"),
-                                          }}
-                                        />
-                                      ))}
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </motion.div>
-                </TabsContent>
-
-                {/* --- Cohorts Tab --- */}
-                <TabsContent value="cohorts" className="mt-0 h-full space-y-6">
-                  <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -10 }}
-                    className="grid gap-4 md:grid-cols-2 lg:grid-cols-3"
-                  >
-                    {experiment.experiment_cohorts.map(({ cohorts: cohort }) =>
-                      cohort ? (
-                        <Card
-                          key={cohort.id}
-                          className="group relative overflow-hidden transition-all hover:border-primary/50 flex flex-col"
-                        >
-                          <div
-                            className={`absolute top-0 left-0 w-1 h-full ${
-                              cohort.color || "bg-blue-500"
-                            }`}
-                          />
-                          <CardHeader>
-                            <div className="flex justify-between items-start">
-                              <Link
-                                href={`/cohorts/${cohort.id}`}
-                                className="hover:underline"
-                              >
-                                <CardTitle className="text-lg">
-                                  {cohort.name}
-                                </CardTitle>
-                              </Link>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8 text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
-                                onClick={() => handleRemoveCohort(cohort.id)}
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </div>
-                            <CardDescription className="line-clamp-2">
-                              {cohort.description}
-                            </CardDescription>
-                          </CardHeader>
-                          <CardContent className="mt-auto pt-0">
-                            <div className="grid grid-cols-2 gap-2 text-sm border-t pt-4">
-                              <div>
-                                <span className="text-muted-foreground block text-xs">
-                                  Subjects
-                                </span>
-                                <span className="font-medium">
-                                  {insights.cohortStats.find(
-                                    (s) => s.id === cohort.id
-                                  )?.subjectCount || 0}
-                                </span>
-                              </div>
-                              <div>
-                                <span className="text-muted-foreground block text-xs">
-                                  Logs
-                                </span>
-                                <span className="font-medium">
-                                  {insights.cohortStats.find(
-                                    (s) => s.id === cohort.id
-                                  )?.logCount || 0}
-                                </span>
-                              </div>
-                            </div>
-                          </CardContent>
-                        </Card>
-                      ) : null
+                    {availableCohorts.length === 0 && (
+                      <p className="text-sm text-muted-foreground">Every available cohort is already attached.</p>
                     )}
-                  </motion.div>
-                </TabsContent>
-
-                {/* --- Raw Data Tab --- */}
-                <TabsContent value="raw" className="mt-0 h-full">
-                  <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -10 }}
-                    className="h-full"
-                  >
-                    <Card className="h-full flex flex-col">
-                      <CardHeader>
-                        <CardTitle>Experiment Data Logs</CardTitle>
-                        <CardDescription>
-                          Raw data collected across all cohorts
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent className="flex-1 overflow-auto">
-                        <div className="rounded-md border">
-                          <table className="w-full text-sm text-left">
-                            <thead className="bg-muted/50 sticky top-0 z-10">
-                              <tr>
-                                <th className="p-3 font-medium">Date</th>
-                                <th className="p-3 font-medium">Subject</th>
-                                <th className="p-3 font-medium">Stage</th>
-                                <th className="p-3 font-medium">Confidence</th>
-                                <th className="p-3 font-medium">Features</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y">
-                              {visualizationData.logs.map((log) => {
-                                // Find mouse name efficiently
-                                // In real app, we might want to create a lookup map once
-                                let mouseName = "Unknown";
-                                for (const c of visualizationData.cohorts) {
-                                  const m = c.mice.find(
-                                    (m) => m.id === log.mouse_id
-                                  );
-                                  if (m) {
-                                    mouseName = m.name;
-                                    break;
-                                  }
-                                }
-
-                                const confidenceScore =
-                                  typeof log.confidence === "number"
-                                    ? log.confidence
-                                    : log.confidence?.score || 0;
-
-                                return (
-                                  <tr
-                                    key={log.id}
-                                    className="hover:bg-muted/50 transition-colors"
-                                  >
-                                    <td className="p-3 whitespace-nowrap">
-                                      {log.date}
-                                    </td>
-                                    <td className="p-3 font-medium">
-                                      {mouseName}
-                                    </td>
-                                    <td className="p-3">
-                                      <span
-                                        className="px-2 py-1 rounded-full text-xs font-medium border"
-                                        style={{
-                                          borderColor: `${
-                                            STAGE_COLORS[log.stage]
-                                          }40`,
-                                          backgroundColor: `${
-                                            STAGE_COLORS[log.stage]
-                                          }20`,
-                                          color: STAGE_COLORS[log.stage],
-                                        }}
-                                      >
-                                        {log.stage}
-                                      </span>
-                                    </td>
-                                    <td className="p-3">
-                                      {(confidenceScore * 100).toFixed(0)}%
-                                    </td>
-                                    <td className="p-3 text-muted-foreground text-xs max-w-xs truncate">
-                                      {JSON.stringify(log.features)}
-                                    </td>
-                                  </tr>
-                                );
-                              })}
-                            </tbody>
-                          </table>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </motion.div>
-                </TabsContent>
-              </AnimatePresence>
+                  </div>
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => setScopeOpen(false)}>Cancel</Button>
+                    <Button onClick={addCohort} disabled={!selectedCohortId || busy}>
+                      <Plus className="mr-2 h-4 w-4" /> Attach cohort
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
             </div>
           </div>
+        </section>
+
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-5">
+          <TabsList className="h-auto w-full justify-start gap-1 overflow-x-auto rounded-2xl border bg-white/80 p-1.5 sm:w-fit">
+            <TabsTrigger value="summary" className="rounded-xl px-4 py-2">Study summary</TabsTrigger>
+            <TabsTrigger value="atlas" className="rounded-xl px-4 py-2">Cycle atlas</TabsTrigger>
+            <TabsTrigger value="cohorts" className="rounded-xl px-4 py-2">Cohorts</TabsTrigger>
+            <TabsTrigger value="records" className="rounded-xl px-4 py-2">Records</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="summary" className="space-y-5">
+            <div className="grid gap-5 xl:grid-cols-[1.3fr_0.7fr]">
+              <Card>
+                <CardHeader>
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <CardTitle>Collection integrity</CardTitle>
+                      <CardDescription>What is actually available for this study window.</CardDescription>
+                    </div>
+                    {insights.missingCaptureDates === 0 ? (
+                      <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+                    ) : (
+                      <CircleAlert className="h-5 w-5 text-amber-700" />
+                    )}
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-5">
+                  <div className="grid gap-3 sm:grid-cols-4">
+                    <Metric value={insights.totalLogs} label="records" />
+                    <Metric value={insights.observationDays} label="capture days" />
+                    <Metric value={`${coverage}%`} label="observed slots" />
+                    <Metric value={insights.pairedCytologyLogs} label="cytology-paired" />
+                  </div>
+                  <div className="h-2 overflow-hidden rounded-full bg-slate-100" aria-label={`${coverage}% of subject-day slots have observations`}>
+                    <div className="h-full rounded-full bg-indigo-600" style={{ width: `${Math.min(coverage, 100)}%` }} />
+                  </div>
+                  <div className="grid gap-3 text-sm sm:grid-cols-3">
+                    <IntegrityItem
+                      label="Capture-date range"
+                      value={insights.dateRange ? `${formatShortDate(insights.dateRange.start)} – ${formatShortDate(insights.dateRange.end)}` : "No dated records"}
+                      warning={!insights.dateRange}
+                    />
+                    <IntegrityItem
+                      label="Scientist review"
+                      value={`${insights.confirmedLogs} confirmed · ${insights.uncertainLogs} uncertain`}
+                      warning={insights.uncertainLogs > 0}
+                    />
+                    <IntegrityItem
+                      label="Required metadata"
+                      value={insights.subjectsMissingMetadata === 0 ? "Coat and strain complete" : `${insights.subjectsMissingMetadata} ${insights.subjectsMissingMetadata === 1 ? "subject" : "subjects"} incomplete`}
+                      warning={insights.subjectsMissingMetadata > 0}
+                    />
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="border-indigo-200 bg-indigo-50/55">
+                <CardHeader>
+                  <div className="flex items-center gap-3">
+                    <div className="rounded-xl bg-indigo-100 p-2 text-indigo-800"><ShieldCheck className="h-5 w-5" /></div>
+                    <div>
+                      <CardTitle>Photo-model review</CardTitle>
+                      <CardDescription>Binary group evidence, never the saved stage.</CardDescription>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-3 gap-3">
+                    <Metric value={reviewedByBinary} label="reviewed" compact />
+                    <Metric value={insights.binarySuggestions} label="suggestions" compact />
+                    <Metric value={insights.binaryAbstentions} label="abstentions" compact />
+                  </div>
+                  <p className="rounded-xl border border-indigo-200 bg-white/70 p-3 text-sm leading-6 text-indigo-950">
+                    The validated photo model can suggest early- versus late-cycle groups. Exact
+                    stage remains scientist-controlled and abstentions stay visible.
+                  </p>
+                </CardContent>
+              </Card>
+            </div>
+
+            <div className="grid gap-5 lg:grid-cols-[0.8fr_1.2fr]">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Scientist stage mix</CardTitle>
+                  <CardDescription>Saved labels only; model suggestions are excluded.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {insights.stageDistribution.map((entry) => (
+                    <div key={entry.stage} className="flex items-center justify-between rounded-xl border bg-white px-3 py-2.5">
+                      <span className={cn("rounded-full px-2.5 py-1 text-xs font-semibold", STAGE_STYLES[entry.stage] || "stage-unknown")}>{entry.stage}</span>
+                      <strong>{entry.value}</strong>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Attached cohorts</CardTitle>
+                  <CardDescription>Scope, subject count, and paired-ground-truth coverage.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {insights.cohortStats.map((cohort) => (
+                    <div key={cohort.id} className="grid gap-3 rounded-2xl border bg-white p-4 sm:grid-cols-[1fr_auto_auto_auto] sm:items-center">
+                      <div>
+                        <p className="font-semibold">{cohort.name}</p>
+                        <p className="text-sm text-muted-foreground">{cohort.subjectCount} subjects</p>
+                      </div>
+                      <span className="text-sm"><strong>{cohort.logCount}</strong> records</span>
+                      <span className="text-sm"><strong>{cohort.pairedCytologyCount}</strong> paired</span>
+                      <Link href={`/cohorts/${cohort.id}`} className="text-sm font-medium text-primary hover:underline">Open cohort</Link>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="atlas">
+            <Card>
+              <CardHeader className="gap-4 border-b">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div>
+                    <CardTitle>Cycle atlas</CardTitle>
+                    <CardDescription>One row per subject. Blank cells are missing observations, not inferred stages.</CardDescription>
+                  </div>
+                  <div className="flex flex-wrap gap-2 text-xs">
+                    {Object.keys(STAGE_STYLES).map((stage) => (
+                      <span key={stage} className={cn("rounded-full px-2.5 py-1 font-medium", STAGE_STYLES[stage])}>{stage}</span>
+                    ))}
+                    <span className="rounded-full border border-dashed bg-white px-2.5 py-1 text-muted-foreground">Missing</span>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
+                  <span>{insights.totalSubjects} subjects</span>
+                  <span>{atlasDates.length} calendar days</span>
+                  <span>{coverage}% subject-day coverage</span>
+                </div>
+              </CardHeader>
+              <CardContent className="overflow-x-auto p-0">
+                <div className="min-w-max p-5">
+                  <div className="grid grid-cols-[10rem_repeat(var(--atlas-days),3.25rem)] gap-1" style={{ "--atlas-days": atlasDates.length } as CSSProperties}>
+                    <div className="sticky left-0 z-20 bg-card px-2 py-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Subject</div>
+                    {atlasDates.map((date) => (
+                      <div key={date} className="px-1 py-2 text-center text-[11px] font-medium text-muted-foreground">{formatShortDate(date)}</div>
+                    ))}
+                    {atlasRows.flatMap((cohort) => [
+                      <div key={`${cohort.id}-heading`} className="sticky left-0 z-20 col-span-1 mt-3 bg-card px-2 py-2 text-xs font-semibold text-foreground">{cohort.name}</div>,
+                      ...atlasDates.map((date) => <div key={`${cohort.id}-${date}-spacer`} className="mt-3 border-t" />),
+                      ...cohort.mice.flatMap((mouse) => [
+                        <div key={`${mouse.id}-name`} className="sticky left-0 z-20 bg-card px-2 py-2 text-sm font-medium">{mouse.name}</div>,
+                        ...mouse.cells.map(({ date, log }) => (
+                          <div
+                            key={`${mouse.id}-${date}`}
+                            title={`${mouse.name} · ${date} · ${log?.stage || "Missing"}`}
+                            className={cn(
+                              "flex h-9 items-center justify-center rounded-md text-xs font-bold ring-1 ring-inset",
+                              log ? STAGE_CELL_STYLES[log.stage] || "bg-slate-200 text-slate-800 ring-slate-300" : "border border-dashed border-slate-300 bg-white text-slate-400"
+                            )}
+                          >
+                            {log ? log.stage.slice(0, 1) : "—"}
+                            <span className="sr-only">{log?.stage || "Missing observation"}</span>
+                          </div>
+                        )),
+                      ]),
+                    ])}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="cohorts">
+            <div className="grid gap-4 lg:grid-cols-2">
+              {experiment.experiment_cohorts.map(({ cohorts: cohort }) => {
+                if (!cohort) return null;
+                const stats = insights.cohortStats.find((item) => item.id === cohort.id);
+                return (
+                  <Card key={cohort.id}>
+                    <CardHeader>
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <CardTitle>{cohort.name}</CardTitle>
+                          <CardDescription className="mt-2">{cohort.description || "No cohort note."}</CardDescription>
+                        </div>
+                        <div className="h-3 w-3 rounded-full" style={{ backgroundColor: cohort.color || "#4f46e5" }} aria-hidden="true" />
+                      </div>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="grid grid-cols-3 gap-3">
+                        <Metric value={stats?.subjectCount || 0} label="subjects" compact />
+                        <Metric value={stats?.logCount || 0} label="records" compact />
+                        <Metric value={stats?.pairedCytologyCount || 0} label="paired" compact />
+                      </div>
+                      <div className="flex items-center justify-between border-t pt-4">
+                        <Button asChild variant="outline" size="sm"><Link href={`/cohorts/${cohort.id}`}>Open cohort</Link></Button>
+                        <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-destructive" onClick={() => removeCohort(cohort.id)}>
+                          Remove from study
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          </TabsContent>
+
+          <TabsContent value="records">
+            <Card>
+              <CardHeader>
+                <CardTitle>Observation records</CardTitle>
+                <CardDescription>Scientist labels, provenance, and binary review status remain separate.</CardDescription>
+              </CardHeader>
+              <CardContent className="overflow-x-auto p-0">
+                <table className="w-full min-w-[960px] text-left text-sm">
+                  <thead className="border-y bg-muted/45 text-xs uppercase tracking-wider text-muted-foreground">
+                    <tr>
+                      <th className="px-5 py-3 font-semibold">Capture date</th>
+                      <th className="px-5 py-3 font-semibold">Subject</th>
+                      <th className="px-5 py-3 font-semibold">Cohort</th>
+                      <th className="px-5 py-3 font-semibold">Scientist stage</th>
+                      <th className="px-5 py-3 font-semibold">Provenance</th>
+                      <th className="px-5 py-3 font-semibold">Binary review</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {visualizationData.logs.map((log) => {
+                      const mouse = log.mouse_id ? mouseLookup.get(log.mouse_id) : undefined;
+                      return (
+                        <tr key={log.id} className="hover:bg-muted/30">
+                          <td className="px-5 py-3 font-medium">{log.capture_date || log.date}</td>
+                          <td className="px-5 py-3">{mouse?.name || "Unknown"}</td>
+                          <td className="px-5 py-3 text-muted-foreground">{mouse?.cohortName || "Unknown"}</td>
+                          <td className="px-5 py-3"><span className={cn("rounded-full px-2.5 py-1 text-xs font-semibold", STAGE_STYLES[log.stage] || "stage-unknown")}>{log.stage}</span></td>
+                          <td className="px-5 py-3">
+                            <span className="font-medium">{readableSource(log.confirmation_source)}</span>
+                            <span className="mt-0.5 block text-xs text-muted-foreground">{log.label_status === "confirmed" ? "Confirmed" : "Uncertain / legacy"}</span>
+                          </td>
+                          <td className="px-5 py-3 text-muted-foreground">{readableBinaryReview(log)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </CardContent>
+            </Card>
+          </TabsContent>
         </Tabs>
+
+        <details className="rounded-2xl border border-slate-200 bg-white/70 px-5 py-4 text-sm">
+          <summary className="cursor-pointer font-medium text-muted-foreground">Study workspace settings</summary>
+          <div className="mt-4 flex flex-col gap-4 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="font-medium text-foreground">Delete workspace</p>
+              <p className="mt-1 text-muted-foreground">Source cohorts, subjects, images, and observations are not deleted.</p>
+            </div>
+            <Button variant="outline" className="border-destructive/30 text-destructive hover:bg-destructive/5" onClick={removeExperiment} disabled={busy}>
+              <Trash2 className="mr-2 h-4 w-4" /> Delete workspace
+            </Button>
+          </div>
+        </details>
       </div>
+    </div>
+  );
+}
+
+function Metric({ value, label, compact = false }: { value: string | number; label: string; compact?: boolean }) {
+  return (
+    <div className={cn("rounded-2xl border bg-white/80", compact ? "p-3" : "p-4")}>
+      <strong className={cn("block tracking-tight", compact ? "text-xl" : "text-2xl")}>{value}</strong>
+      <span className="mt-1 block text-xs text-muted-foreground">{label}</span>
+    </div>
+  );
+}
+
+function IntegrityItem({ label, value, warning }: { label: string; value: string; warning: boolean }) {
+  return (
+    <div className="rounded-xl border bg-white p-3">
+      <span className="text-xs font-medium text-muted-foreground">{label}</span>
+      <p className={cn("mt-1 font-medium", warning && "text-amber-800")}>{value}</p>
     </div>
   );
 }

@@ -108,6 +108,13 @@ export const PRESET_CONFIGS: Record<string, CohortConfig> = {
         { key: "dob", label: "Date of Birth", type: "date" },
         { key: "genotype", label: "Genotype", type: "text" },
         { key: "cage_number", label: "Cage Number", type: "text" },
+        {
+          key: "coat_colour",
+          label: "Coat Colour",
+          type: "select",
+          options: ["White", "Black", "Brown / agouti", "Grey / blue", "Mixed / patched", "Other", "Unknown"],
+        },
+        { key: "strain", label: "Strain or Stock", type: "text" },
       ],
     },
   },
@@ -402,4 +409,3 @@ export function buildEmptyConfidences(config: CohortConfig): Record<string, numb
 export function getStageNames(config: CohortConfig): string[] {
   return config.logConfig.stages.map(s => s.name);
 }
-

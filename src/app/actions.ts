@@ -1,16 +1,28 @@
 "use server";
 
-import { auth, currentUser } from "@clerk/nextjs/server";
+import { auth, currentUser, isLocalRehearsal } from "@/lib/auth";
+import { randomUUID } from "node:crypto";
 import { createAuthClient, createAdminClient } from "@/lib/supabase";
-import { getGcs } from "@/lib/gcs";
+import { getGcs, getReadableImageUrl, toGcsObjectUri } from "@/lib/gcs";
 import { revalidatePath } from "next/cache";
 import { tasks } from "@trigger.dev/sdk/v3";
-import type { analyzeScanSessionTask } from "@/trigger/scan-tasks";
+import type {
+  analyzeScanSessionTask,
+  proposeScanSessionRoisTask,
+} from "@/trigger/scan-tasks";
 import type { Database } from "@/lib/database-types";
+import { normalizeClassificationFeatures } from "@/lib/classification";
+import {
+  isSubjectCoatColour,
+  normalizeSubjectCoatColour,
+  type SubjectCoatColour,
+} from "@/lib/subject-metadata";
 
 // --- Types/Defaults ---
 const DEFAULT_ESTRUS_CONFIG = {
-  subject_config: { fields: ["dob", "genotype", "cage_number"] },
+  subject_config: {
+    fields: ["dob", "genotype", "cage_number", "coat_colour", "strain"],
+  },
   log_config: {
     stages: ["Proestrus", "Estrus", "Metestrus", "Diestrus"],
     features: ["swelling_score", "color_score"],
@@ -19,26 +31,133 @@ const DEFAULT_ESTRUS_CONFIG = {
 
 type LogRow = Database["public"]["Tables"]["estrus_logs"]["Row"];
 type LogWithSubject = LogRow & {
-  mice?: { name?: string; cohort_id?: string } | null;
+  mice?: {
+    name?: string;
+    cohort_id?: string;
+    coat_colour?: string | null;
+    strain?: string | null;
+  } | null;
+};
+
+export type ObservationModality = "external_photo" | "vaginal_cytology";
+export type BatchObservationContext = {
+  modality: ObservationModality;
+  captureDate: string;
+};
+
+type LogObservationContext = BatchObservationContext & {
+  labelStatus: "confirmed" | "uncertain_or_transition";
+  confirmationSource:
+    | "scientist_review"
+    | "scientist_batch_review"
+    | "paired_cytology_review";
+};
+
+type GroundTruthReference = {
+  modality: "vaginal_cytology";
+  imageUrl: string;
+  sampleId?: string;
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
-const extractConfidenceValue = (value: LogRow["confidence"]): number => {
-  if (typeof value === "number") return value;
+const isObservationModality = (value: unknown): value is ObservationModality =>
+  value === "external_photo" || value === "vaginal_cytology";
+
+const assertBatchObservationContext = (
+  context: BatchObservationContext
+): BatchObservationContext => {
+  if (!isObservationModality(context.modality)) {
+    throw new Error("Choose whether this batch is external photos or vaginal cytology");
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(context.captureDate)) {
+    throw new Error("A specimen capture date is required for this batch");
+  }
+  return context;
+};
+
+const assertLogObservationContext = (
+  context: LogObservationContext
+): LogObservationContext => {
+  assertBatchObservationContext(context);
+  if (context.labelStatus !== "confirmed" && context.labelStatus !== "uncertain_or_transition") {
+    throw new Error("A confirmed or uncertain observation status is required");
+  }
+  if (
+    context.confirmationSource !== "scientist_review" &&
+    context.confirmationSource !== "scientist_batch_review" &&
+    context.confirmationSource !== "paired_cytology_review"
+  ) {
+    throw new Error("A scientist confirmation source is required");
+  }
+  return context;
+};
+
+const normalizeCaptureMetadata = (metadata?: Record<string, unknown>) => {
+  if (!metadata) return {};
+  return Object.entries(metadata).reduce<Record<string, string>>((result, [key, value]) => {
+    if (typeof value !== "string") return result;
+    const trimmed = value.trim();
+    if (trimmed) result[key] = trimmed.slice(0, 200);
+    return result;
+  }, {});
+};
+
+const extractConfidenceValue = (
+  value: LogRow["confidence"],
+  stage?: string
+): number => {
+  const bounded = (raw: number) => Math.min(1, Math.max(0, raw));
+  if (typeof value === "number" && Number.isFinite(value)) return bounded(value);
   if (isRecord(value) && "score" in value) {
     const rawScore = value["score"];
-    if (typeof rawScore === "number") {
-      return rawScore;
+    if (typeof rawScore === "number" && Number.isFinite(rawScore)) {
+      return bounded(rawScore);
+    }
+  }
+  // Some early records stored the complete score distribution directly in
+  // `confidence`. Use the score for the saved stage instead of reporting 0.
+  if (stage && isRecord(value)) {
+    const stageScore = value[stage];
+    if (typeof stageScore === "number" && Number.isFinite(stageScore)) {
+      return bounded(stageScore);
     }
   }
   return 0;
 };
 
+const hasModelSupport = (log: Pick<LogRow, "data">): boolean => {
+  if (!isRecord(log.data)) return false;
+  const scores = log.data.confidence_scores;
+  return (
+    isRecord(scores) &&
+    Object.values(scores).some(
+      (value) => typeof value === "number" && Number.isFinite(value)
+    )
+  );
+};
+
+type ExternalBinarySummary = {
+  decision_status?: string;
+  reference_backed_binary_suggestion?: string;
+  probability_proestrus_or_estrus?: number;
+  model_version?: string;
+};
+
+const getExternalBinarySummary = (log: Pick<LogRow, "data">): ExternalBinarySummary | null => {
+  if (!isRecord(log.data)) return null;
+  const evidence = log.data.evidence;
+  if (!isRecord(evidence)) return null;
+  const binary = evidence.external_binary;
+  return isRecord(binary) ? (binary as ExternalBinarySummary) : null;
+};
+
 const coerceFeatureRecord = (value: unknown): Record<string, string> => {
-  if (!isRecord(value)) return {};
-  return Object.entries(value).reduce<Record<string, string>>(
+  const normalized = normalizeClassificationFeatures(
+    isRecord(value) ? value : undefined
+  );
+  return Object.entries(normalized).reduce<Record<string, string>>(
     (acc, [key, val]) => {
       if (typeof val === "string") {
         acc[key] = val;
@@ -124,19 +243,25 @@ export async function createCohort(formData: FormData) {
     }
   }
 
-  const { error } = await supabase.from("cohorts").insert({
-    user_id: userId,
-    org_id: orgId || null,
-    name,
-    description,
-    color: "bg-blue-500",
-    type,
-    subject_config: subjectConfig,
-    log_config: logConfig,
-  });
+  const { data: cohort, error } = await supabase
+    .from("cohorts")
+    .insert({
+      user_id: userId,
+      org_id: orgId || null,
+      name,
+      description,
+      color: "bg-blue-500",
+      type,
+      subject_config: subjectConfig,
+      log_config: logConfig,
+    })
+    .select()
+    .single();
 
   if (error) throw error;
   revalidatePath("/dashboard");
+  revalidatePath("/cohorts");
+  return cohort;
 }
 
 export async function getCohort(id: string) {
@@ -235,6 +360,13 @@ export async function createSubject(formData: FormData) {
 
   const name = formData.get("name") as string;
   const cohortId = formData.get("cohortId") as string;
+  const rawCoatColour = formData.get("coat_colour");
+  const coatColour = normalizeSubjectCoatColour(rawCoatColour);
+  const strainValue = formData.get("strain");
+  const strain =
+    typeof strainValue === "string"
+      ? strainValue.trim().slice(0, 120) || null
+      : null;
 
   const metadata: Record<string, string> = {};
   ["dob", "genotype", "cage_number"].forEach((field) => {
@@ -262,12 +394,46 @@ export async function createSubject(formData: FormData) {
     org_id: subjectOrgId,
     name,
     cohort_id: cohortId || null,
+    coat_colour: coatColour,
+    strain,
     metadata,
   });
 
   if (error) throw error;
   revalidatePath("/dashboard");
   if (cohortId) revalidatePath(`/cohorts/${cohortId}`);
+}
+
+export async function updateSubjectResearchMetadata(data: {
+  subjectId: string;
+  coatColour: SubjectCoatColour | null;
+  strain?: string;
+}) {
+  const { userId, getToken } = await auth();
+  if (!userId) throw new Error("Unauthorized");
+  if (!isValidUUID(data.subjectId)) throw new Error("A valid subject is required");
+  if (
+    data.coatColour !== null &&
+    !isSubjectCoatColour(data.coatColour)
+  ) {
+    throw new Error("Choose a supported coat-colour category");
+  }
+  const token = await getToken();
+  if (!token) throw new Error("No authentication token");
+
+  const strain = data.strain?.trim().slice(0, 120) || null;
+  const supabase = createAuthClient(token);
+  const { data: subject, error } = await supabase
+    .from("mice")
+    .update({ coat_colour: data.coatColour, strain })
+    .eq("id", data.subjectId)
+    .select("id, cohort_id, coat_colour, strain")
+    .single();
+
+  if (error) throw error;
+  revalidatePath(`/subjects/${data.subjectId}`);
+  if (subject.cohort_id) revalidatePath(`/cohorts/${subject.cohort_id}`);
+  return subject;
 }
 
 // --- Logs ---
@@ -289,13 +455,32 @@ export async function getSubjectLogs(subjectId: string) {
 
   if (error) throw error;
 
-  // Bucket is public - just strip any query params from old signed URLs
-  const updatedLogs = data.map((log) => {
-    if (log.image_url) {
-      return { ...log, image_url: log.image_url.split("?")[0] };
-    }
-    return log;
-  });
+  const updatedLogs = await Promise.all(
+    data.map(async (log) => {
+      const flexibleData = isRecord(log.data) ? log.data : {};
+      const modelInput = isRecord(flexibleData.model_input_reference)
+        ? flexibleData.model_input_reference
+        : null;
+      const modelInputObjectReference = modelInput?.image_object_reference;
+      const readableModelInput = typeof modelInputObjectReference === "string"
+        ? await getReadableImageUrl(modelInputObjectReference)
+        : null;
+      return {
+        ...log,
+        image_url: await getReadableImageUrl(log.image_url),
+        reference_image_url: await getReadableImageUrl(log.reference_image_url),
+        data: modelInput
+          ? {
+              ...flexibleData,
+              model_input_reference: {
+                ...modelInput,
+                readable_image_url: readableModelInput,
+              },
+            }
+          : log.data,
+      };
+    })
+  );
 
   return updatedLogs;
 }
@@ -307,6 +492,9 @@ export async function createLog(data: {
   features?: Record<string, unknown>;
   imageUrl: string;
   notes: string;
+  observationContext: LogObservationContext;
+  groundTruthReference?: GroundTruthReference;
+  captureMetadata?: Record<string, unknown>;
   flexibleData?: Record<string, unknown>;
 }) {
   const { userId, getToken } = await auth();
@@ -316,23 +504,66 @@ export async function createLog(data: {
   if (!token) throw new Error("No authentication token");
 
   const supabase = createAuthClient(token);
+  const observation = assertLogObservationContext(data.observationContext);
+
+  if (!isValidUUID(data.subjectId)) throw new Error("A valid subject is required");
+  const stage = data.stage.trim();
+  if (!stage) throw new Error("A stage is required");
+  if (stage === "Uncertain / transition" && !data.notes.trim()) {
+    throw new Error("A brief observation note is required for an uncertain or transition finding");
+  }
+  if (stage === "Uncertain / transition" && observation.labelStatus !== "uncertain_or_transition") {
+    throw new Error("Transition findings must be recorded as uncertain or transition");
+  }
+  const confidence =
+    typeof data.confidence === "number" ? data.confidence : data.confidence.score;
+  if (!Number.isFinite(confidence) || confidence < 0 || confidence > 1) {
+    throw new Error("Confidence must be a number between 0 and 1");
+  }
+  const reference = data.groundTruthReference;
+  if (observation.confirmationSource === "paired_cytology_review") {
+    if (observation.modality !== "external_photo") {
+      throw new Error("Paired cytology can confirm an external-photo observation only");
+    }
+    if (
+      reference?.modality !== "vaginal_cytology" ||
+      !reference.imageUrl.trim()
+    ) {
+      throw new Error("A paired cytology image is required for cytology-confirmed ground truth");
+    }
+  } else if (reference) {
+    throw new Error("Cytology reference evidence requires paired cytology confirmation");
+  }
 
   // Get the cohort_id from the subject - required for RLS
-  const { data: subject } = await supabase
+  const { data: subject, error: subjectError } = await supabase
     .from("mice")
     .select("cohort_id")
     .eq("id", data.subjectId)
     .single();
 
+  if (subjectError || !subject?.cohort_id) {
+    throw new Error("Subject was not found in a cohort you can access");
+  }
+
   const { error } = await supabase.from("estrus_logs").insert({
     mouse_id: data.subjectId,
     cohort_id: subject?.cohort_id, // Required for RLS policy
-    stage: data.stage,
-    confidence: data.confidence,
-    features: data.features ?? {},
+    stage,
+    confidence,
+    features: normalizeClassificationFeatures(data.features),
     data: data.flexibleData ?? {},
     image_url: data.imageUrl,
     notes: data.notes,
+    modality: observation.modality,
+    capture_date: observation.captureDate,
+    label_status: observation.labelStatus,
+    confirmation_source: observation.confirmationSource,
+    reviewer_id: userId,
+    capture_metadata: normalizeCaptureMetadata(data.captureMetadata),
+    reference_modality: reference?.modality ?? null,
+    reference_image_url: reference?.imageUrl ?? null,
+    reference_sample_id: reference?.sampleId?.trim().slice(0, 200) || null,
   });
 
   if (error) throw error;
@@ -350,13 +581,14 @@ export async function getScanSession(cohortId: string) {
 
   const supabase = createAuthClient(token);
 
-  // Find the most recent 'pending' session for this user/cohort
+  // A session remains recoverable through analysis and review. Previously a
+  // page refresh after analysis hid the pending review session from its owner.
   const { data, error } = await supabase
     .from("scan_sessions")
     .select("*")
     .eq("cohort_id", cohortId)
     .eq("user_id", userId)
-    .eq("status", "pending")
+    .in("status", ["pending", "analyzing", "review"])
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -381,36 +613,14 @@ export async function getScanItems(sessionId: string) {
 
   if (error) throw error;
 
-  // --- FIX: Refresh Signed URLs on read ---
-  // GCS Signed URLs expire. If we are resuming a session, we MUST refresh them.
-  // We'll do this transparently here.
-
-  const { bucket } = getGcs();
-
-  // Filter for items that have a GCS path (image_url starting with http usually means it's already signed,
-  // but we need to know the storage path to re-sign.
-  // However, our previous logic stored the FULL signed URL in `image_url`.
-  // This is problematic for resuming because we can't easily reverse-engineer the object path from a signed URL
-  // if the structure is complex or if we don't store the raw path.
-  //
-  // BETTER APPROACH: We should have stored the relative path.
-  // But we stored the public URL.
-  //
-  // Workaround: Extract the path from the stored URL or assume a structure.
-  // Our getUploadUrl structure: `orgs/${orgId}/...` or `users/${userId}/...`
-  // The public URL is `https://storage.googleapis.com/${bucket.name}/${path}`
-
-  const bucketName = bucket.name;
-  const prefix = `https://storage.googleapis.com/${bucketName}/`;
-
-  // Bucket is public - just strip any existing query params (old signed URLs) and return clean public URLs
-  const updatedItems = data.map((item) => {
-    if (item.image_url && item.image_url.includes(prefix)) {
-      const cleanUrl = item.image_url.split("?")[0];
-      return { ...item, image_url: cleanUrl };
-    }
-    return item;
-  });
+  const updatedItems = await Promise.all(
+    data.map(async (item) => ({
+      ...item,
+      image_url: await getReadableImageUrl(item.image_url),
+      cropped_image_url: await getReadableImageUrl(item.cropped_image_url),
+      mask_image_url: await getReadableImageUrl(item.mask_image_url),
+    }))
+  );
 
   return updatedItems;
 }
@@ -426,12 +636,39 @@ export async function startScanSessionAnalysis(sessionId: string) {
 
   const { data: session, error } = await supabase
     .from("scan_sessions")
-    .select("id, cohort_id")
+    .select("id, cohort_id, modality, capture_date")
     .eq("id", sessionId)
     .single();
 
   if (error) throw error;
   if (!session) throw new Error("Session not found");
+  if (session.modality !== "external_photo") {
+    throw new Error(
+      "Batch analysis is available only for external genital photos. Log cytology as a scientist-reviewed single observation."
+    );
+  }
+  if (!session.capture_date) {
+    throw new Error("Add the specimen capture date before starting analysis");
+  }
+
+  const { data: items, error: itemsError } = await supabase
+    .from("scan_items")
+    .select("status, cropped_image_url")
+    .eq("session_id", sessionId);
+  if (itemsError) throw itemsError;
+  if (!items?.length) throw new Error("Add images before starting analysis");
+  const unresolved = items.filter(
+    (item) => !["roi_confirmed", "complete", "saved"].includes(item.status ?? "")
+  );
+  if (unresolved.length > 0) {
+    throw new Error(`Confirm every suggested crop before analysis (${unresolved.length} remaining)`);
+  }
+
+  const { error: statusError } = await supabase
+    .from("scan_sessions")
+    .update({ status: "analyzing" })
+    .eq("id", sessionId);
+  if (statusError) throw statusError;
 
   await tasks.trigger<typeof analyzeScanSessionTask>("analyze-scan-session", {
     sessionId,
@@ -440,7 +677,41 @@ export async function startScanSessionAnalysis(sessionId: string) {
   return { sessionId };
 }
 
-export async function createScanSession(cohortId: string, name?: string) {
+export async function startScanSessionRoiProposal(sessionId: string) {
+  const { userId, getToken } = await auth();
+  if (!userId) throw new Error("Unauthorized");
+  const token = await getToken();
+  if (!token) throw new Error("No authentication token");
+
+  const supabase = createAuthClient(token);
+  const { data: session, error } = await supabase
+    .from("scan_sessions")
+    .select("id, modality, capture_date")
+    .eq("id", sessionId)
+    .single();
+  if (error) throw error;
+  if (!session) throw new Error("Session not found");
+  if (session.modality !== "external_photo" || !session.capture_date) {
+    throw new Error("Choose an external-photo modality and capture date before suggesting crops");
+  }
+
+  const { error: statusError } = await supabase
+    .from("scan_sessions")
+    .update({ status: "proposing_roi" })
+    .eq("id", sessionId);
+  if (statusError) throw statusError;
+
+  await tasks.trigger<typeof proposeScanSessionRoisTask>("propose-scan-session-rois", {
+    sessionId,
+  });
+  return { sessionId };
+}
+
+export async function createScanSession(
+  cohortId: string,
+  context: BatchObservationContext,
+  name?: string
+) {
   const { userId, getToken } = await auth();
   if (!userId) throw new Error("Unauthorized");
 
@@ -448,6 +719,7 @@ export async function createScanSession(cohortId: string, name?: string) {
   if (!token) throw new Error("No authentication token");
 
   const supabase = createAuthClient(token);
+  const observation = assertBatchObservationContext(context);
 
   const { data, error } = await supabase
     .from("scan_sessions")
@@ -456,12 +728,33 @@ export async function createScanSession(cohortId: string, name?: string) {
       user_id: userId,
       name: name || `Batch Scan ${new Date().toLocaleDateString()}`,
       status: "pending",
+      modality: observation.modality,
+      capture_date: observation.captureDate,
     })
     .select()
     .single();
 
   if (error) throw error;
   return data;
+}
+
+export async function updateScanSessionContext(
+  sessionId: string,
+  context: BatchObservationContext
+) {
+  const { userId, getToken } = await auth();
+  if (!userId) throw new Error("Unauthorized");
+  const token = await getToken();
+  if (!token) throw new Error("No authentication token");
+  if (!isValidUUID(sessionId)) throw new Error("A valid scan session is required");
+
+  const observation = assertBatchObservationContext(context);
+  const supabase = createAuthClient(token);
+  const { error } = await supabase
+    .from("scan_sessions")
+    .update({ modality: observation.modality, capture_date: observation.captureDate })
+    .eq("id", sessionId);
+  if (error) throw error;
 }
 
 export async function createScanItem(sessionId: string, imageUrl: string) {
@@ -519,6 +812,7 @@ export async function updateScanItem(
     result?: Record<string, unknown>;
     mouseId?: string;
     imageUrl?: string;
+    croppedImageUrl?: string;
   }
 ) {
   const { userId, getToken } = await auth();
@@ -533,6 +827,7 @@ export async function updateScanItem(
     ai_result?: Record<string, unknown>;
     mouse_id?: string;
     image_url?: string;
+    cropped_image_url?: string;
   } = {
     status: updates.status,
   };
@@ -546,6 +841,9 @@ export async function updateScanItem(
   if (updates.imageUrl) {
     payload.image_url = updates.imageUrl;
   }
+  if (updates.croppedImageUrl) {
+    payload.cropped_image_url = updates.croppedImageUrl;
+  }
 
   const { error } = await supabase
     .from("scan_items")
@@ -555,15 +853,34 @@ export async function updateScanItem(
   if (error) throw error;
 }
 
+export async function deleteScanItem(itemId: string) {
+  const { userId, getToken } = await auth();
+  if (!userId) throw new Error("Unauthorized");
+  const token = await getToken();
+  if (!token) throw new Error("No authentication token");
+  if (!isValidUUID(itemId)) throw new Error("A valid scan item is required");
+
+  const supabase = createAuthClient(token);
+  const { error } = await supabase
+    .from("scan_items")
+    .delete()
+    .eq("id", itemId);
+  if (error) throw error;
+}
+
 // --- Scan History & Receipts ---
 
 export type ScanSessionSummary = {
   id: string;
   name: string | null;
   status: string;
+  workflowStatus: "preparing" | "analyzing" | "review" | "saved";
   created_at: string;
+  captureDate: string | null;
+  modality: string | null;
   itemCount: number;
   completedCount: number;
+  actionCount: number;
   stageBreakdown: Record<string, number>;
 };
 
@@ -576,7 +893,16 @@ export type ScanSessionDetail = ScanSessionSummary & {
     id: string;
     image_url: string | null;
     status: string;
-    ai_result: Record<string, unknown> | null;
+    savedStage: string | null;
+    notes: string | null;
+    captureDate: string | null;
+    confirmationSource: string | null;
+    binaryModel: {
+      decisionStatus: string | null;
+      suggestion: string | null;
+      probabilityEarly: number | null;
+      modelVersion: string | null;
+    } | null;
     mouse_id: string | null;
     mouse_name: string | null;
     created_at: string;
@@ -602,27 +928,36 @@ export async function getCohortScanSessions(
   // Get all sessions for this cohort
   const { data: sessions, error } = await supabase
     .from("scan_sessions")
-    .select("id, name, status, created_at")
+    .select("id, name, status, created_at, capture_date, modality")
     .eq("cohort_id", cohortId)
     .order("created_at", { ascending: false });
 
   if (error) throw error;
-  if (!sessions) return [];
+  if (!sessions?.length) return [];
 
   // Get log counts and stage breakdowns from estrus_logs (the permanent records)
   const sessionIds = sessions.map((s) => s.id);
 
-  const { data: logs } = await supabase
+  const [{ data: logs, error: logsError }, { data: scanItems, error: itemsError }] = await Promise.all([
+    supabase
     .from("estrus_logs")
     .select("session_id, stage")
-    .in("session_id", sessionIds);
+    .in("session_id", sessionIds),
+    supabase
+      .from("scan_items")
+      .select("session_id, status")
+      .in("session_id", sessionIds),
+  ]);
+  if (logsError) throw logsError;
+  if (itemsError) throw itemsError;
 
   // Aggregate by session
   const sessionStats = new Map<
     string,
     {
-      itemCount: number;
+      scanItemCount: number;
       completedCount: number;
+      workflowCompleteCount: number;
       stageBreakdown: Record<string, number>;
     }
   >();
@@ -630,11 +965,11 @@ export async function getCohortScanSessions(
   logs?.forEach((log) => {
     if (!log.session_id) return;
     const stats = sessionStats.get(log.session_id) || {
-      itemCount: 0,
+      scanItemCount: 0,
       completedCount: 0,
+      workflowCompleteCount: 0,
       stageBreakdown: {},
     };
-    stats.itemCount++;
     stats.completedCount++; // All logs are finalized
     if (log.stage) {
       stats.stageBreakdown[log.stage] =
@@ -643,14 +978,52 @@ export async function getCohortScanSessions(
     sessionStats.set(log.session_id, stats);
   });
 
-  return sessions.map((session) => ({
-    ...session,
-    ...(sessionStats.get(session.id) || {
-      itemCount: 0,
+  scanItems?.forEach((item) => {
+    if (!item.session_id) return;
+    const stats = sessionStats.get(item.session_id) || {
+      scanItemCount: 0,
       completedCount: 0,
+      workflowCompleteCount: 0,
       stageBreakdown: {},
-    }),
-  }));
+    };
+    stats.scanItemCount++;
+    if (["complete", "saved"].includes(item.status ?? "")) {
+      stats.workflowCompleteCount++;
+    }
+    sessionStats.set(item.session_id, stats);
+  });
+
+  return sessions.map((session) => {
+    const stats = sessionStats.get(session.id) || {
+      scanItemCount: 0,
+      completedCount: 0,
+      workflowCompleteCount: 0,
+      stageBreakdown: {},
+    };
+    // A saved log and its originating scan item represent the same photo. Older
+    // sessions may have logs but no retained workflow items, so use the larger
+    // of the two sources instead of adding them together.
+    const itemCount = Math.max(stats.scanItemCount, stats.completedCount);
+    const actionCount = Math.max(0, itemCount - stats.completedCount);
+    const workflowStatus: ScanSessionSummary["workflowStatus"] =
+      itemCount > 0 && actionCount === 0
+        ? "saved"
+        : session.status === "review" || stats.workflowCompleteCount > 0
+          ? "review"
+          : ["analyzing", "processing"].includes(session.status)
+            ? "analyzing"
+            : "preparing";
+    return {
+      ...session,
+      captureDate: session.capture_date,
+      modality: session.modality,
+      workflowStatus,
+      itemCount,
+      completedCount: stats.completedCount,
+      actionCount,
+      stageBreakdown: stats.stageBreakdown,
+    };
+  });
 }
 
 /**
@@ -673,7 +1046,7 @@ export async function getScanSessionDetail(
     .from("scan_sessions")
     .select(
       `
-      id, name, status, created_at,
+      id, name, status, created_at, capture_date, modality,
       cohorts (id, name)
     `
     )
@@ -687,7 +1060,7 @@ export async function getScanSessionDetail(
     .from("estrus_logs")
     .select(
       `
-      id, image_url, stage, confidence, created_at, mouse_id,
+      id, image_url, stage, notes, capture_date, confirmation_source, data, created_at, mouse_id,
       mice (id, name)
     `
     )
@@ -696,42 +1069,91 @@ export async function getScanSessionDetail(
 
   if (logsError) throw logsError;
 
-  // Clean up image URLs (strip query params from signed URLs)
-  const { bucket } = getGcs();
-  const bucketName = bucket.name;
-  const prefix = `https://storage.googleapis.com/${bucketName}/`;
-
-  const cleanedItems =
-    logs?.map((log) => {
-      let cleanUrl = log.image_url;
-      if (cleanUrl && cleanUrl.includes(prefix)) {
-        cleanUrl = cleanUrl.split("?")[0];
-      }
+  const cleanedItems = await Promise.all(
+    (logs ?? []).map(async (log) => {
+      const imageUrl = await getReadableImageUrl(log.image_url);
       const miceData = log.mice as
         | { id: string; name: string }
         | { id: string; name: string }[]
         | null;
       const mice = Array.isArray(miceData) ? miceData[0] : miceData;
+      const binary = getExternalBinarySummary(log);
       return {
         id: log.id,
-        image_url: cleanUrl,
+        image_url: imageUrl,
         status: "completed" as const, // Logs are always finalized
-        ai_result: { stage: log.stage, confidence: log.confidence } as Record<
-          string,
-          unknown
-        >,
+        savedStage: log.stage,
+        notes: log.notes,
+        captureDate: log.capture_date,
+        confirmationSource: log.confirmation_source,
+        binaryModel: binary
+          ? {
+              decisionStatus: binary.decision_status ?? null,
+              suggestion: binary.reference_backed_binary_suggestion ?? null,
+              probabilityEarly:
+                typeof binary.probability_proestrus_or_estrus === "number"
+                  ? binary.probability_proestrus_or_estrus
+                  : null,
+              modelVersion: binary.model_version ?? null,
+            }
+          : null,
         mouse_id: log.mouse_id,
         mouse_name: mice?.name || null,
         created_at: log.created_at,
       };
-    }) || [];
+    })
+  );
 
-  // Calculate stage breakdown
+  // When a session has not been saved yet, retain its real workflow items so
+  // the session page can direct the scientist back to review instead of
+  // presenting an empty "receipt".
+  let workflowItems: ScanSessionDetail["items"] = [];
+  if (cleanedItems.length === 0) {
+    const { data: pendingItems, error: pendingItemsError } = await supabase
+      .from("scan_items")
+      .select("id, image_url, cropped_image_url, status, ai_result, mouse_id, created_at, mice(id, name)")
+      .eq("session_id", sessionId)
+      .order("created_at", { ascending: true });
+    if (pendingItemsError) throw pendingItemsError;
+    workflowItems = await Promise.all((pendingItems ?? []).map(async (item) => {
+      const miceData = item.mice as { id: string; name: string } | { id: string; name: string }[] | null;
+      const mouse = Array.isArray(miceData) ? miceData[0] : miceData;
+      const result = isRecord(item.ai_result) ? item.ai_result : {};
+      const evidence = isRecord(result.evidence) ? result.evidence : {};
+      const binary = isRecord(evidence.external_binary) ? evidence.external_binary : null;
+      return {
+        id: item.id,
+        image_url: await getReadableImageUrl(item.cropped_image_url || item.image_url),
+        status: item.status ?? "pending",
+        savedStage:
+          typeof result.scientist_confirmed_stage === "string"
+            ? result.scientist_confirmed_stage
+            : null,
+        notes: null,
+        captureDate: session.capture_date,
+        confirmationSource: null,
+        binaryModel: binary
+          ? {
+              decisionStatus: typeof binary.decision_status === "string" ? binary.decision_status : null,
+              suggestion: typeof binary.reference_backed_binary_suggestion === "string" ? binary.reference_backed_binary_suggestion : null,
+              probabilityEarly: typeof binary.probability_proestrus_or_estrus === "number" ? binary.probability_proestrus_or_estrus : null,
+              modelVersion: typeof binary.model_version === "string" ? binary.model_version : null,
+            }
+          : null,
+        mouse_id: item.mouse_id,
+        mouse_name: mouse?.name || null,
+        created_at: item.created_at,
+      };
+    }));
+  }
+
+  const receiptItems = cleanedItems.length > 0 ? cleanedItems : workflowItems;
+
+  // Scientist-confirmed saved stage distribution.
   const stageBreakdown: Record<string, number> = {};
   cleanedItems.forEach((item) => {
-    const result = item.ai_result as { stage?: string } | null;
-    if (result?.stage) {
-      stageBreakdown[result.stage] = (stageBreakdown[result.stage] || 0) + 1;
+    if (item.savedStage) {
+      stageBreakdown[item.savedStage] = (stageBreakdown[item.savedStage] || 0) + 1;
     }
   });
 
@@ -766,10 +1188,21 @@ export async function getScanSessionDetail(
     status: session.status,
     created_at: session.created_at,
     cohort: cohortData,
-    itemCount: cleanedItems.length,
+    workflowStatus:
+      cleanedItems.length > 0 && cleanedItems.length === receiptItems.length
+        ? "saved"
+        : session.status === "review" || workflowItems.some((item) => item.status === "complete")
+          ? "review"
+          : ["analyzing", "processing"].includes(session.status)
+            ? "analyzing"
+            : "preparing",
+    captureDate: session.capture_date,
+    modality: session.modality,
+    itemCount: receiptItems.length,
     completedCount: cleanedItems.length, // All logs are finalized
+    actionCount: Math.max(0, receiptItems.length - cleanedItems.length),
     stageBreakdown,
-    items: cleanedItems,
+    items: receiptItems,
     subjectsLogged: Array.from(subjectCounts.values()).map((s) => ({
       id: s.id,
       name: s.name,
@@ -780,6 +1213,16 @@ export async function getScanSessionDetail(
 
 // --- GCS Upload & Batch ---
 
+const localUploadDescriptor = (filename: string) => {
+  const safeFilename = filename
+    .normalize("NFKD")
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(-120) || "image";
+  const objectUrl = `/api/local-uploads/${randomUUID()}/${safeFilename}`;
+  return { url: objectUrl, objectUrl, readUrl: objectUrl };
+};
+
 export async function getUploadUrl(
   filename: string,
   contentType: string,
@@ -787,6 +1230,8 @@ export async function getUploadUrl(
 ) {
   const { userId, orgId } = await auth();
   if (!userId) throw new Error("Unauthorized");
+
+  if (isLocalRehearsal()) return localUploadDescriptor(filename);
 
   const { bucket } = getGcs();
 
@@ -806,7 +1251,8 @@ export async function getUploadUrl(
 
   return {
     url,
-    publicUrl: `https://storage.googleapis.com/${bucket.name}/${path}`,
+    objectUrl: toGcsObjectUri(bucket.name, path),
+    readUrl: await getReadableImageUrl(toGcsObjectUri(bucket.name, path)),
   };
 }
 
@@ -816,6 +1262,13 @@ export async function getUploadUrls(
 ) {
   const { userId, orgId } = await auth();
   if (!userId) throw new Error("Unauthorized");
+
+  if (isLocalRehearsal()) {
+    return files.map((file) => ({
+      filename: file.filename,
+      ...localUploadDescriptor(file.filename),
+    }));
+  }
 
   const { bucket } = getGcs();
   const rootPath = orgId ? `orgs/${orgId}` : `users/${userId}`;
@@ -834,7 +1287,8 @@ export async function getUploadUrls(
       return {
         filename: f.filename,
         url,
-        publicUrl: `https://storage.googleapis.com/${bucket.name}/${path}`,
+        objectUrl: toGcsObjectUri(bucket.name, path),
+        readUrl: await getReadableImageUrl(toGcsObjectUri(bucket.name, path)),
       };
     })
   );
@@ -849,14 +1303,22 @@ type BatchLogItem = {
   confidence: number;
   features?: Record<string, unknown>;
   reasoning: string;
+  notes?: string;
   scanItemId?: string;
   subjectId?: string; // Explicit existing subject
   newSubjectName?: string; // Or create a new one
+  observationContext: BatchObservationContext;
   flexibleData?: Record<string, unknown>; // NEW: Support flexible data like granular confidences
 };
 
 export type CohortInsights = {
   totalLogs: number;
+  modelSupportedLogs: number;
+  binaryModelReviews: number;
+  binarySuggestions: number;
+  binaryAbstentions: number;
+  binaryEarlyLeads: number;
+  binaryLateLeads: number;
   stageDistribution: { stage: string; value: number }[];
   confidenceByStage: { stage: string; value: number }[];
   timeline: { date: string; value: number }[];
@@ -870,13 +1332,16 @@ export type CohortInsights = {
     id: string;
     stage: string;
     confidence: number;
+    hasModelSupport: boolean;
     created_at: string;
     subjectName: string;
     imageUrl: string | null;
+    binaryDecisionStatus: string | null;
+    binaryGroup: string | null;
   }[];
 };
 
-const STAGES = ["Proestrus", "Estrus", "Metestrus", "Diestrus", "Uncertain"];
+const STAGES = ["Proestrus", "Estrus", "Metestrus", "Diestrus", "Uncertain", "Uncertain / transition"];
 
 export async function batchSaveLogs(
   cohortId: string,
@@ -891,12 +1356,23 @@ export async function batchSaveLogs(
 
   const supabase = createAuthClient(token);
 
+  if (items.length === 0) return { savedCount: 0 };
+  if (
+    items.some(
+      (item) => !item.subjectId && !item.newSubjectName?.trim()
+    )
+  ) {
+    throw new Error("Assign every analyzed image to a subject before saving");
+  }
+
   // Get the cohort's org_id to ensure new subjects inherit it
-  const { data: cohort } = await supabase
+  const { data: cohort, error: cohortError } = await supabase
     .from("cohorts")
     .select("org_id")
     .eq("id", cohortId)
     .single();
+
+  if (cohortError || !cohort) throw new Error("Cohort not found");
 
   const cohortOrgId = cohort?.org_id || null;
 
@@ -909,6 +1385,7 @@ export async function batchSaveLogs(
   const subjectMap = new Map(
     existingSubjects?.map((s) => [s.name.toLowerCase(), s.id])
   );
+  const subjectIds = new Set(existingSubjects?.map((subject) => subject.id));
 
   const logsToInsert = [];
   const scanItemsToUpdate = [];
@@ -916,11 +1393,26 @@ export async function batchSaveLogs(
   for (const item of items) {
     let subjectId = item.subjectId;
 
+    if (subjectId && !subjectIds.has(subjectId)) {
+      throw new Error("A selected subject does not belong to this cohort");
+    }
+
+    const stage = item.stage.trim();
+    if (!stage) throw new Error("Every saved item needs a stage");
+    const observation = assertBatchObservationContext(item.observationContext);
+    if (observation.modality !== "external_photo") {
+      throw new Error("Batch save supports external genital-photo observations only");
+    }
+    if (!Number.isFinite(item.confidence) || item.confidence < 0 || item.confidence > 1) {
+      throw new Error("Every saved item needs a confidence between 0 and 1");
+    }
+
     // If no explicit ID, try to find by new name or fallback to filename matching
     if (!subjectId) {
       // 1. Try explicit new name (e.g. user typed "227A" in UI)
-      if (item.newSubjectName) {
-        const lowerName = item.newSubjectName.toLowerCase();
+      if (item.newSubjectName?.trim()) {
+        const subjectName = item.newSubjectName.trim();
+        const lowerName = subjectName.toLowerCase();
         subjectId = subjectMap.get(lowerName); // Check if exists first
 
         if (!subjectId) {
@@ -931,16 +1423,16 @@ export async function batchSaveLogs(
               user_id: userId,
               org_id: cohortOrgId, // Inherit from cohort
               cohort_id: cohortId,
-              name: item.newSubjectName,
+              name: subjectName,
               status: "Active",
             })
             .select("id")
             .single();
 
-          if (createdSubject) {
-            subjectId = createdSubject.id;
-            subjectMap.set(lowerName, subjectId);
-          }
+          if (!createdSubject) throw new Error(`Could not create subject ${subjectName}`);
+          subjectId = createdSubject.id;
+          subjectMap.set(lowerName, subjectId);
+          subjectIds.add(subjectId);
         }
       }
       // 2. Fallback to Filename heuristic (only if desired/legacy)
@@ -958,13 +1450,26 @@ export async function batchSaveLogs(
         mouse_id: subjectId,
         cohort_id: cohortId, // Required for RLS policy
         session_id: sessionId || null, // Link to scan session for receipts
-        stage: item.stage,
-        confidence:
-          typeof item.confidence === "number" ? item.confidence : 0.95,
-        features: item.features ?? {},
+        stage,
+        confidence: item.confidence,
+        features: normalizeClassificationFeatures(item.features),
         image_url: item.imageUrl,
-        notes: item.reasoning,
-        data: item.flexibleData ?? item.features ?? {},
+        notes: item.notes || null,
+        modality: observation.modality,
+        capture_date: observation.captureDate,
+        label_status: "confirmed",
+        confirmation_source: "scientist_batch_review",
+        reviewer_id: userId,
+        data: {
+          ...(item.flexibleData ?? item.features ?? {}),
+          model_reasoning: item.reasoning,
+          observation_context: {
+            modality: observation.modality,
+            capture_date: observation.captureDate,
+            confirmation_source: "scientist_batch_review",
+            label_status: "confirmed",
+          },
+        },
       });
 
       if (item.scanItemId) {
@@ -984,23 +1489,24 @@ export async function batchSaveLogs(
 
   // Update Scan Items links if provided
   if (scanItemsToUpdate.length > 0) {
-    // In a real app, we'd bulk update, but loop for now or use a stored procedure
-    // For simplicity, we'll just fire promises
-    await Promise.all(
+    const updateResults = await Promise.all(
       scanItemsToUpdate.map((u) =>
         supabase
           .from("scan_items")
-          .update({ mouse_id: u.mouse_id, status: "completed" })
+          .update({ mouse_id: u.mouse_id, status: "saved" })
           .eq("id", u.id)
       )
     );
+    const updateError = updateResults.find((result) => result.error)?.error;
+    if (updateError) throw updateError;
   }
 
   if (sessionId) {
-    await supabase
+    const { error: sessionError } = await supabase
       .from("scan_sessions")
       .update({ status: "completed" })
       .eq("id", sessionId);
+    if (sessionError) throw sessionError;
   }
 
   revalidatePath(`/cohorts/${cohortId}`);
@@ -1024,12 +1530,79 @@ export async function getCohortLogs(cohortId: string) {
 
   if (error) throw error;
 
-  // Bucket is public - strip query params from old signed URLs and add subjectName
-  return data.map((log) => ({
+  return Promise.all(data.map(async (log) => ({
     ...log,
-    image_url: log.image_url?.split("?")[0] || log.image_url,
+    image_url: await getReadableImageUrl(log.image_url),
     subjectName: log.mice?.name || "Unknown",
-  }));
+  })));
+}
+
+/** A portable, provenance-first manifest for local analysis or archiving. */
+export async function getCohortExportData(cohortId: string) {
+  const { userId, getToken } = await auth();
+  if (!userId) throw new Error("Unauthorized");
+  if (!isValidUUID(cohortId)) throw new Error("A valid cohort is required");
+  const token = await getToken();
+  if (!token) throw new Error("No authentication token");
+
+  const supabase = createAuthClient(token);
+  const { data, error } = await supabase
+    .from("estrus_logs")
+    .select("id, mouse_id, stage, created_at, image_url, notes, modality, capture_date, capture_metadata, label_status, confirmation_source, reviewer_id, reference_modality, reference_image_url, reference_sample_id, data, mice!inner(name, cohort_id, coat_colour, strain)")
+    .eq("mice.cohort_id", cohortId)
+    .order("capture_date", { ascending: true, nullsFirst: false })
+    .order("created_at", { ascending: true });
+
+  if (error) throw error;
+
+  return data.map((log) => {
+    const record = isRecord(log.data) ? log.data : {};
+    const capture = isRecord(log.capture_metadata) ? log.capture_metadata : {};
+    const scores = isRecord(record.confidence_scores) ? record.confidence_scores : {};
+    const evidence = isRecord(record.evidence) ? record.evidence : {};
+    const externalBinary = isRecord(evidence.external_binary) ? evidence.external_binary : {};
+    const modelInput = isRecord(record.model_input_reference) ? record.model_input_reference : {};
+    const modelCrop = isRecord(modelInput.crop) ? modelInput.crop : {};
+    const mouse = Array.isArray(log.mice) ? log.mice[0] : log.mice;
+    return {
+      log_id: log.id,
+      subject_id: log.mouse_id || "",
+      subject_name: mouse?.name || "Unknown",
+      subject_coat_colour: mouse?.coat_colour || "",
+      subject_strain: mouse?.strain || "",
+      saved_stage: log.stage,
+      capture_date: log.capture_date || "",
+      modality: log.modality || "",
+      label_status: log.label_status || "",
+      confirmation_source: log.confirmation_source || "",
+      reviewer_id: log.reviewer_id || "",
+      capture_session: typeof capture.capture_session === "string" ? capture.capture_session : "",
+      imaging_device: typeof capture.imaging_device === "string" ? capture.imaging_device : "",
+      magnification: typeof capture.magnification === "string" ? capture.magnification : "",
+      stain_or_preparation: typeof capture.stain_or_preparation === "string" ? capture.stain_or_preparation : "",
+      image_object_reference: log.image_url || "",
+      reference_modality: log.reference_modality || "",
+      reference_image_object_reference: log.reference_image_url || "",
+      reference_sample_id: log.reference_sample_id || "",
+      model_version: typeof record.model_version === "string" ? record.model_version : "",
+      suggested_stage: typeof record.suggested_stage === "string" ? record.suggested_stage : "",
+      model_review_required: record.review_required === true ? "true" : record.review_required === false ? "false" : "",
+      binary_model_version: typeof externalBinary.model_version === "string" ? externalBinary.model_version : "",
+      binary_decision_status: typeof externalBinary.decision_status === "string" ? externalBinary.decision_status : "",
+      binary_group_suggestion: typeof externalBinary.reference_backed_binary_suggestion === "string" ? externalBinary.reference_backed_binary_suggestion : "",
+      binary_probability_early: typeof externalBinary.probability_proestrus_or_estrus === "number" ? externalBinary.probability_proestrus_or_estrus : "",
+      prepared_roi_object_reference: typeof modelInput.image_object_reference === "string" ? modelInput.image_object_reference : "",
+      prepared_roi_confirmed: modelInput.crop_confirmed === true || modelCrop.confirmed === true
+        ? "true"
+        : modelInput.crop_confirmed === false || modelCrop.confirmed === false
+          ? "false"
+          : "",
+      prepared_roi_crop_json: JSON.stringify(modelCrop),
+      confidence_scores_json: JSON.stringify(scores),
+      notes: log.notes || "",
+      created_at: log.created_at,
+    };
+  });
 }
 
 export async function getCohortInsights(
@@ -1046,7 +1619,7 @@ export async function getCohortInsights(
   const { data: logs, error } = await supabase
     .from("estrus_logs")
     .select(
-      "id, stage, confidence, created_at, image_url, features, mice!inner(name, cohort_id)"
+      "id, stage, confidence, created_at, capture_date, image_url, features, data, mice!inner(name, cohort_id)"
     )
     .eq("mice.cohort_id", cohortId)
     .order("created_at", { ascending: false });
@@ -1058,6 +1631,12 @@ export async function getCohortInsights(
   if (typedLogs.length === 0) {
     return {
       totalLogs: 0,
+      modelSupportedLogs: 0,
+      binaryModelReviews: 0,
+      binarySuggestions: 0,
+      binaryAbstentions: 0,
+      binaryEarlyLeads: 0,
+      binaryLateLeads: 0,
       stageDistribution: [],
       confidenceByStage: [],
       timeline: [],
@@ -1076,27 +1655,35 @@ export async function getCohortInsights(
     moistness: new Map<string, number>(),
   };
 
-  const recentLogs = typedLogs.slice(0, 6).map((log) => ({
-    id: log.id,
-    stage: log.stage || "Uncertain",
-    confidence: extractConfidenceValue(log.confidence),
-    created_at: log.created_at,
-    subjectName: log.mice?.name || "Unknown subject",
-    imageUrl: log.image_url,
-  }));
+  const recentLogs = typedLogs.slice(0, 6).map((log) => {
+    const binary = getExternalBinarySummary(log);
+    return {
+      id: log.id,
+      stage: log.stage || "Uncertain",
+      confidence: extractConfidenceValue(log.confidence, log.stage),
+      hasModelSupport: hasModelSupport(log),
+      created_at: log.created_at,
+      subjectName: log.mice?.name || "Unknown subject",
+      imageUrl: log.image_url,
+      binaryDecisionStatus: binary?.decision_status ?? null,
+      binaryGroup: binary?.reference_backed_binary_suggestion ?? null,
+    };
+  });
 
   typedLogs.forEach((log) => {
     const stage = STAGES.includes(log.stage) ? log.stage : "Uncertain";
-    const confidenceValue = extractConfidenceValue(log.confidence);
+    const confidenceValue = extractConfidenceValue(log.confidence, log.stage);
 
     stageCounts.set(stage, (stageCounts.get(stage) || 0) + 1);
 
-    const confEntry = confidenceMap.get(stage) || { sum: 0, count: 0 };
-    confEntry.sum += confidenceValue;
-    confEntry.count += 1;
-    confidenceMap.set(stage, confEntry);
+    if (hasModelSupport(log)) {
+      const confEntry = confidenceMap.get(stage) || { sum: 0, count: 0 };
+      confEntry.sum += confidenceValue;
+      confEntry.count += 1;
+      confidenceMap.set(stage, confEntry);
+    }
 
-    const dayKey = new Date(log.created_at).toISOString().split("T")[0];
+    const dayKey = log.capture_date || new Date(log.created_at).toISOString().split("T")[0];
     timelineMap.set(dayKey, (timelineMap.get(dayKey) || 0) + 1);
 
     const featureSource = coerceFeatureRecord(log.features ?? log.data ?? {});
@@ -1109,6 +1696,19 @@ export async function getCohortInsights(
   });
 
   const totalLogs = typedLogs.length;
+  const modelSupportedLogs = typedLogs.filter(hasModelSupport).length;
+  const binaryReviews = typedLogs
+    .map(getExternalBinarySummary)
+    .filter((value): value is ExternalBinarySummary => Boolean(value));
+  const binarySuggestions = binaryReviews.filter(
+    (review) => review.decision_status === "reference_backed_suggestion"
+  ).length;
+  const binaryEarlyLeads = binaryReviews.filter(
+    (review) => review.reference_backed_binary_suggestion === "PROESTRUS_OR_ESTRUS"
+  ).length;
+  const binaryLateLeads = binaryReviews.filter(
+    (review) => review.reference_backed_binary_suggestion === "METESTRUS_OR_DIESTRUS"
+  ).length;
 
   const stageDistribution = Array.from(stageCounts.entries())
     .map(([stage, value]) => ({ stage, value }))
@@ -1144,6 +1744,12 @@ export async function getCohortInsights(
 
   return {
     totalLogs,
+    modelSupportedLogs,
+    binaryModelReviews: binaryReviews.length,
+    binarySuggestions,
+    binaryAbstentions: binaryReviews.length - binarySuggestions,
+    binaryEarlyLeads,
+    binaryLateLeads,
     stageDistribution,
     confidenceByStage,
     timeline,
@@ -1155,6 +1761,19 @@ export async function getCohortInsights(
 export type DashboardStats = {
   totalSubjects: number;
   todaysScans: number;
+  cohortProgress: {
+    id: string;
+    name: string;
+    totalSubjects: number;
+    recordedToday: number;
+    remaining: number;
+    dueSubjects: {
+      id: string;
+      name: string;
+      coatColour: string | null;
+      strain: string | null;
+    }[];
+  }[];
   stageDistribution: { stage: string; value: number }[];
   recentActivity: {
     id: string;
@@ -1181,23 +1800,74 @@ export async function getDashboardStats(): Promise<DashboardStats> {
   if (!token) throw new Error("No authentication token");
 
   const supabase = createAuthClient(token);
-
-  // 1. Total Subjects
-  const { count: totalSubjects, error: subjectsError } = await supabase
-    .from("mice")
-    .select("*", { count: "exact", head: true });
-
-  if (subjectsError) throw subjectsError;
-
-  // 2. Today's Scans
+  const localDateKey = (date: Date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  };
   const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const { count: todaysScans, error: scansError } = await supabase
-    .from("estrus_logs")
-    .select("*", { count: "exact", head: true })
-    .gte("created_at", today.toISOString());
+  const todayKey = localDateKey(today);
+  const weekStart = new Date(today);
+  weekStart.setDate(weekStart.getDate() - 6);
+  const weekStartKey = localDateKey(weekStart);
 
-  if (scansError) throw scansError;
+  // Use specimen capture date for daily lab work. created_at reflects when a
+  // record was entered and can move an observation into the wrong workday.
+  const [subjectsResult, cohortsResult, todayLogsResult] = await Promise.all([
+    supabase.from("mice").select("*", { count: "exact", head: true }).eq("status", "Active"),
+    supabase.from("cohorts").select("id, name, mice(id, name, status, coat_colour, strain)"),
+    supabase
+      .from("estrus_logs")
+      .select("cohort_id, mouse_id")
+      .eq("capture_date", todayKey),
+  ]);
+
+  if (subjectsResult.error) throw subjectsResult.error;
+  if (cohortsResult.error) throw cohortsResult.error;
+  if (todayLogsResult.error) throw todayLogsResult.error;
+
+  const recordedByCohort = new Map<string, Set<string>>();
+  todayLogsResult.data.forEach((log) => {
+    if (!log.cohort_id || !log.mouse_id) return;
+    const recorded = recordedByCohort.get(log.cohort_id) ?? new Set<string>();
+    recorded.add(log.mouse_id);
+    recordedByCohort.set(log.cohort_id, recorded);
+  });
+
+  const cohortProgress = cohortsResult.data
+    .map((cohort) => {
+      const total = Array.isArray(cohort.mice)
+        ? cohort.mice.filter((subject) => subject.status === "Active").length
+        : 0;
+      const recorded = recordedByCohort.get(cohort.id)?.size ?? 0;
+      const dueSubjects = Array.isArray(cohort.mice)
+        ? cohort.mice
+            .filter(
+              (subject) =>
+                subject.status === "Active" &&
+                !recordedByCohort.get(cohort.id)?.has(subject.id)
+            )
+            .map((subject) => ({
+              id: subject.id,
+              name: subject.name,
+              coatColour: subject.coat_colour,
+              strain: subject.strain,
+            }))
+            .sort((left, right) =>
+              left.name.localeCompare(right.name, undefined, { numeric: true })
+            )
+        : [];
+      return {
+        id: cohort.id,
+        name: cohort.name,
+        totalSubjects: total,
+        recordedToday: recorded,
+        remaining: Math.max(0, total - recorded),
+        dueSubjects,
+      };
+    })
+    .sort((left, right) => right.remaining - left.remaining || left.name.localeCompare(right.name));
 
   // 3. Recent Activity (Last 10 logs across all cohorts)
   const { data: recentLogs, error: logsError } = await supabase
@@ -1209,8 +1879,8 @@ export async function getDashboardStats(): Promise<DashboardStats> {
   if (logsError) throw logsError;
 
   // Bucket is public - just strip query params from old signed URLs
-  const recentActivity = recentLogs.map((log) => {
-    const imageUrl = log.image_url?.split("?")[0] || log.image_url;
+  const recentActivity = await Promise.all(recentLogs.map(async (log) => {
+    const imageUrl = await getReadableImageUrl(log.image_url);
 
     // Safe access for cohorts (might be object or array depending on TS inference)
     const cohortData = log.cohorts as unknown as
@@ -1229,16 +1899,13 @@ export async function getDashboardStats(): Promise<DashboardStats> {
       imageUrl,
       time: log.created_at,
     };
-  });
+  }));
 
-  // 4. Stage Distribution (Last 7 days)
-  const weekAgo = new Date();
-  weekAgo.setDate(weekAgo.getDate() - 7);
-
+  // 4. Scientist-confirmed stage distribution by specimen date.
   const { data: distributionData, error: distError } = await supabase
     .from("estrus_logs")
     .select("stage")
-    .gte("created_at", weekAgo.toISOString());
+    .gte("capture_date", weekStartKey);
 
   if (distError) throw distError;
 
@@ -1255,9 +1922,9 @@ export async function getDashboardStats(): Promise<DashboardStats> {
   // 5. Daily Trend (Last 7 days breakdown by stage per day)
   const { data: trendData, error: trendError } = await supabase
     .from("estrus_logs")
-    .select("stage, created_at")
-    .gte("created_at", weekAgo.toISOString())
-    .order("created_at", { ascending: true });
+    .select("stage, capture_date")
+    .gte("capture_date", weekStartKey)
+    .order("capture_date", { ascending: true });
 
   if (trendError) throw trendError;
 
@@ -1271,7 +1938,7 @@ export async function getDashboardStats(): Promise<DashboardStats> {
   for (let i = 6; i >= 0; i--) {
     const date = new Date();
     date.setDate(date.getDate() - i);
-    const dateStr = date.toISOString().split("T")[0];
+    const dateStr = localDateKey(date);
     dailyMap.set(dateStr, {
       Proestrus: 0,
       Estrus: 0,
@@ -1282,7 +1949,8 @@ export async function getDashboardStats(): Promise<DashboardStats> {
 
   // Fill in the data
   trendData?.forEach((log) => {
-    const dateStr = new Date(log.created_at).toISOString().split("T")[0];
+    const dateStr = log.capture_date;
+    if (!dateStr) return;
     const dayData = dailyMap.get(dateStr);
     if (dayData && log.stage in dayData) {
       dayData[log.stage as keyof typeof dayData]++;
@@ -1295,8 +1963,9 @@ export async function getDashboardStats(): Promise<DashboardStats> {
   }));
 
   return {
-    totalSubjects: totalSubjects || 0,
-    todaysScans: todaysScans || 0,
+    totalSubjects: subjectsResult.count || 0,
+    todaysScans: todayLogsResult.data.length,
+    cohortProgress,
     stageDistribution,
     recentActivity,
     dailyTrend,
@@ -1316,7 +1985,7 @@ export async function getExperiments() {
 
   const { data, error } = await supabase
     .from("experiments")
-    .select("*")
+    .select("*, experiment_cohorts(cohort_id)")
     .order("created_at", { ascending: false });
 
   if (error) throw error;
@@ -1332,10 +2001,14 @@ export async function createExperiment(formData: FormData) {
 
   const supabase = createAuthClient(token);
 
-  const name = formData.get("name") as string;
-  const description = formData.get("description") as string;
-  const startDate = formData.get("start_date") as string;
-  const endDate = formData.get("end_date") as string;
+  const name = String(formData.get("name") || "").trim().slice(0, 160);
+  const description = String(formData.get("description") || "").trim().slice(0, 1200);
+  const startDate = String(formData.get("start_date") || "");
+  const endDate = String(formData.get("end_date") || "");
+  if (!name) throw new Error("A study name is required");
+  if (startDate && !/^\d{4}-\d{2}-\d{2}$/.test(startDate)) throw new Error("Choose a valid start date");
+  if (endDate && !/^\d{4}-\d{2}-\d{2}$/.test(endDate)) throw new Error("Choose a valid end date");
+  if (startDate && endDate && endDate < startDate) throw new Error("The end date must be on or after the start date");
 
   const { error } = await supabase.from("experiments").insert({
     user_id: userId,
@@ -1447,6 +2120,15 @@ export async function removeCohortFromExperiment(
 export type ExperimentInsights = {
   totalLogs: number;
   totalSubjects: number;
+  observationDays: number;
+  dateRange: { start: string; end: string } | null;
+  confirmedLogs: number;
+  uncertainLogs: number;
+  missingCaptureDates: number;
+  pairedCytologyLogs: number;
+  binarySuggestions: number;
+  binaryAbstentions: number;
+  subjectsMissingMetadata: number;
   stageDistribution: { stage: string; value: number }[];
   timeline: { date: string; value: number }[];
   cohortStats: {
@@ -1454,6 +2136,7 @@ export type ExperimentInsights = {
     name: string;
     subjectCount: number;
     logCount: number;
+    pairedCytologyCount: number;
   }[];
 };
 
@@ -1481,6 +2164,15 @@ export async function getExperimentInsights(
     return {
       totalLogs: 0,
       totalSubjects: 0,
+      observationDays: 0,
+      dateRange: null,
+      confirmedLogs: 0,
+      uncertainLogs: 0,
+      missingCaptureDates: 0,
+      pairedCytologyLogs: 0,
+      binarySuggestions: 0,
+      binaryAbstentions: 0,
+      subjectsMissingMetadata: 0,
       stageDistribution: [],
       timeline: [],
       cohortStats: [],
@@ -1490,7 +2182,7 @@ export async function getExperimentInsights(
   // 2. Get Logs for these cohorts (via mice)
   const { data: logs, error: logsError } = await supabase
     .from("estrus_logs")
-    .select("id, stage, created_at, mice!inner(id, cohort_id)")
+    .select("id, stage, created_at, capture_date, label_status, confirmation_source, reference_modality, data, mice!inner(id, cohort_id)")
     .in("mice.cohort_id", cohortIds);
 
   if (logsError) throw logsError;
@@ -1507,25 +2199,57 @@ export async function getExperimentInsights(
   const stageCounts = new Map<string, number>();
   const timelineMap = new Map<string, number>();
   const cohortLogCounts = new Map<string, number>();
+  const cohortPairedCounts = new Map<string, number>();
+  const captureDates: string[] = [];
+  let confirmedLogs = 0;
+  let missingCaptureDates = 0;
+  let pairedCytologyLogs = 0;
+  let binarySuggestions = 0;
+  let binaryAbstentions = 0;
 
   logs.forEach((log) => {
     const stage = STAGES.includes(log.stage) ? log.stage : "Uncertain";
     stageCounts.set(stage, (stageCounts.get(stage) || 0) + 1);
 
-    const dayKey = new Date(log.created_at).toISOString().split("T")[0];
-    timelineMap.set(dayKey, (timelineMap.get(dayKey) || 0) + 1);
+    if (log.capture_date) {
+      captureDates.push(log.capture_date);
+      timelineMap.set(log.capture_date, (timelineMap.get(log.capture_date) || 0) + 1);
+    } else {
+      missingCaptureDates += 1;
+    }
+
+    if (log.label_status === "confirmed") confirmedLogs += 1;
+
+    const isPairedCytology =
+      log.confirmation_source === "paired_cytology_review" &&
+      log.reference_modality === "vaginal_cytology";
+    if (isPairedCytology) pairedCytologyLogs += 1;
+
+    const externalBinary = getExternalBinarySummary(log);
+    if (externalBinary?.decision_status === "reference_backed_suggestion") {
+      binarySuggestions += 1;
+    }
+    if (externalBinary?.decision_status === "abstain") {
+      binaryAbstentions += 1;
+    }
 
     const mice = log.mice as { cohort_id?: string } | null;
     const cohortId = mice?.cohort_id;
     if (cohortId) {
       cohortLogCounts.set(cohortId, (cohortLogCounts.get(cohortId) || 0) + 1);
+      if (isPairedCytology) {
+        cohortPairedCounts.set(
+          cohortId,
+          (cohortPairedCounts.get(cohortId) || 0) + 1
+        );
+      }
     }
   });
 
   // Subject count per cohort
   const { data: subjectsPerCohort } = await supabase
     .from("mice")
-    .select("cohort_id")
+    .select("cohort_id, coat_colour, strain")
     .in("cohort_id", cohortIds);
 
   const cohortSubjectCounts = new Map<string, number>();
@@ -1546,12 +2270,33 @@ export async function getExperimentInsights(
       name: cohortData?.name || "Unknown",
       subjectCount: cohortSubjectCounts.get(ec.cohort_id) || 0,
       logCount: cohortLogCounts.get(ec.cohort_id) || 0,
+      pairedCytologyCount: cohortPairedCounts.get(ec.cohort_id) || 0,
     };
   });
+
+  const sortedCaptureDates = Array.from(new Set(captureDates)).sort();
+  const subjectsMissingMetadata =
+    subjectsPerCohort?.filter((subject) => !subject.coat_colour || !subject.strain)
+      .length || 0;
 
   return {
     totalLogs: logs.length,
     totalSubjects: totalSubjects || 0,
+    observationDays: sortedCaptureDates.length,
+    dateRange:
+      sortedCaptureDates.length > 0
+        ? {
+            start: sortedCaptureDates[0],
+            end: sortedCaptureDates[sortedCaptureDates.length - 1],
+          }
+        : null,
+    confirmedLogs,
+    uncertainLogs: logs.length - confirmedLogs,
+    missingCaptureDates,
+    pairedCytologyLogs,
+    binarySuggestions,
+    binaryAbstentions,
+    subjectsMissingMetadata,
     stageDistribution: Array.from(stageCounts.entries())
       .map(([stage, value]) => ({ stage, value }))
       .sort((a, b) => b.value - a.value),
@@ -1599,28 +2344,75 @@ export async function getExperimentExportData(experimentId: string) {
 
   if (error) throw error;
 
-  // Bucket is public - just strip query params from old signed URLs
   const rows = data.map((log) => {
-    const imageUrl = log.image_url?.split("?")[0] || "";
     const mouse = log.mice as {
+      cohort_id?: string;
       name?: string;
       metadata?: Record<string, unknown>;
       cohorts?: { name?: string };
     } | null;
     const cohort = mouse?.cohorts;
+    const record = isRecord(log.data) ? log.data : {};
+    const capture = isRecord(log.capture_metadata) ? log.capture_metadata : {};
+    const scores = isRecord(record.confidence_scores)
+      ? record.confidence_scores
+      : {};
+    const externalBinary = getExternalBinarySummary(log) || {};
+    const modelInput = isRecord(record.model_input_reference)
+      ? record.model_input_reference
+      : {};
+    const modelCrop = isRecord(modelInput.crop) ? modelInput.crop : {};
 
     return {
-      LogID: log.id,
-      Date: new Date(log.created_at).toLocaleString(),
-      SubjectName: mouse?.name || "Unknown",
-      CohortName: cohort?.name || "Unknown",
-      Stage: log.stage,
-      Confidence: extractConfidenceValue(log.confidence),
-      Notes: log.notes || "",
-      ImageURL: imageUrl,
-      Features: JSON.stringify(log.features || {}),
-      FlexibleData: JSON.stringify(log.data || {}),
-      SubjectMetadata: JSON.stringify(mouse?.metadata || {}),
+      experiment_id: experimentId,
+      log_id: log.id,
+      subject_id: log.mouse_id || "",
+      subject_name: mouse?.name || "Unknown",
+      cohort_id: mouse?.cohort_id || log.cohort_id || "",
+      cohort_name: cohort?.name || "Unknown",
+      saved_stage: log.stage,
+      capture_date: log.capture_date || "",
+      modality: log.modality || "",
+      label_status: log.label_status || "",
+      confirmation_source: log.confirmation_source || "",
+      reviewer_id: log.reviewer_id || "",
+      reference_modality: log.reference_modality || "",
+      reference_image_object_reference: log.reference_image_url || "",
+      reference_sample_id: log.reference_sample_id || "",
+      image_object_reference: log.image_url || "",
+      capture_session:
+        typeof capture.capture_session === "string"
+          ? capture.capture_session
+          : "",
+      imaging_device:
+        typeof capture.imaging_device === "string" ? capture.imaging_device : "",
+      model_version:
+        typeof record.model_version === "string" ? record.model_version : "",
+      suggested_stage:
+        typeof record.suggested_stage === "string" ? record.suggested_stage : "",
+      binary_model_version: externalBinary.model_version || "",
+      binary_decision_status: externalBinary.decision_status || "",
+      binary_group_suggestion:
+        externalBinary.reference_backed_binary_suggestion || "",
+      binary_probability_early:
+        typeof externalBinary.probability_proestrus_or_estrus === "number"
+          ? externalBinary.probability_proestrus_or_estrus
+          : "",
+      prepared_roi_object_reference:
+        typeof modelInput.image_object_reference === "string"
+          ? modelInput.image_object_reference
+          : "",
+      prepared_roi_confirmed:
+        modelInput.crop_confirmed === true || modelCrop.confirmed === true
+          ? "true"
+          : modelInput.crop_confirmed === false || modelCrop.confirmed === false
+            ? "false"
+            : "",
+      prepared_roi_crop_json: JSON.stringify(modelCrop),
+      confidence_scores_json: JSON.stringify(scores),
+      subject_metadata_json: JSON.stringify(mouse?.metadata || {}),
+      notes: log.notes || "",
+      created_at: log.created_at,
     };
   });
 
@@ -1662,8 +2454,9 @@ export async function getExperimentVisualizationData(experimentId: string) {
   // We select minimal fields needed for visualization to keep payload light
   const { data: logs, error: logsError } = await supabase
     .from("estrus_logs")
-    .select("id, mouse_id, stage, created_at, features, confidence")
+    .select("id, mouse_id, cohort_id, stage, created_at, capture_date, modality, label_status, confirmation_source, reference_modality, data")
     .in("cohort_id", cohortIds)
+    .order("capture_date", { ascending: true, nullsFirst: false })
     .order("created_at", { ascending: true });
 
   if (logsError) throw logsError;
@@ -1695,10 +2488,25 @@ export async function getExperimentVisualizationData(experimentId: string) {
 
   return {
     cohorts,
-    logs: logs.map((log) => ({
-      ...log,
-      date: new Date(log.created_at).toISOString().split("T")[0], // Extract YYYY-MM-DD
-    })),
+    logs: logs.map((log) => {
+      const externalBinary = getExternalBinarySummary(log);
+      return {
+        id: log.id,
+        mouse_id: log.mouse_id,
+        cohort_id: log.cohort_id,
+        stage: log.stage,
+        date:
+          log.capture_date || new Date(log.created_at).toISOString().split("T")[0],
+        capture_date: log.capture_date,
+        modality: log.modality,
+        label_status: log.label_status,
+        confirmation_source: log.confirmation_source,
+        reference_modality: log.reference_modality,
+        binary_decision_status: externalBinary?.decision_status || null,
+        binary_group_suggestion:
+          externalBinary?.reference_backed_binary_suggestion || null,
+      };
+    }),
   };
 }
 

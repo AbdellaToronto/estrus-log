@@ -7,6 +7,7 @@ import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -22,17 +23,13 @@ import {
   Loader2,
   ArrowLeft,
   Trash2,
-  FlaskConical,
   Minimize2,
   FileUp,
   Cloud,
   CloudLightning,
-  Copy,
   Sparkles,
   X,
-  Brain,
-  Eye,
-  EyeOff,
+  AlertTriangle,
 } from "lucide-react";
 import { CycleWheel, ConfidenceBars } from "@/components/analysis";
 import Link from "next/link";
@@ -44,8 +41,11 @@ import {
   updateScanItem,
   getScanSession,
   getScanItems,
+  deleteScanItem,
   startScanSessionAnalysis,
+  startScanSessionRoiProposal,
   getCohort,
+  updateScanSessionContext,
 } from "@/app/actions";
 import { useParams, useRouter } from "next/navigation";
 import Image from "next/image";
@@ -57,6 +57,27 @@ import {
   getPrimaryStagePrediction,
 } from "@/lib/classification";
 import { useParsedCohortConfig } from "@/lib/cohort-config-context";
+import {
+  DINO_FIELD_FRACTION_X,
+  DINO_FIELD_FRACTION_Y,
+  EXTERNAL_ROI_ASPECT_RATIO,
+  EXTERNAL_ROI_OUTPUT_HEIGHT,
+  EXTERNAL_ROI_OUTPUT_WIDTH,
+  PreparedRoiCropper,
+  getExternalRoiDefaultZoom,
+  type PreparedRoiMetadata,
+} from "@/components/prepared-roi-cropper";
+
+type CropReview = {
+  method?: string;
+  prompt?: string;
+  confirmed?: boolean;
+  analyzed_as_model_input?: boolean;
+  quality_score?: number;
+  requires_intervention?: boolean;
+  review_reason?: string;
+  metadata?: PreparedRoiMetadata;
+};
 
 type ScanItem = {
   id: string; // Local ID for UI
@@ -68,6 +89,10 @@ type ScanItem = {
     | "pending"
     | "uploading"
     | "uploaded"
+    | "proposing_roi"
+    | "roi_review"
+    | "roi_confirmed"
+    | "crop_error"
     | "analyzing"
     | "complete"
     | "error"
@@ -76,8 +101,11 @@ type ScanItem = {
   croppedImageUrl?: string; // Segmented/cropped image
   maskImageUrl?: string; // Segmentation mask for visualization
   result?: ClassificationResult;
+  cropReview?: CropReview;
+  confirmedStage?: string;
   assignedSubjectId?: string;
   newSubjectName?: string;
+  notes?: string;
 };
 
 type SubjectOption = {
@@ -85,10 +113,16 @@ type SubjectOption = {
   name: string;
 };
 
+type BatchModality = "external_photo" | "vaginal_cytology";
+
 const STATUS_LABELS: Record<ScanItem["status"], string> = {
   pending: "Pending upload",
   uploading: "Uploading",
   uploaded: "Uploaded",
+  proposing_roi: "Suggesting crop",
+  roi_review: "Review crop",
+  roi_confirmed: "Crop confirmed",
+  crop_error: "Crop needs attention",
   analyzing: "Analyzing",
   complete: "Analyzed",
   error: "Needs attention",
@@ -96,12 +130,169 @@ const STATUS_LABELS: Record<ScanItem["status"], string> = {
 };
 
 const UNASSIGNED_SELECT_VALUE = "__none";
+const LOCAL_CROP_QUALITY_THRESHOLD = 0.045;
+
+const localDateKey = () => {
+  const date = new Date();
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+};
+
+const suggestLocalTrainingFrameAnchor = (source: HTMLImageElement) => {
+  const width = 192;
+  const height = 256;
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  if (!context) return { centerX: 0.47, centerY: 0.45, score: 0 };
+  context.drawImage(source, 0, 0, width, height);
+  const pixels = context.getImageData(0, 0, width, height).data;
+  const raw = new Float32Array(width * height);
+  for (let index = 0; index < raw.length; index += 1) {
+    const offset = index * 4;
+    const red = pixels[offset] / 255;
+    const green = pixels[offset + 1] / 255;
+    const blue = pixels[offset + 2] / 255;
+    const warm = Math.max(0, red - (green + blue) / 2);
+    const pink = Math.max(0, red - blue) * Math.max(0, 1 - Math.abs(red - green) * 1.5);
+    const lightness = (red + green + blue) / 3;
+    const middleExposure = Math.max(0, Math.min(1, 1 - Math.abs(lightness - 0.45) * 2.2));
+    raw[index] = (warm * 0.7 + pink * 0.8) * (0.25 + 0.75 * middleExposure);
+  }
+
+  const integralWidth = width + 1;
+  const integral = new Float32Array(integralWidth * (height + 1));
+  for (let y = 0; y < height; y += 1) {
+    let rowTotal = 0;
+    for (let x = 0; x < width; x += 1) {
+      rowTotal += raw[y * width + x];
+      integral[(y + 1) * integralWidth + x + 1] =
+        integral[y * integralWidth + x + 1] + rowTotal;
+    }
+  }
+
+  const radius = 4;
+  let bestScore = 0;
+  let bestX = Math.round(width * 0.47);
+  let bestY = Math.round(height * 0.45);
+  for (let y = 0; y < height; y += 1) {
+    const top = Math.max(0, y - radius);
+    const bottom = Math.min(height - 1, y + radius);
+    for (let x = 0; x < width; x += 1) {
+      const left = Math.max(0, x - radius);
+      const right = Math.min(width - 1, x + radius);
+      const area = (right - left + 1) * (bottom - top + 1);
+      const localTotal =
+        integral[(bottom + 1) * integralWidth + right + 1] -
+        integral[top * integralWidth + right + 1] -
+        integral[(bottom + 1) * integralWidth + left] +
+        integral[top * integralWidth + left];
+      const normalizedX = x / (width - 1);
+      const normalizedY = y / (height - 1);
+      const protocolPrior = Math.exp(
+        -0.5 * Math.pow((normalizedX - 0.47) / 0.12, 2) -
+        0.5 * Math.pow((normalizedY - 0.45) / 0.07, 2)
+      );
+      const score = (localTotal / area) * protocolPrior;
+      if (score > bestScore) {
+        bestScore = score;
+        bestX = x;
+        bestY = y;
+      }
+    }
+  }
+  return {
+    centerX: bestX / (width - 1),
+    centerY: bestY / (height - 1),
+    score: bestScore,
+  };
+};
+
+const createLocalAutomaticCrop = async (file: File) => {
+  const objectUrl = URL.createObjectURL(file);
+  try {
+    const source = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const image = new window.Image();
+      image.onload = () => resolve(image);
+      image.onerror = () => reject(new Error(`Could not read ${file.name}`));
+      image.src = objectUrl;
+    });
+    const baseCropWidth = Math.min(
+      source.naturalWidth,
+      source.naturalHeight * EXTERNAL_ROI_ASPECT_RATIO
+    );
+    const anchor = suggestLocalTrainingFrameAnchor(source);
+    const suggestedZoom = getExternalRoiDefaultZoom(source.naturalWidth, source.naturalHeight);
+    const cropWidth = baseCropWidth / suggestedZoom;
+    const cropHeight = cropWidth / EXTERNAL_ROI_ASPECT_RATIO;
+    const left = Math.min(
+      Math.max(anchor.centerX * source.naturalWidth - cropWidth / 2, 0),
+      source.naturalWidth - cropWidth
+    );
+    const top = Math.min(
+      Math.max(anchor.centerY * source.naturalHeight - cropHeight / 2, 0),
+      source.naturalHeight - cropHeight
+    );
+    const horizontalPosition = left / (source.naturalWidth - cropWidth);
+    const verticalPosition = top / (source.naturalHeight - cropHeight);
+    const canvas = document.createElement("canvas");
+    canvas.width = EXTERNAL_ROI_OUTPUT_WIDTH;
+    canvas.height = EXTERNAL_ROI_OUTPUT_HEIGHT;
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("The browser could not prepare a crop canvas");
+    context.drawImage(
+      source,
+      left,
+      top,
+      cropWidth,
+      cropHeight,
+      0,
+      0,
+      EXTERNAL_ROI_OUTPUT_WIDTH,
+      EXTERNAL_ROI_OUTPUT_HEIGHT
+    );
+    const blob = await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob(
+        (value) => value ? resolve(value) : reject(new Error("The crop could not be encoded")),
+        "image/jpeg",
+        0.95
+      );
+    });
+    const stem = file.name.replace(/\.[^.]+$/, "") || "capture";
+    return {
+      file: new File([blob], `${stem}-suggested-roi.jpg`, { type: "image/jpeg" }),
+      metadata: {
+        source_width: source.naturalWidth,
+        source_height: source.naturalHeight,
+        output_width: EXTERNAL_ROI_OUTPUT_WIDTH,
+        output_height: EXTERNAL_ROI_OUTPUT_HEIGHT,
+        zoom: suggestedZoom,
+        horizontal_position: horizontalPosition,
+        vertical_position: verticalPosition,
+        processor_field_fraction: DINO_FIELD_FRACTION_X,
+        processor_field_fraction_x: DINO_FIELD_FRACTION_X,
+        processor_field_fraction_y: DINO_FIELD_FRACTION_Y,
+        crop_aspect_ratio: EXTERNAL_ROI_ASPECT_RATIO,
+        proposal_quality_score: anchor.score,
+        proposal_quality_gate: anchor.score >= LOCAL_CROP_QUALITY_THRESHOLD ? "pass" : "intervention",
+        crop_box_pixels: [left, top, left + cropWidth, top + cropHeight].map(Math.round) as [number, number, number, number],
+      } satisfies PreparedRoiMetadata,
+      qualityScore: anchor.score,
+    };
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+};
 
 type DbScanItem = {
   id: string;
   image_url: string;
   status: string | null;
-  ai_result: ClassificationResult | null;
+  ai_result: (Partial<ClassificationResult> & {
+    scientist_confirmed_stage?: string;
+    crop_review?: CropReview;
+  }) | null;
   created_at: string;
   mouse_id: string | null;
   cropped_image_url: string | null;
@@ -117,6 +308,14 @@ const mapDbStatus = (status: string | null): ScanItem["status"] => {
       return "uploading";
     case "uploaded":
       return "uploaded";
+    case "proposing_roi":
+      return "proposing_roi";
+    case "roi_review":
+      return "roi_review";
+    case "roi_confirmed":
+      return "roi_confirmed";
+    case "crop_error":
+      return "crop_error";
     case "analyzing":
       return "analyzing";
     case "complete":
@@ -144,7 +343,11 @@ const deserializeServerItem = (item: DbScanItem): ScanItem => {
     gcsUrl: item.image_url,
     croppedImageUrl: item.cropped_image_url || undefined,
     maskImageUrl: item.mask_image_url || undefined,
-    result: (item.ai_result as ClassificationResult) || undefined,
+    result: item.ai_result?.confidence_scores
+      ? (item.ai_result as ClassificationResult)
+      : undefined,
+    cropReview: item.ai_result?.crop_review,
+    confirmedStage: item.ai_result?.scientist_confirmed_stage || undefined,
     assignedSubjectId: item.mouse_id || undefined,
   };
 };
@@ -159,11 +362,21 @@ export default function BatchUploadPage() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
-  const [copiedLinkId, setCopiedLinkId] = useState<string | null>(null);
   const [subjects, setSubjects] = useState<SubjectOption[]>([]);
   const [subjectsLoading, setSubjectsLoading] = useState(false);
   const [subjectsError, setSubjectsError] = useState<string | null>(null);
-  const [showCroppedImage, setShowCroppedImage] = useState(false);
+  const [reviewAcknowledgedFor, setReviewAcknowledgedFor] = useState<string | null>(null);
+  const [batchReviewAcknowledgedFor, setBatchReviewAcknowledgedFor] = useState<string | null>(null);
+  const [batchModality, setBatchModality] = useState<BatchModality | null>("external_photo");
+  const [captureDate, setCaptureDate] = useState(localDateKey);
+  const [contextError, setContextError] = useState<string | null>(null);
+  const [editingRoiId, setEditingRoiId] = useState<string | null>(null);
+  const [roiEditorFile, setRoiEditorFile] = useState<File | null>(null);
+  const [preparedRoi, setPreparedRoi] = useState<{
+    file: File;
+    metadata: PreparedRoiMetadata;
+  } | null>(null);
+  const [isSavingRoi, setIsSavingRoi] = useState(false);
   const [cohort, setCohort] = useState<{
     type?: string | null;
     log_config?: unknown;
@@ -176,15 +389,21 @@ export default function BatchUploadPage() {
   }, [cohortId]);
 
   // Get config from cohort
-  const { stages, getColor, getGradient, subjectLabel } = useParsedCohortConfig(cohort);
+  const { stages, stageNames, getColor, getGradient, subjectLabel } = useParsedCohortConfig(cohort);
+  const subjectNoun = subjectLabel.toLowerCase();
+  const subjectNounPlural = subjectNoun === "mouse" ? "mice" : `${subjectNoun}s`;
 
   const selectedItem = items.find((i) => i.id === selectedId);
+  const reviewOrderedItems = useMemo(
+    () => [...items].sort((left, right) => Number(right.status === "crop_error") - Number(left.status === "crop_error")),
+    [items]
+  );
   const hasItems = items.length > 0;
   const completeCount = items.filter(
     (i) => i.status === "complete" || i.status === "saved"
   ).length;
   const uploadedCount = items.filter((i) =>
-    ["uploaded", "analyzing", "complete", "saved"].includes(i.status)
+    ["uploaded", "proposing_roi", "roi_review", "roi_confirmed", "analyzing", "complete", "saved"].includes(i.status)
   ).length;
   const progress = useMemo(
     () => (items.length ? (completeCount / items.length) * 100 : 0),
@@ -192,11 +411,17 @@ export default function BatchUploadPage() {
   );
   const hasActiveAnalysis = useMemo(
     () =>
-      items.some((i) => i.status === "uploaded" || i.status === "analyzing"),
+      items.some((i) => i.status === "proposing_roi" || i.status === "analyzing"),
     [items]
   );
   const hasAnalyzableItems = useMemo(
-    () => items.some((i) => i.status === "uploaded" || i.status === "error"),
+    () =>
+      items.some((i) => i.status === "roi_confirmed") &&
+      items.every((i) => ["roi_confirmed", "complete", "saved"].includes(i.status)),
+    [items]
+  );
+  const hasCropProposalItems = useMemo(
+    () => items.some((item) => item.status === "uploaded" || item.status === "crop_error"),
     [items]
   );
   const selectedItemSource = selectedItem?.gcsUrl?.split("?")[0];
@@ -204,6 +429,19 @@ export default function BatchUploadPage() {
   const selectedStageConfidence = getPrimaryStageConfidence(
     selectedItem?.result
   );
+  const selectedBinaryEvidence = selectedItem?.result?.evidence?.external_binary;
+  const selectedBinaryLabel = !selectedBinaryEvidence || selectedBinaryEvidence.decision_status === "abstain"
+    ? "Abstain"
+    : selectedBinaryEvidence.reference_backed_binary_suggestion === "PROESTRUS_OR_ESTRUS"
+      ? "Early group"
+      : "Late group";
+  const selectedAcquisitionLabel = !selectedBinaryEvidence
+    ? "Not available"
+    : selectedBinaryEvidence.acquisition_domain.out_of_range
+      ? "Acquisition check"
+      : selectedBinaryEvidence.reference_domain.out_of_reference
+        ? "Outside reference"
+        : "Within reference";
   const subjectNameMap = useMemo(
     () => new Map(subjects.map((subject) => [subject.id, subject.name])),
     [subjects]
@@ -251,19 +489,6 @@ export default function BatchUploadPage() {
         .join(" • ")
     : "";
 
-  const handleCopyLink = async (item: ScanItem) => {
-    if (!item.gcsUrl) return;
-    try {
-      await navigator.clipboard.writeText(item.gcsUrl);
-      setCopiedLinkId(item.id);
-      setTimeout(() => {
-        setCopiedLinkId((prev) => (prev === item.id ? null : prev));
-      }, 1500);
-    } catch (error) {
-      console.error("Failed to copy link", error);
-    }
-  };
-
   const loadSubjects = useCallback(async () => {
     setSubjectsLoading(true);
     try {
@@ -295,6 +520,12 @@ export default function BatchUploadPage() {
         const session = await getScanSession(cohortId);
         if (session) {
           setSessionId(session.id);
+          setBatchModality(
+            session.modality === "external_photo" || session.modality === "vaginal_cytology"
+              ? session.modality
+              : null
+          );
+          setCaptureDate(session.capture_date || "");
           const dbItems = await getScanItems(session.id);
           if (dbItems && dbItems.length > 0) {
             // Cast to unknown first if types don't perfectly align (e.g. Json vs concrete type)
@@ -302,8 +533,25 @@ export default function BatchUploadPage() {
             const restored: ScanItem[] = dbItems
               .filter((i) => i.status !== "pending")
               .map((i) => deserializeServerItem(i as unknown as DbScanItem));
-            setItems((prev) => [...prev, ...restored]);
-            if (restored.length > 0) setSelectedId(restored[0].id);
+            // React Strict Mode can run this hydration effect twice in local
+            // development. Merge by the persistent scan-item id so a resumed
+            // batch never shows duplicate photos.
+            setItems((prev) => {
+              const merged = new Map<string, ScanItem>();
+              prev.forEach((item) => {
+                if (item.scanItemId) merged.set(item.scanItemId, item);
+              });
+              restored.forEach((item) => {
+                if (item.scanItemId && !merged.has(item.scanItemId)) {
+                  merged.set(item.scanItemId, item);
+                }
+              });
+              const localOnly = prev.filter((item) => !item.scanItemId);
+              return [...localOnly, ...merged.values()];
+            });
+            if (restored.length > 0) {
+              setSelectedId((current) => current || restored[0].id);
+            }
           }
         }
       } catch (e) {
@@ -317,8 +565,15 @@ export default function BatchUploadPage() {
 
   const ensureSession = async () => {
     if (sessionId) return sessionId;
+    if (!batchModality || !captureDate) {
+      setContextError("Choose the specimen modality and capture date before uploading.");
+      return null;
+    }
     try {
-      const session = await createScanSession(cohortId);
+      const session = await createScanSession(cohortId, {
+        modality: batchModality,
+        captureDate,
+      });
       setSessionId(session.id);
       return session.id;
     } catch (e) {
@@ -326,6 +581,16 @@ export default function BatchUploadPage() {
       return null;
     }
   };
+
+  useEffect(() => {
+    if (!sessionId || !batchModality || !captureDate) return;
+    updateScanSessionContext(sessionId, { modality: batchModality, captureDate })
+      .then(() => setContextError(null))
+      .catch((error) => {
+        console.error("Failed to save batch observation context", error);
+        setContextError("The batch context could not be saved. Try again before starting analysis.");
+      });
+  }, [sessionId, batchModality, captureDate]);
 
   const refreshItemsFromServer = useCallback(async () => {
     if (!sessionId) return;
@@ -352,7 +617,11 @@ export default function BatchUploadPage() {
             previewUrl: isValidServerUrl ? serverUrl : item.previewUrl,
             croppedImageUrl: server.cropped_image_url || item.croppedImageUrl,
             maskImageUrl: server.mask_image_url || item.maskImageUrl,
-            result: (server.ai_result as ClassificationResult) || item.result,
+            result: server.ai_result?.confidence_scores
+              ? (server.ai_result as ClassificationResult)
+              : item.result,
+            cropReview: server.ai_result?.crop_review || item.cropReview,
+            confirmedStage: server.ai_result?.scientist_confirmed_stage || item.confirmedStage,
             assignedSubjectId:
               serverAssignedId || item.assignedSubjectId || undefined,
           };
@@ -493,6 +762,27 @@ export default function BatchUploadPage() {
     );
   }, []);
 
+  const confirmItemStage = useCallback((itemId: string, stage: string) => {
+    setBatchReviewAcknowledgedFor(null);
+    setReviewAcknowledgedFor(null);
+    const currentItem = items.find((item) => item.id === itemId);
+    setItems((previous) => previous.map((item) =>
+      item.id === itemId ? { ...item, confirmedStage: stage } : item
+    ));
+    // Keep server mutations outside the React state updater. The server action
+    // may revalidate a route, which React correctly rejects during render.
+    if (currentItem?.scanItemId && currentItem.result) {
+      void updateScanItem(currentItem.scanItemId, {
+        status: currentItem.status,
+        result: { ...currentItem.result, scientist_confirmed_stage: stage },
+      }).catch((error) => console.error("Failed to persist confirmed stage", error));
+    }
+  }, [items]);
+
+  const updateItemNotes = useCallback((itemId: string, notes: string) => {
+    setItems((previous) => previous.map((item) => item.id === itemId ? { ...item, notes } : item));
+  }, []);
+
   const analyzedItems = useMemo(
     () =>
       items.filter(
@@ -509,8 +799,28 @@ export default function BatchUploadPage() {
       analyzedItems.filter((i) => !(i.assignedSubjectId || i.newSubjectName)),
     [analyzedItems]
   );
+  const analyzedMissingStageDecisions = useMemo(
+    () => analyzedItems.filter((item) => !item.confirmedStage),
+    [analyzedItems]
+  );
 
-  const canSave = analyzedItems.length > 0;
+  const reviewRequiredItems = useMemo(
+    () => analyzedItems.filter((item) => item.result?.review_required),
+    [analyzedItems]
+  );
+  const reviewKey = reviewRequiredItems.map((item) => item.id).sort().join(",");
+  const hasAcknowledgedReviews = reviewRequiredItems.length === 0 || reviewAcknowledgedFor === reviewKey;
+  const batchReviewKey = analyzedItems
+    .map((item) => `${item.id}:${item.confirmedStage || ""}`)
+    .sort()
+    .join(",");
+  const hasAcknowledgedBatchReview = Boolean(batchReviewKey) && batchReviewAcknowledgedFor === batchReviewKey;
+  const canSave = analyzedItems.length > 0
+    && analyzedMissingAssignments.length === 0
+    && analyzedMissingStageDecisions.length === 0
+    && hasAcknowledgedReviews
+    && hasAcknowledgedBatchReview;
+  const canAnalyze = batchModality === "external_photo" && Boolean(captureDate) && !contextError;
 
   // --- Action: Upload ---
 
@@ -541,6 +851,9 @@ export default function BatchUploadPage() {
           chunk.map(async (item) => {
             const urlData = urlMap.get(item.filename);
             if (!urlData) return;
+            if (!urlData.readUrl) {
+              throw new Error("A readable upload URL could not be created");
+            }
 
             updateItemState(item.id, "uploading");
 
@@ -550,12 +863,12 @@ export default function BatchUploadPage() {
               headers: { "Content-Type": item.file!.type },
             });
 
-            updateItemState(item.id, "uploaded", { gcsUrl: urlData.publicUrl });
+            updateItemState(item.id, "uploaded", { gcsUrl: urlData.readUrl });
 
             if (item.scanItemId) {
-              updateScanItem(item.scanItemId, {
+              await updateScanItem(item.scanItemId, {
                 status: "uploaded",
-                imageUrl: urlData.publicUrl,
+                imageUrl: urlData.objectUrl,
               });
             }
           })
@@ -568,9 +881,214 @@ export default function BatchUploadPage() {
     }
   };
 
-  // --- Action: Analyze ---
+  // --- Action: Prepare and analyze ---
+
+  const handleProposeRois = async () => {
+    setIsProcessing(true);
+    try {
+      const currentSessionId = await ensureSession();
+      if (!currentSessionId) throw new Error("No active session found");
+
+      if (process.env.NEXT_PUBLIC_ESTRUS_LOCAL_TEST_IDENTITY === "true") {
+        const candidates = items.filter(
+          (item) => item.status === "uploaded" || item.status === "crop_error"
+        );
+        const proposals = await Promise.all(candidates.map(async (item) => {
+          if (!item.scanItemId) throw new Error(`Missing database item for ${item.filename}`);
+          const sourceFile = item.file ?? new File(
+            [await (await fetch(item.previewUrl)).blob()],
+            item.filename,
+            { type: "image/jpeg" }
+          );
+          const prepared = await createLocalAutomaticCrop(sourceFile);
+          const [upload] = await getUploadUrls(
+            [{ filename: prepared.file.name, contentType: prepared.file.type }],
+            cohortId
+          );
+          if (!upload?.readUrl) throw new Error(`No crop destination for ${item.filename}`);
+          const response = await fetch(upload.url, {
+            method: "PUT",
+            body: prepared.file,
+            headers: { "Content-Type": prepared.file.type },
+          });
+          if (!response.ok) throw new Error(`Crop upload failed for ${item.filename}`);
+          const requiresIntervention = prepared.qualityScore < LOCAL_CROP_QUALITY_THRESHOLD;
+          const proposalStatus: ScanItem["status"] = requiresIntervention ? "crop_error" : "roi_review";
+          const cropReview: CropReview = {
+            method: "Automatic 83:128 training-frame proposal",
+            prompt: "Label-blind local acquisition anchor; scientist confirmation required",
+            confirmed: false,
+            quality_score: prepared.qualityScore,
+            requires_intervention: requiresIntervention,
+            review_reason: requiresIntervention
+              ? "The acquisition anchor is weak; inspect the original and adjust or recapture."
+              : undefined,
+            metadata: prepared.metadata,
+          };
+          await updateScanItem(item.scanItemId, {
+            status: proposalStatus,
+            croppedImageUrl: upload.objectUrl,
+            result: { crop_review: cropReview },
+          });
+          return {
+            itemId: item.id,
+            status: proposalStatus,
+            croppedImageUrl: upload.readUrl,
+            cropReview,
+          };
+        }));
+        const proposalMap = new Map(proposals.map((proposal) => [proposal.itemId, proposal]));
+        setItems((previous) => previous.map((item) => {
+          const proposal = proposalMap.get(item.id);
+          return proposal
+            ? {
+                ...item,
+                status: proposal.status,
+                croppedImageUrl: proposal.croppedImageUrl,
+                cropReview: proposal.cropReview,
+              }
+            : item;
+        }));
+        return;
+      }
+
+      await startScanSessionRoiProposal(currentSessionId);
+      setItems((previous) =>
+        previous.map((item) =>
+          item.status === "uploaded" || item.status === "crop_error"
+            ? { ...item, status: "proposing_roi" }
+            : item
+        )
+      );
+    } catch (error) {
+      console.error("Failed to queue ROI proposals", error);
+      alert("Failed to start automatic crop suggestions. Please try again.");
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const confirmSuggestedRoi = useCallback(async (item: ScanItem) => {
+    if (!item.croppedImageUrl || !item.scanItemId) return;
+    const cropReview: CropReview = {
+      ...item.cropReview,
+      method: item.cropReview?.method || "SAM3 text-prompt proposal",
+      confirmed: true,
+    };
+    try {
+      await updateScanItem(item.scanItemId, {
+        status: "roi_confirmed",
+        result: { crop_review: cropReview },
+      });
+      setItems((previous) => previous.map((candidate) =>
+        candidate.id === item.id
+          ? { ...candidate, status: "roi_confirmed", cropReview }
+          : candidate
+      ));
+    } catch (error) {
+      console.error("Failed to confirm suggested ROI", error);
+      await refreshItemsFromServer();
+    }
+  }, [refreshItemsFromServer]);
+
+  const confirmAllSuggestedRois = async () => {
+    setIsProcessing(true);
+    try {
+      await Promise.all(
+        items
+          .filter((item) => item.status === "roi_review" && item.croppedImageUrl)
+          .map(confirmSuggestedRoi)
+      );
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const beginRoiAdjustment = async (item: ScanItem) => {
+    try {
+      const file = item.file ?? new File(
+        [await (await fetch(item.previewUrl)).blob()],
+        item.filename,
+        { type: "image/jpeg" }
+      );
+      setRoiEditorFile(file);
+      setPreparedRoi(null);
+      setEditingRoiId(item.id);
+    } catch (error) {
+      console.error("Failed to open the original for crop adjustment", error);
+      alert("The original image could not be opened for crop adjustment.");
+    }
+  };
+
+  const saveAdjustedRoi = async () => {
+    const item = items.find((candidate) => candidate.id === editingRoiId);
+    if (!item?.scanItemId || !preparedRoi) return;
+    setIsSavingRoi(true);
+    try {
+      const [upload] = await getUploadUrls(
+        [{ filename: preparedRoi.file.name, contentType: preparedRoi.file.type }],
+        cohortId
+      );
+      if (!upload?.readUrl) throw new Error("A readable ROI URL could not be created");
+      const readableRoiUrl = upload.readUrl;
+      await fetch(upload.url, {
+        method: "PUT",
+        body: preparedRoi.file,
+        headers: { "Content-Type": preparedRoi.file.type },
+      });
+      const cropReview: CropReview = {
+        method: "Scientist-adjusted 83:128 training-frame crop",
+        confirmed: true,
+        metadata: preparedRoi.metadata,
+      };
+      await updateScanItem(item.scanItemId, {
+        status: "roi_confirmed",
+        croppedImageUrl: upload.objectUrl,
+        result: { crop_review: cropReview },
+      });
+      setItems((previous) => previous.map((candidate) =>
+        candidate.id === item.id
+          ? {
+              ...candidate,
+              status: "roi_confirmed",
+              croppedImageUrl: readableRoiUrl,
+              cropReview,
+            }
+          : candidate
+      ));
+      setEditingRoiId(null);
+      setRoiEditorFile(null);
+      setPreparedRoi(null);
+    } catch (error) {
+      console.error("Failed to save adjusted ROI", error);
+      alert("The adjusted crop could not be saved. Your original image was not changed.");
+    } finally {
+      setIsSavingRoi(false);
+    }
+  };
+
+  const discardSelectedItem = async () => {
+    if (!selectedItem) return;
+    try {
+      if (selectedItem.scanItemId) await deleteScanItem(selectedItem.scanItemId);
+      if (selectedItem.previewUrl.startsWith("blob:")) URL.revokeObjectURL(selectedItem.previewUrl);
+      setItems((previous) => previous.filter((item) => item.id !== selectedItem.id));
+      setSelectedId(null);
+    } catch (error) {
+      console.error("Failed to remove scan item", error);
+      alert("The image could not be removed from this batch. Try again before analysis.");
+    }
+  };
 
   const handleAnalyze = async () => {
+    if (!canAnalyze) {
+      setContextError(
+        batchModality === "vaginal_cytology"
+          ? "This batch analyzer is only for external genital photos. Log cytology as a scientist-reviewed single observation."
+          : "Choose an external-photo modality and specimen capture date before starting analysis."
+      );
+      return;
+    }
     setIsProcessing(true);
     try {
       const currentSessionId = await ensureSession();
@@ -582,11 +1100,9 @@ export default function BatchUploadPage() {
 
       setItems((prev) =>
         prev.map((item) =>
-          item.status === "uploaded" ? { ...item, status: "analyzing" } : item
+          item.status === "roi_confirmed" ? { ...item, status: "analyzing" } : item
         )
       );
-
-      refreshItemsFromServer();
     } catch (e) {
       console.error("Failed to queue analysis", e);
       alert("Failed to start analysis job. Please try again.");
@@ -596,6 +1112,18 @@ export default function BatchUploadPage() {
   };
 
   const handleSaveAll = useCallback(async () => {
+    if (reviewRequiredItems.length > 0 && !hasAcknowledgedReviews) {
+      alert("Review the flagged predictions and acknowledge them before saving this batch.");
+      return;
+    }
+    if (!hasAcknowledgedBatchReview) {
+      alert("Review the batch and confirm the selected stages before saving.");
+      return;
+    }
+    if (batchModality !== "external_photo" || !captureDate) {
+      alert("This batch needs a saved external-photo modality and capture date before it can be saved.");
+      return;
+    }
     setIsSaving(true);
     try {
       if (analyzedItems.length === 0) {
@@ -604,20 +1132,33 @@ export default function BatchUploadPage() {
       }
 
       const payload = analyzedItems.map((item) => {
-        const primaryStage = getPrimaryStagePrediction(item.result!)!;
+        const confirmedStage = item.confirmedStage;
+        if (!confirmedStage) throw new Error(`Choose a stage for ${item.filename}`);
+        const confidenceScores = item.result?.confidence_scores;
         return {
           filename: item.filename,
           imageUrl: item.gcsUrl!,
-          stage: primaryStage.name,
-          confidence: primaryStage.confidence,
+          stage: confirmedStage,
+          confidence: confidenceScores?.[confirmedStage as keyof typeof confidenceScores] ?? 0,
           features: toFeaturePayload(item.result!.features),
           reasoning: item.result!.reasoning ?? "",
+          notes: item.notes?.trim() || undefined,
           scanItemId: item.scanItemId,
           subjectId: item.assignedSubjectId,
           newSubjectName: item.newSubjectName?.trim() || undefined,
+          observationContext: {
+            modality: batchModality,
+            captureDate,
+          },
           flexibleData: {
             confidence_scores: item.result!.confidence_scores,
+            suggested_stage: getPrimaryStageName(item.result),
+            confirmed_stage: confirmedStage,
             thoughts: item.result!.thoughts,
+            review_required: item.result!.review_required,
+            review_reasons: item.result!.review_reasons,
+            evidence: item.result!.evidence,
+            model_version: item.result!.model_version,
             ...toFeaturePayload(item.result!.features), // Also include features in data json for robustness
           },
         };
@@ -646,6 +1187,11 @@ export default function BatchUploadPage() {
     router,
     loadSubjects,
     toFeaturePayload,
+    reviewRequiredItems.length,
+    hasAcknowledgedReviews,
+    hasAcknowledgedBatchReview,
+    batchModality,
+    captureDate,
   ]);
 
   const updateItemState = (
@@ -661,14 +1207,14 @@ export default function BatchUploadPage() {
   };
 
   return (
-    <div className="fixed inset-0 h-dvh z-50 bg-slate-50/90 backdrop-blur-3xl flex overflow-hidden animate-in fade-in duration-300">
+    <div className="fixed inset-x-0 bottom-0 top-16 z-30 flex overflow-hidden bg-[#f7f4ed] animate-in fade-in duration-300">
       <LayoutGroup>
         {/* --- LEFT PANEL: Controls / Upload --- */}
         <motion.aside
           layout
           className={cn(
-            "border-r border-slate-200 bg-white/80 flex flex-col relative z-20 backdrop-blur-xl shadow-xl h-full transition-all duration-500 ease-[cubic-bezier(0.32,0.72,0,1)]",
-            hasItems ? "w-80 shrink-0" : "w-full items-center justify-center"
+            "relative z-20 flex h-full flex-col border-r border-[#ded9cd] bg-[#fbfaf7] transition-all duration-500 ease-[cubic-bezier(0.32,0.72,0,1)]",
+            hasItems ? "w-72 shrink-0" : "w-full items-center justify-center"
           )}
           initial={false}
         >
@@ -676,7 +1222,7 @@ export default function BatchUploadPage() {
           <motion.div
             layout
             className={cn(
-              "p-6 flex flex-col items-center w-full shrink-0 transition-all",
+              "flex w-full shrink-0 flex-col items-center p-5 transition-all",
               !hasItems && "max-w-2xl"
             )}
           >
@@ -690,11 +1236,10 @@ export default function BatchUploadPage() {
                   <FileUp className="w-10 h-10 text-slate-700" />
                 </div>
                 <h1 className="text-4xl md:text-5xl font-bold mb-6 tracking-tight text-slate-900">
-                  Batch Analysis
+                  Start a photo batch
                 </h1>
                 <p className="text-lg text-slate-500 max-w-md mx-auto leading-relaxed">
-                  Drag and drop your raw image data or ZIP archives here. <br />
-                  Gemini AI will classify and organize everything automatically.
+                  Add the day&apos;s external photos. Estrus Log will suggest consistent crops for you to confirm before any analysis runs.
                 </p>
 
                 <div className="mt-10">
@@ -710,8 +1255,8 @@ export default function BatchUploadPage() {
                 </div>
               </motion.div>
             ) : (
-              <div className="w-full mb-6">
-                <div className="flex items-center justify-between mb-6">
+              <div className="mb-4 w-full">
+                <div className="mb-4 flex items-center justify-between">
                   <Link
                     href={`/cohorts/${cohortId}`}
                     className="text-slate-400 hover:text-slate-600 transition-colors p-2 hover:bg-slate-100 rounded-full -ml-2"
@@ -730,26 +1275,59 @@ export default function BatchUploadPage() {
 
                 <div>
                   <h1 className="font-bold text-2xl tracking-tight text-slate-900">
-                    {sessionId ? "Active Session" : "Processing"}
+                    Batch review
                   </h1>
                   <p className="text-sm text-slate-500 font-medium mt-1">
-                    {items.length} files queued
+                    {items.length} external photo{items.length === 1 ? "" : "s"}
                   </p>
                 </div>
               </div>
             )}
 
+            <section className="mb-5 w-full border-y border-[#ded9cd] py-4 text-left">
+              <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#77736c]">Observation context</p>
+              <div className="mt-3 grid gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-[#625f58]">Modality</Label>
+                  <div className="flex h-10 items-center border border-[#ded9cd] bg-white px-3 text-sm font-medium text-[#292b4c]">External photos</div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="batch-capture-date" className="text-xs text-[#625f58]">Capture date</Label>
+                  <Input
+                    id="batch-capture-date"
+                    type="date"
+                    value={captureDate}
+                    onChange={(event) => {
+                      setCaptureDate(event.target.value);
+                      setContextError(null);
+                    }}
+                    className="h-10 bg-white"
+                  />
+                </div>
+              </div>
+              <p className="mt-3 text-xs leading-5 text-[#77736c]">Saved on every record; upload time stays separate.</p>
+              {contextError && <p role="alert" className="mt-2 text-xs font-medium text-destructive">{contextError}</p>}
+            </section>
+
             {/* Dropzone - Compact Mode */}
-            <div
+            <button
+              type="button"
+              aria-label={hasItems ? "Add more batch image files" : "Choose batch image files"}
+              disabled={!batchModality || !captureDate}
               className={cn(
-                "relative transition-all duration-500 cursor-pointer group overflow-hidden w-full bg-white",
+                "relative transition-all duration-500 cursor-pointer group overflow-hidden w-full bg-white text-left disabled:cursor-not-allowed disabled:opacity-60",
+                (!batchModality || !captureDate) && "cursor-not-allowed opacity-60",
                 hasItems
-                  ? "h-32 border-2 border-dashed border-slate-200 rounded-2xl hover:border-blue-500/50 hover:bg-blue-50/50"
+                  ? "h-20 border-2 border-dashed border-[#ded9cd] rounded-xl hover:border-[#b8b7e1] hover:bg-[#eeedf9]/40"
                   : "h-72 border-2 border-dashed border-slate-200 rounded-4xl hover:border-primary/30 hover:shadow-lg shadow-sm hover:scale-[1.01]"
               )}
               onDragOver={(e) => e.preventDefault()}
               onDrop={(e) => {
                 e.preventDefault();
+                if (!batchModality || !captureDate) {
+                  setContextError("Choose the specimen modality and capture date before uploading.");
+                  return;
+                }
                 handleFiles(Array.from(e.dataTransfer.files));
               }}
               onClick={() => document.getElementById("file-upload")?.click()}
@@ -757,7 +1335,7 @@ export default function BatchUploadPage() {
               <div
                 className={cn(
                   "absolute inset-0 flex flex-col items-center justify-center transition-all",
-                  hasItems ? "gap-2 scale-90" : "gap-4"
+                  hasItems ? "gap-1 scale-90" : "gap-4"
                 )}
               >
                 <UploadCloud
@@ -770,26 +1348,28 @@ export default function BatchUploadPage() {
                   <p className="font-semibold text-slate-700 group-hover:text-primary transition-colors text-sm">
                     {hasItems
                       ? "Add more files"
-                      : "Click to browse or drop file"}
+                      : "Choose photos or drop a ZIP"}
                   </p>
                   {!hasItems && (
                     <p className="text-sm text-slate-400 mt-2 font-medium">
-                      Supports JPG, PNG, WEBP, ZIP
+                      JPG, PNG, WEBP, or ZIP
                     </p>
                   )}
                 </div>
-                <input
-                  type="file"
-                  multiple
-                  accept="image/*,.zip"
-                  className="hidden"
-                  id="file-upload"
-                  onChange={(e) =>
-                    handleFiles(Array.from(e.target.files || []))
-                  }
-                />
               </div>
-            </div>
+            </button>
+            <input
+              type="file"
+              multiple
+              accept="image/*,.zip"
+              className="sr-only"
+              id="file-upload"
+              onChange={(e) =>
+                batchModality && captureDate
+                  ? handleFiles(Array.from(e.target.files || []))
+                  : setContextError("Choose the specimen modality and capture date before uploading.")
+              }
+            />
           </motion.div>
 
           {/* Sidebar Progress Controls - Fixed to bottom */}
@@ -797,9 +1377,9 @@ export default function BatchUploadPage() {
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              className="p-6 space-y-6 w-full mt-auto border-t border-slate-100 shrink-0 bg-white/50 backdrop-blur-sm pb-8"
+              className="mt-auto flex w-full shrink-0 flex-col gap-3 border-t border-[#ded9cd] bg-[#fbfaf7] p-4"
             >
-              <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm space-y-3">
+              <div className="order-2 space-y-2 border border-[#ded9cd] bg-white p-3">
                 <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase tracking-wider">
                   <span>Progress</span>
                   <span>{Math.round(progress)}%</span>
@@ -817,14 +1397,14 @@ export default function BatchUploadPage() {
                 </div>
               </div>
 
-              <div className="space-y-3">
+              <div className="order-1 space-y-3">
                 {/* Split Buttons: Upload vs Analyze */}
 
                 {items.some((i) => i.status === "pending") && (
                   <Button
-                    className="w-full bg-slate-100 text-slate-900 hover:bg-slate-200 h-12 rounded-xl font-semibold text-sm transition-all border border-slate-200 shadow-sm"
+                    className="h-10 w-full rounded-lg border border-slate-200 bg-slate-100 text-sm font-semibold text-slate-900 shadow-sm transition-all hover:bg-slate-200"
                     onClick={handleUpload}
-                    disabled={isProcessing}
+                    disabled={isProcessing || !batchModality || !captureDate}
                   >
                     {isProcessing &&
                     items.some((i) => i.status === "pending") ? (
@@ -837,53 +1417,127 @@ export default function BatchUploadPage() {
                   </Button>
                 )}
 
-                <Button
-                  className="w-full bg-slate-900 text-white hover:bg-slate-800 shadow-xl shadow-slate-900/10 h-12 rounded-xl font-semibold text-sm transition-all hover:scale-[1.02] active:scale-[0.98]"
-                  onClick={handleAnalyze}
-                  disabled={isProcessing || !hasAnalyzableItems}
-                >
-                  {isProcessing &&
-                  !items.some((i) => i.status === "pending") ? (
-                    <Loader2 className="animate-spin mr-2 w-4 h-4" />
-                  ) : (
-                    <CloudLightning className="mr-2 w-4 h-4" />
-                  )}
-                  Analyze Uploaded (
-                  {
-                    items.filter(
-                      (i) => i.status === "uploaded" || i.status === "error"
-                    ).length
-                  }
-                  )
-                </Button>
-
-                {items.some((i) => i.status === "complete") && (
+                {hasCropProposalItems && (
                   <Button
-                    className="w-full bg-emerald-600 text-white hover:bg-emerald-500 shadow-lg shadow-emerald-600/20 h-12 rounded-xl font-semibold text-sm transition-all hover:scale-[1.02] active:scale-[0.98]"
-                    onClick={handleSaveAll}
-                    disabled={isSaving || !canSave}
+                    className="h-10 w-full rounded-lg bg-sky-700 text-sm font-semibold text-white shadow-sm transition-all hover:bg-sky-600"
+                    onClick={handleProposeRois}
+                    disabled={isProcessing || !canAnalyze}
                   >
-                    {isSaving ? (
+                    {isProcessing ? (
                       <Loader2 className="animate-spin mr-2 w-4 h-4" />
                     ) : (
-                      <Check className="mr-2 w-4 h-4" />
+                      <Sparkles className="mr-2 w-4 h-4" />
                     )}
-                    {isSaving ? "Saving..." : "Save Results"}
+                    Suggest crops (
+                    {items.filter((item) => item.status === "uploaded" || item.status === "crop_error").length}
+                    )
                   </Button>
                 )}
 
+                {items.some((item) => item.status === "roi_review") && (
+                  <Button
+                    variant="outline"
+                    className="h-10 w-full rounded-lg border-sky-300 bg-sky-50 text-sm font-semibold text-sky-950 hover:bg-sky-100"
+                    onClick={confirmAllSuggestedRois}
+                    disabled={isProcessing}
+                  >
+                    <Check className="mr-2 h-4 w-4" />
+                    Confirm all visible crops (
+                    {items.filter((item) => item.status === "roi_review").length}
+                    )
+                  </Button>
+                )}
+
+                {(hasAnalyzableItems || isProcessing) && (
+                  <Button
+                    className="h-11 w-full rounded-lg bg-[#454a9f] text-sm font-semibold text-white shadow-sm transition-all hover:bg-[#383d89]"
+                    onClick={handleAnalyze}
+                    disabled={isProcessing || !hasAnalyzableItems || !canAnalyze}
+                  >
+                    {isProcessing && !items.some((i) => i.status === "pending") ? (
+                      <Loader2 className="animate-spin mr-2 w-4 h-4" />
+                    ) : (
+                      <CloudLightning className="mr-2 w-4 h-4" />
+                    )}
+                    Analyze confirmed crops (
+                    {items.filter((item) => item.status === "roi_confirmed").length}
+                    )
+                  </Button>
+                )}
+
+                {items.some((i) => i.status === "complete") && (
+                  <>
+                    <label
+                      className={cn(
+                        "flex items-start gap-2 rounded-xl border p-3 text-xs leading-5",
+                        analyzedMissingAssignments.length === 0 && analyzedMissingStageDecisions.length === 0
+                          ? "cursor-pointer border-blue-200 bg-blue-50 text-blue-950"
+                          : "cursor-not-allowed border-slate-200 bg-slate-50 text-slate-500"
+                      )}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={hasAcknowledgedBatchReview}
+                        onChange={(event) => setBatchReviewAcknowledgedFor(event.target.checked ? batchReviewKey : null)}
+                        disabled={analyzedMissingAssignments.length > 0 || analyzedMissingStageDecisions.length > 0}
+                        className="mt-0.5 h-4 w-4 rounded border-blue-400 text-primary focus:ring-primary"
+                      />
+                      <span>I reviewed all {analyzedItems.length} suggestion{analyzedItems.length === 1 ? "" : "s"} and want to save the selected stages as the lab record.</span>
+                    </label>
+                    {reviewRequiredItems.length > 0 && (
+                      <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
+                        <div className="flex gap-2">
+                          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" aria-hidden="true" />
+                          <div>
+                            <p className="font-semibold">{reviewRequiredItems.length} prediction{reviewRequiredItems.length === 1 ? "" : "s"} need review</p>
+                            <p className="mt-1 text-xs leading-5 text-amber-900/80">Open each flagged image to check the suggestion before saving this batch.</p>
+                          </div>
+                        </div>
+                        <label className="mt-3 flex cursor-pointer items-start gap-2 text-xs leading-5 text-amber-950">
+                          <input
+                            type="checkbox"
+                            checked={hasAcknowledgedReviews}
+                            onChange={(event) => setReviewAcknowledgedFor(event.target.checked ? reviewKey : null)}
+                            className="mt-0.5 h-4 w-4 rounded border-amber-400 text-primary focus:ring-primary"
+                          />
+                          <span>I reviewed the flagged predictions and want to save the selected stages.</span>
+                        </label>
+                      </div>
+                    )}
+                    <Button
+                      className="w-full bg-emerald-600 text-white hover:bg-emerald-500 shadow-lg shadow-emerald-600/20 h-12 rounded-xl font-semibold text-sm transition-all hover:scale-[1.02] active:scale-[0.98]"
+                      onClick={handleSaveAll}
+                      disabled={isSaving || !canSave}
+                    >
+                      {isSaving ? (
+                        <Loader2 className="animate-spin mr-2 w-4 h-4" />
+                      ) : (
+                        <Check className="mr-2 w-4 h-4" />
+                      )}
+                      {isSaving ? "Saving..." : "Save reviewed results"}
+                    </Button>
+                  </>
+                )}
+
                 {analyzedMissingAssignments.length > 0 && (
-                  <div className="text-xs text-slate-500 bg-slate-100/80 border border-slate-200 rounded-xl p-3 text-center">
+                  <div className="text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-xl p-3 text-center">
                     {analyzedMissingAssignments.length} analyzed image
                     {analyzedMissingAssignments.length > 1
                       ? "s are"
                       : " is"}{" "}
-                    still unassigned. You can save now or assign later.
+                    still unassigned.
+                  </div>
+                )}
+
+                {analyzedMissingStageDecisions.length > 0 && (
+                  <div className="text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-xl p-3 text-center">
+                    Choose a scientist-confirmed stage for {analyzedMissingStageDecisions.length} image
+                    {analyzedMissingStageDecisions.length === 1 ? "" : "s"}.
                   </div>
                 )}
 
                 <div className="w-full text-center text-[11px] text-slate-500 bg-slate-100/70 rounded-xl py-2 border border-slate-200">
-                  Assignments help link results to subjects but are optional.
+                  Every saved observation must belong to a subject.
                 </div>
               </div>
             </motion.div>
@@ -898,18 +1552,18 @@ export default function BatchUploadPage() {
               initial={{ opacity: 0, x: 50 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: 50 }}
-              className="flex-1 bg-slate-50/50 flex flex-col relative z-10 min-w-0 h-full overflow-hidden"
+              className="relative z-10 flex h-full min-w-0 flex-1 flex-col overflow-hidden bg-[#f7f4ed]"
             >
-              <div className="h-20 border-b border-slate-200 flex items-center justify-between px-8 bg-white/80 backdrop-blur-xl sticky top-0 z-20 shrink-0">
-                <h2 className="font-semibold text-slate-800 text-lg">
-                  Library{" "}
-                  <span className="text-slate-400 ml-2 font-normal">
+              <div className="sticky top-0 z-20 flex h-20 shrink-0 items-center justify-between border-b border-[#ded9cd] bg-[#fbfaf7]/95 px-6 backdrop-blur-xl">
+                <h2 className="font-serif text-2xl text-[#292b4c]">
+                  Crop review{" "}
+                  <span className="ml-2 font-sans text-sm font-normal text-[#77736c]">
                     {items.length} items
                   </span>
                 </h2>
 
                 {/* Visual Indicator of State */}
-                <div className="flex items-center gap-4 text-sm font-medium text-slate-500">
+                  <div className="hidden items-center gap-4 text-xs font-medium text-[#625f58] xl:flex">
                   <div className="flex items-center gap-1">
                     <div className="w-2 h-2 rounded-full bg-slate-300" />
                     Pending
@@ -918,10 +1572,14 @@ export default function BatchUploadPage() {
                     <div className="w-2 h-2 rounded-full bg-blue-400" />
                     Uploaded
                   </div>
-                  <div className="flex items-center gap-1">
-                    <div className="w-2 h-2 rounded-full bg-emerald-400" />
-                    Analyzed
-                  </div>
+                    <div className="flex items-center gap-1">
+                      <div className="w-2 h-2 rounded-full bg-emerald-400" />
+                      Analyzed
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <div className="w-2 h-2 rounded-full bg-amber-400" />
+                      Needs review
+                    </div>
                 </div>
               </div>
 
@@ -930,10 +1588,10 @@ export default function BatchUploadPage() {
                   <div className="p-8 pb-32">
                     <motion.div
                       layout
-                      className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-6"
+                      className="grid grid-cols-[repeat(auto-fill,minmax(170px,1fr))] gap-4"
                     >
                       <AnimatePresence>
-                        {items.map((item) => (
+                        {reviewOrderedItems.map((item) => (
                           <motion.div
                             layout
                             key={item.id}
@@ -944,35 +1602,39 @@ export default function BatchUploadPage() {
                               y: -4,
                               transition: { duration: 0.2 },
                             }}
-                            onClick={() =>
-                              setSelectedId(
-                                selectedId === item.id ? null : item.id
-                              )
-                            }
+                            onClick={() => {
+                              setSelectedId(selectedId === item.id ? null : item.id);
+                            }}
                             className={cn(
-                              "aspect-square rounded-3xl overflow-hidden relative cursor-pointer transition-all group bg-white shadow-sm",
+                              "relative aspect-square cursor-pointer overflow-hidden rounded-xl border border-[#ded9cd] bg-white shadow-sm transition-all group",
                               selectedId === item.id
-                                ? "ring-[6px] ring-blue-500/20 shadow-2xl z-10 scale-[1.02]"
-                                : "hover:shadow-lg hover:ring-4 hover:ring-slate-200/50",
+                                ? "z-10 border-[#d48342] ring-2 ring-[#d48342]/25 shadow-lg"
+                                : "hover:border-[#b8b7e1] hover:shadow-md",
                               item.status === "saved" && "opacity-50 grayscale",
                               item.status === "complete" &&
-                                !(
-                                  item.assignedSubjectId || item.newSubjectName
-                                ) &&
-                                "ring-4 ring-amber-200"
+                                (!item.confirmedStage ||
+                                  !(item.assignedSubjectId || item.newSubjectName)) &&
+                                "ring-4 ring-amber-200",
+                              item.status === "crop_error" && "ring-4 ring-amber-300"
                             )}
                           >
                             <Image
-                              src={item.previewUrl}
+                              src={
+                                item.croppedImageUrl &&
+                                ["roi_review", "roi_confirmed", "crop_error", "analyzing", "complete", "saved"].includes(item.status)
+                                  ? item.croppedImageUrl
+                                  : item.previewUrl
+                              }
                               alt=""
                               fill
-                              className="object-cover"
+                              sizes="(min-width: 1024px) 220px, 45vw"
+                              className="object-contain bg-slate-100 p-2"
                               unoptimized={item.previewUrl.includes('storage.googleapis.com')}
                             />
 
                             {/* Selection Border (Inner) */}
                             {selectedId === item.id && (
-                              <div className="absolute inset-0 border-4 border-blue-500 rounded-3xl z-20 pointer-events-none" />
+                              <div className="pointer-events-none absolute inset-0 z-20 rounded-xl border-2 border-[#d48342]" />
                             )}
 
                             {/* Status Icons */}
@@ -994,12 +1656,39 @@ export default function BatchUploadPage() {
                                   <Loader2 className="w-3 h-3 animate-spin text-purple-600" />
                                 </div>
                               )}
+                              {item.status === "proposing_roi" && (
+                                <div className="bg-white/90 rounded-full p-1.5 shadow-sm backdrop-blur-md">
+                                  <Loader2 className="w-3 h-3 animate-spin text-sky-700" />
+                                </div>
+                              )}
                               {item.status === "complete" && (
                                 <div className="bg-emerald-500 text-white rounded-full p-1.5 shadow-lg shadow-emerald-500/20">
                                   <Check className="w-3 h-3" />
                                 </div>
                               )}
                             </div>
+
+                            {item.status === "roi_review" && (
+                              <div className="absolute bottom-3 left-1/2 z-10 -translate-x-1/2">
+                                <Badge className="border-0 bg-amber-400 px-3 py-1 text-xs font-bold text-amber-950 shadow-lg">
+                                  Review crop
+                                </Badge>
+                              </div>
+                            )}
+                            {item.status === "crop_error" && (
+                              <div className="absolute bottom-3 left-1/2 z-10 -translate-x-1/2">
+                                <Badge className="whitespace-nowrap border-0 bg-amber-500 px-3 py-1 text-xs font-bold text-amber-950 shadow-lg">
+                                  <AlertTriangle className="mr-1 h-3 w-3" /> Check framing
+                                </Badge>
+                              </div>
+                            )}
+                            {item.status === "roi_confirmed" && (
+                              <div className="absolute bottom-3 left-1/2 z-10 -translate-x-1/2">
+                                <Badge className="border-0 bg-emerald-600 px-3 py-1 text-xs font-bold text-white shadow-lg">
+                                  Crop confirmed
+                                </Badge>
+                              </div>
+                            )}
 
                             <div className="absolute top-3 left-3 z-10">
                               <span
@@ -1016,12 +1705,10 @@ export default function BatchUploadPage() {
                               />
                             </div>
 
-                            {/* Bottom Result Label */}
+                            {/* Bottom review state */}
                             {item.result &&
                               (() => {
-                                const stageName =
-                                  getPrimaryStageName(item.result) ??
-                                  "Uncertain";
+                                const stageName = item.confirmedStage;
                                 return (
                                   <motion.div
                                     initial={{ y: 20, opacity: 0 }}
@@ -1030,10 +1717,13 @@ export default function BatchUploadPage() {
                                   >
                                     <div className="flex items-center justify-center">
                                       <Badge
-                                        className="backdrop-blur-md border-0 shadow-lg text-white font-bold px-3 py-1 text-xs tracking-wide"
-                                        style={{ backgroundColor: getColor(stageName) }}
+                                        className={cn(
+                                          "backdrop-blur-md border-0 shadow-lg font-bold px-3 py-1 text-xs tracking-wide",
+                                          !stageName && "bg-amber-400 text-amber-950"
+                                        )}
+                                        style={stageName ? { backgroundColor: getColor(stageName), color: "white" } : undefined}
                                       >
-                                        {stageName}
+                                        {stageName || "Choose stage"}
                                       </Badge>
                                     </div>
                                   </motion.div>
@@ -1055,36 +1745,51 @@ export default function BatchUploadPage() {
           {selectedItem && (
             <motion.aside
               initial={{ width: 0, opacity: 0 }}
-              animate={{ width: 480, opacity: 1 }}
+              animate={{ width: 420, opacity: 1 }}
               exit={{ width: 0, opacity: 0 }}
               transition={{ type: "spring", stiffness: 280, damping: 32 }}
-              className="border-l border-slate-200 bg-white flex flex-col overflow-hidden shadow-2xl z-30 shrink-0 h-full"
+              className="z-30 flex h-full shrink-0 flex-col overflow-hidden border-l border-[#ded9cd] bg-[#fbfaf7] shadow-xl"
             >
-              <div className="h-72 relative bg-linear-to-br from-slate-100 via-slate-50 to-white border-b border-slate-100 shrink-0">
-                {/* Original Image */}
-                <AnimatePresence mode="wait">
-                  <motion.div
-                    key={showCroppedImage && selectedItem.croppedImageUrl ? "cropped" : "original"}
-                    initial={{ opacity: 0, scale: 0.95 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.95 }}
-                    transition={{ duration: 0.2 }}
-                    className="absolute inset-0"
-                  >
-                    <Image
-                      src={showCroppedImage && selectedItem.croppedImageUrl 
-                        ? selectedItem.croppedImageUrl 
-                        : selectedItem.previewUrl}
-                      alt=""
-                      fill
-                      className={cn(
-                        "object-contain p-8",
-                        showCroppedImage && selectedItem.croppedImageUrl && "bg-black"
-                      )}
-                      unoptimized
-                    />
-                  </motion.div>
-                </AnimatePresence>
+              <div className={cn(
+                "relative border-b border-slate-100 bg-linear-to-br from-slate-100 via-slate-50 to-white shrink-0",
+                selectedItem.croppedImageUrl ? "h-80" : "h-72"
+              )}>
+                <div className={cn(
+                  "absolute inset-0 grid",
+                  selectedItem.croppedImageUrl ? "grid-cols-2" : "grid-cols-1"
+                )}>
+                  <figure className="relative min-w-0 border-r border-slate-200 bg-[#f4f1e9]">
+                    <figcaption className="absolute left-3 top-3 z-10 rounded-full bg-white/90 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-700 shadow-sm">
+                      Full source
+                    </figcaption>
+                    <Image src={selectedItem.previewUrl} alt="Full source image" fill sizes="210px" className="object-contain p-6" unoptimized />
+                  </figure>
+                  {selectedItem.croppedImageUrl && (
+                    <figure className="relative min-w-0 bg-slate-950">
+                      <figcaption className="absolute left-3 top-3 z-10 rounded-full bg-white/90 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-700 shadow-sm">
+                        Suggested crop
+                      </figcaption>
+                      <div className="absolute inset-6 flex items-center justify-center">
+                        <div
+                          className="relative h-full max-w-full overflow-hidden"
+                          style={{ aspectRatio: `${EXTERNAL_ROI_OUTPUT_WIDTH} / ${EXTERNAL_ROI_OUTPUT_HEIGHT}` }}
+                        >
+                          <Image src={selectedItem.croppedImageUrl} alt="Suggested prepared crop" fill sizes="210px" className="object-contain" unoptimized />
+                          <div
+                            className="pointer-events-none absolute border border-dashed border-white/90 shadow-[0_0_0_999px_rgba(15,23,42,0.12)]"
+                            style={{
+                              left: `${((1 - DINO_FIELD_FRACTION_X) / 2) * 100}%`,
+                              right: `${((1 - DINO_FIELD_FRACTION_X) / 2) * 100}%`,
+                              top: `${((1 - DINO_FIELD_FRACTION_Y) / 2) * 100}%`,
+                              bottom: `${((1 - DINO_FIELD_FRACTION_Y) / 2) * 100}%`,
+                            }}
+                            aria-hidden="true"
+                          />
+                        </div>
+                      </div>
+                    </figure>
+                  )}
+                </div>
 
                 {/* Analyzing overlay animation */}
                 {selectedItem.status === "analyzing" && (
@@ -1100,28 +1805,6 @@ export default function BatchUploadPage() {
                       transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
                     />
                   </motion.div>
-                )}
-
-                {/* Toggle cropped/original button */}
-                {selectedItem.croppedImageUrl && (
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    onClick={() => setShowCroppedImage(!showCroppedImage)}
-                    className="absolute top-4 left-4 bg-white/80 hover:bg-white shadow-sm rounded-full backdrop-blur-md z-10 gap-1.5 text-xs"
-                  >
-                    {showCroppedImage ? (
-                      <>
-                        <EyeOff className="w-3 h-3" />
-                        Original
-                      </>
-                    ) : (
-                      <>
-                        <Eye className="w-3 h-3" />
-                        Segmented
-                      </>
-                    )}
-                  </Button>
                 )}
 
                 <Button
@@ -1171,6 +1854,152 @@ export default function BatchUploadPage() {
                     transition={{ duration: 0.35 }}
                     className="p-6 pr-8 space-y-6 max-w-full"
                   >
+                    {editingRoiId === selectedItem.id && roiEditorFile ? (
+                      <div className="space-y-3">
+                        <PreparedRoiCropper
+                          key={`${selectedItem.id}-${roiEditorFile.name}`}
+                          file={roiEditorFile}
+                          compact
+                          initialMetadata={selectedItem.cropReview?.metadata}
+                          onPrepared={(file, metadata) => setPreparedRoi({ file, metadata })}
+                          onFramingChange={() => setPreparedRoi(null)}
+                        />
+                        <div className="grid grid-cols-2 gap-2">
+                          <Button
+                            variant="outline"
+                            onClick={() => {
+                              setEditingRoiId(null);
+                              setRoiEditorFile(null);
+                              setPreparedRoi(null);
+                            }}
+                          >
+                            Cancel
+                          </Button>
+                          <Button
+                            onClick={saveAdjustedRoi}
+                            disabled={!preparedRoi || isSavingRoi}
+                            className="bg-slate-900 text-white hover:bg-slate-800"
+                          >
+                            {isSavingRoi ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Check className="mr-2 h-4 w-4" />}
+                            Save crop
+                          </Button>
+                        </div>
+                      </div>
+                    ) : selectedItem.croppedImageUrl && ["roi_review", "roi_confirmed"].includes(selectedItem.status) ? (
+                      <section className="rounded-2xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-950">
+                        <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-sky-700">Prepared model input</p>
+                        <h3 className="mt-1 text-lg font-semibold">
+                          {selectedItem.status === "roi_confirmed" ? "Crop confirmed" : "Check the suggested crop"}
+                        </h3>
+                        <p className="mt-1 text-xs leading-5 text-sky-900/80">
+                          The dashed inner field is what the frozen processor retains. Confirm this suggestion or adjust the exception before any model analysis runs.
+                        </p>
+                        <div className="mt-3 grid grid-cols-2 gap-2">
+                          <Button
+                            variant="outline"
+                            className="border-sky-300 bg-white text-sky-950 hover:bg-sky-100"
+                            onClick={() => beginRoiAdjustment(selectedItem)}
+                          >
+                            Adjust crop
+                          </Button>
+                          <Button
+                            className="bg-sky-800 text-white hover:bg-sky-700"
+                            onClick={() => confirmSuggestedRoi(selectedItem)}
+                            disabled={selectedItem.status === "roi_confirmed" || isProcessing}
+                          >
+                            <Check className="mr-2 h-4 w-4" />
+                            {selectedItem.status === "roi_confirmed" ? "Confirmed" : "Confirm crop"}
+                          </Button>
+                        </div>
+                      </section>
+                    ) : selectedItem.status === "crop_error" ? (
+                      <section className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+                        <h3 className="font-semibold">Image needs reframing or recapture</h3>
+                        <p className="mt-1 text-xs leading-5">The automatic anchor is weak. If the anatomy is present, adjust the frame. If it falls outside the source image, remove this item and recapture it.</p>
+                        <div className="mt-3 grid grid-cols-2 gap-2">
+                          <Button variant="outline" onClick={() => beginRoiAdjustment(selectedItem)}>
+                            Adjust frame
+                          </Button>
+                          <Button variant="outline" className="border-amber-300 bg-white" onClick={discardSelectedItem}>
+                            Remove · recapture
+                          </Button>
+                        </div>
+                      </section>
+                    ) : null}
+
+                    {selectedItem.status === "complete" && selectedItem.result && (
+                      <section className="border border-[#c9c7e7] bg-[#eeedf9] p-4" aria-labelledby="binary-model-lead" data-tour="binary-model-lead">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#555a9d]">DINOv2 binary model · review aid</p>
+                            <h3 id="binary-model-lead" className="mt-1 font-serif text-2xl text-[#292b4c]">{selectedBinaryLabel}</h3>
+                          </div>
+                          <Badge variant="outline" className={cn(
+                            "rounded-full bg-white",
+                            selectedBinaryLabel === "Abstain" ? "border-amber-300 text-amber-800" : "border-emerald-300 text-emerald-800"
+                          )}>
+                            {selectedAcquisitionLabel}
+                          </Badge>
+                        </div>
+                        <p className="mt-3 text-xs leading-5 text-[#5e5d75]">
+                          {selectedBinaryLabel === "Abstain"
+                            ? "The model withheld a group lead. Review the image and make the stage call from your own evidence."
+                            : "This is a broad early-versus-late lead, not the exact stage and not the saved lab record."}
+                        </p>
+                        {selectedBinaryEvidence?.abstention_reasons.length ? (
+                          <p className="mt-2 text-xs font-medium text-amber-900">Check: {selectedBinaryEvidence.abstention_reasons.join(" · ")}</p>
+                        ) : null}
+                      </section>
+                    )}
+
+                    {selectedItem.status === "complete" && selectedItem.result && (
+                      <section className="border-2 border-[#292b4c] bg-white p-5 shadow-sm" aria-labelledby="batch-stage-decision" data-tour="scientist-stage-call">
+                        <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-500">Your decision · required</p>
+                        <h3 id="batch-stage-decision" className="mt-1 text-xl font-semibold text-slate-950">Choose the stage to save</h3>
+                        <p className="mt-1 text-xs leading-5 text-slate-600">Your selection becomes the lab record.</p>
+                        <div className="mt-4 grid grid-cols-2 gap-2">
+                          {stageNames.map((stage) => {
+                            const selected = selectedItem.confirmedStage === stage;
+                            return (
+                              <button
+                                key={stage}
+                                type="button"
+                                aria-pressed={selected}
+                                onClick={() => confirmItemStage(selectedItem.id, stage)}
+                                className={cn(
+                                  "rounded-xl border px-3 py-3 text-left text-sm font-semibold transition",
+                                  selected
+                                    ? "border-slate-900 bg-slate-900 text-white shadow-sm"
+                                    : "border-slate-200 bg-slate-50 text-slate-800 hover:border-slate-400 hover:bg-white"
+                                )}
+                              >
+                                <span className="mr-2 inline-block h-2.5 w-2.5 rounded-full align-middle" style={{ backgroundColor: getColor(stage) }} />
+                                {stage}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <div className="mt-4 space-y-1.5">
+                          <Label htmlFor={`batch-note-${selectedItem.id}`} className="text-xs font-semibold text-[#625f58]">Notes (optional)</Label>
+                          <Textarea
+                            id={`batch-note-${selectedItem.id}`}
+                            value={selectedItem.notes ?? ""}
+                            maxLength={500}
+                            onChange={(event) => updateItemNotes(selectedItem.id, event.target.value)}
+                            placeholder="Add an observation note…"
+                            className="min-h-20 resize-none border-[#ded9cd] bg-[#fbfaf7]"
+                          />
+                          <p className="text-right text-[10px] text-[#8b877f]">{selectedItem.notes?.length ?? 0}/500</p>
+                        </div>
+                      </section>
+                    )}
+
+                    {selectedItem.result && <details className="group border border-[#ded9cd] bg-white">
+                      <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-3 text-xs font-bold uppercase tracking-[0.16em] text-[#625f58]">
+                        Legacy four-stage evidence
+                        <span className="text-base font-normal transition group-open:rotate-45">+</span>
+                      </summary>
+                      <div className="space-y-4 border-t border-[#ded9cd] p-4">
                     <motion.div
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
@@ -1184,7 +2013,7 @@ export default function BatchUploadPage() {
                         <div className="flex items-start justify-between gap-3 mb-6">
                           <div>
                             <p className="text-[10px] uppercase tracking-[0.25em] text-white/70 font-bold">
-                              Classification
+                              Legacy model suggestion
                             </p>
                             <h3 className="text-4xl font-bold mt-1 tracking-tight">
                               {selectedStageName || "Awaiting"}
@@ -1198,7 +2027,7 @@ export default function BatchUploadPage() {
                         <div className="space-y-4">
                           <div className="space-y-2">
                             <div className="flex items-center justify-between text-xs font-medium text-white/90 uppercase tracking-wide">
-                              <span>Confidence Score</span>
+                              <span>Relative model support</span>
                               <span>
                                 {selectedItem.result
                                   ? `${Math.round(
@@ -1245,6 +2074,23 @@ export default function BatchUploadPage() {
                       <div className="absolute -bottom-10 -left-10 w-40 h-40 bg-black/10 rounded-full blur-3xl pointer-events-none" />
                     </motion.div>
 
+                    {selectedItem.result?.review_required && (
+                      <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+                        <div className="flex gap-3">
+                          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" aria-hidden="true" />
+                          <div>
+                            <h4 className="font-semibold">Scientist review required</h4>
+                            <p className="mt-1 leading-6 text-amber-900/80">This visual suggestion must be checked before the batch can be saved.</p>
+                            {selectedItem.result.review_reasons?.length ? (
+                              <ul className="mt-2 list-disc space-y-1 pl-4 text-xs leading-5 text-amber-900/80">
+                                {selectedItem.result.review_reasons.map((reason) => <li key={reason}>{reason}</li>)}
+                              </ul>
+                            ) : null}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
                     {/* Confidence Breakdown */}
                     {selectedItem.result?.confidence_scores && (
                       <motion.div
@@ -1254,7 +2100,7 @@ export default function BatchUploadPage() {
                         className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm"
                       >
                         <h4 className="text-xs uppercase tracking-[0.2em] text-slate-400 font-bold mb-4">
-                          Confidence Breakdown
+                          Relative model support
                         </h4>
                         <ConfidenceBars
                           confidences={selectedItem.result.confidence_scores}
@@ -1263,6 +2109,16 @@ export default function BatchUploadPage() {
                         />
                       </motion.div>
                     )}
+                    <div className="space-y-2 border-t border-[#ded9cd] pt-4 text-xs leading-5 text-[#625f58]">
+                      <p><span className="font-semibold text-[#292b4c]">Model version:</span> {selectedItem.result.model_version || "Legacy exploratory model"}</p>
+                      <p><span className="font-semibold text-[#292b4c]">Reasoning:</span> {selectedItem.result.reasoning || "No model reasoning was stored."}</p>
+                      {Object.keys(selectedItem.result.features || {}).length > 0 && (
+                        <p><span className="font-semibold text-[#292b4c]">Detected features:</span> {Object.entries(selectedItem.result.features).map(([key, value]) => `${key}: ${String(value)}`).join(" · ")}</p>
+                      )}
+                      {selectedItemSource && <p className="break-all font-mono text-[10px] text-[#77736c]">{selectedItemSource.replace("https://storage.googleapis.com/", "")}</p>}
+                    </div>
+                      </div>
+                    </details>}
 
                     {selectedItem.status === "complete" &&
                     selectedItem.result ? (
@@ -1273,7 +2129,7 @@ export default function BatchUploadPage() {
                           </h4>
                           <div className="space-y-2">
                             <Label className="text-xs text-slate-500 font-semibold">
-                              Select existing {subjectLabel.toLowerCase()}
+                              Select existing {subjectNoun}
                             </Label>
                             <Select
                               value={
@@ -1296,8 +2152,8 @@ export default function BatchUploadPage() {
                                 <SelectValue
                                   placeholder={
                                     subjectsLoading
-                                      ? `Loading ${subjectLabel.toLowerCase()}s...`
-                                      : `Choose ${subjectLabel.toLowerCase()}`
+                                      ? `Loading ${subjectNounPlural}...`
+                                      : `Choose ${subjectNoun}`
                                   }
                                 />
                               </SelectTrigger>
@@ -1319,7 +2175,7 @@ export default function BatchUploadPage() {
                               <span>
                                 {subjectsLoading
                                   ? "Loading..."
-                                  : `${subjects.length} ${subjectLabel.toLowerCase()}${subjects.length !== 1 ? 's' : ''}`}
+                                  : `${subjects.length} ${subjects.length === 1 ? subjectNoun : subjectNounPlural}`}
                               </span>
                               <button
                                 type="button"
@@ -1338,7 +2194,7 @@ export default function BatchUploadPage() {
 
                           <div className="space-y-2">
                             <Label className="text-xs text-slate-500 font-semibold">
-                              Or create a new {subjectLabel.toLowerCase()}
+                              Or create a new {subjectNoun}
                             </Label>
                             <Input
                               placeholder="Enter identifier e.g. 227A"
@@ -1352,100 +2208,12 @@ export default function BatchUploadPage() {
                               className="h-11 bg-white border-slate-200 rounded-xl"
                             />
                             <p className="text-[11px] text-slate-400">
-                              New {subjectLabel.toLowerCase()}s will be created automatically when
+                              New {subjectNounPlural} will be created automatically when
                               you save.
                             </p>
                           </div>
                         </div>
 
-                        <div className="space-y-4">
-                          {selectedItem.result.thoughts && (
-                            <>
-                              <h4 className="text-xs uppercase tracking-[0.2em] text-slate-400 font-bold flex items-center gap-2 pl-1">
-                                <Brain className="w-3 h-3" /> Thinking Process
-                              </h4>
-                              <motion.div
-                                initial={{ opacity: 0, y: 10 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                transition={{ delay: 0.15 }}
-                                className="bg-slate-50 border border-slate-200/60 rounded-2xl p-5 shadow-inner leading-relaxed text-xs text-slate-500 font-mono whitespace-pre-wrap max-h-60 overflow-y-auto mb-6"
-                              >
-                                {selectedItem.result.thoughts}
-                              </motion.div>
-                            </>
-                          )}
-
-                          <h4 className="text-xs uppercase tracking-[0.2em] text-slate-400 font-bold flex items-center gap-2 pl-1">
-                            <FlaskConical className="w-3 h-3" /> AI Reasoning
-                          </h4>
-                          <motion.div
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{ delay: 0.15 }}
-                            className="bg-white border border-slate-200/60 rounded-2xl p-5 shadow-sm leading-relaxed text-sm text-slate-600"
-                          >
-                            {selectedItem.result.reasoning}
-                          </motion.div>
-                        </div>
-
-                        <div className="space-y-4">
-                          <h4 className="text-xs uppercase tracking-[0.2em] text-slate-400 font-bold pl-1">
-                            Detected Features
-                          </h4>
-                          <motion.div
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{ delay: 0.2 }}
-                            className="grid grid-cols-2 gap-3"
-                          >
-                            {Object.entries(
-                              selectedItem.result.features || {}
-                            ).map(([key, value]) => (
-                              <div
-                                key={key}
-                                className="rounded-xl border border-slate-200/60 bg-white p-3 shadow-sm flex flex-col justify-center"
-                              >
-                                <span className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold mb-1">
-                                  {key}
-                                </span>
-                                <span
-                                  className="text-sm font-medium text-slate-800 capitalize truncate"
-                                  title={String(value)}
-                                >
-                                  {String(value)}
-                                </span>
-                              </div>
-                            ))}
-                          </motion.div>
-                        </div>
-
-                        {selectedItemSource && (
-                          <div className="pt-4 border-t border-slate-200/60">
-                            <div className="flex items-center gap-2 bg-slate-100/50 rounded-lg p-2 border border-slate-200/50 group hover:bg-slate-100 transition-colors">
-                              <div className="bg-white p-1.5 rounded-md border border-slate-200 shadow-sm text-slate-500">
-                                <Cloud className="w-3 h-3" />
-                              </div>
-                              <span className="text-xs font-mono text-slate-500 truncate flex-1">
-                                {selectedItemSource.replace(
-                                  "https://storage.googleapis.com/",
-                                  ""
-                                )}
-                              </span>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-7 w-7 text-slate-400 hover:text-slate-700"
-                                onClick={() => handleCopyLink(selectedItem)}
-                              >
-                                {copiedLinkId === selectedItem.id ? (
-                                  <Check className="w-3 h-3" />
-                                ) : (
-                                  <Copy className="w-3 h-3" />
-                                )}
-                              </Button>
-                            </div>
-                          </div>
-                        )}
                       </>
                     ) : (
                       <div className="py-12 text-center text-slate-400 flex flex-col items-center justify-center h-full min-h-[300px] border-2 border-dashed border-slate-200 rounded-3xl bg-slate-50/50">
@@ -1462,11 +2230,15 @@ export default function BatchUploadPage() {
                         <h3 className="font-medium text-slate-900 mb-1">
                           {selectedItem.status === "analyzing"
                             ? "Analyzing Image"
-                            : "Waiting for Input"}
+                            : selectedItem.status === "roi_confirmed"
+                              ? "Ready for analysis"
+                              : "Waiting for input"}
                         </h3>
                         <p className="text-sm text-slate-500 max-w-[200px]">
                           {selectedItem.status === "analyzing"
-                            ? "Gemini is currently processing this image..."
+                            ? "The confirmed model field is being evaluated."
+                            : selectedItem.status === "roi_confirmed"
+                            ? "Run analysis after every crop is confirmed."
                             : selectedItem.status === "uploaded"
                             ? "Ready to be analyzed"
                             : "Upload this file to begin analysis"}
@@ -1481,12 +2253,13 @@ export default function BatchUploadPage() {
                 <div className="grid grid-cols-2 gap-3">
                   <Button
                     variant="outline"
+                    onClick={discardSelectedItem}
                     className="h-12 rounded-xl border-slate-200 hover:bg-red-50 hover:text-red-600 hover:border-red-100 font-medium transition-colors"
                   >
-                    <Trash2 className="w-4 h-4 mr-2" /> Discard
+                    <Trash2 className="w-4 h-4 mr-2" /> Remove from batch
                   </Button>
                   <Button
-                    disabled={selectedItem.status !== "complete" || isSaving}
+                    disabled={selectedItem.status !== "complete" || isSaving || !canSave}
                     onClick={handleSaveAll}
                     className="h-12 rounded-xl bg-slate-900 text-white hover:bg-slate-800 font-medium shadow-lg shadow-slate-900/20 hover:shadow-slate-900/30 transition-all disabled:opacity-70"
                   >

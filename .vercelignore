@@ -1,0 +1,9 @@
+# Local research runs and QA evidence are intentionally not part of the web build.
+work/
+tmp/
+python-service/
+tests/
+docs/
+design-qa.md
+LOCAL_DEVELOPMENT.md
+*.zip

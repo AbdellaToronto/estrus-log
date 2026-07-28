@@ -1,382 +1,190 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { PresetCard } from './preset-card';
-import { PRESET_CONFIGS, CohortConfig } from '@/lib/config-types';
-import { createCohort } from '@/app/actions';
-import { useRouter } from 'next/navigation';
-import { 
-  ArrowRight, 
-  ArrowLeft, 
-  Sparkles, 
-  Loader2,
-  FlaskConical,
-  Upload,
-  BarChart3,
-  Zap
-} from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { ArrowRight, Check, CheckCircle2, Loader2, Rat } from "lucide-react";
+import { createCohort } from "@/app/actions";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { PRESET_CONFIGS } from "@/lib/config-types";
 
-type Step = 'welcome' | 'preset' | 'details' | 'ready';
+type Step = "details" | "ready";
 
-const PRESETS = Object.values(PRESET_CONFIGS).filter(p => p.type !== 'custom');
-
-export function OnboardingFlow({ onComplete }: { onComplete?: () => void }) {
+export function OnboardingFlow({
+  onComplete,
+  labMode = false,
+}: {
+  onComplete?: () => void;
+  labMode?: boolean;
+}) {
   const router = useRouter();
-  const [step, setStep] = useState<Step>('welcome');
-  const [selectedPreset, setSelectedPreset] = useState<CohortConfig | null>(null);
-  const [cohortName, setCohortName] = useState('');
-  const [cohortDescription, setCohortDescription] = useState('');
-  const [isCreating, setIsCreating] = useState(false);
+  const [step, setStep] = useState<Step>("details");
+  const [cohortName, setCohortName] = useState("");
+  const [cohortDescription, setCohortDescription] = useState("");
   const [createdCohortId, setCreatedCohortId] = useState<string | null>(null);
+  const [isCreating, setIsCreating] = useState(false);
+  const [error, setError] = useState("");
+  const estrusPreset = PRESET_CONFIGS.estrus_tracking;
 
-  const canProceed = () => {
-    switch (step) {
-      case 'welcome': return true;
-      case 'preset': return selectedPreset !== null;
-      case 'details': return cohortName.trim().length > 0;
-      case 'ready': return true;
-      default: return false;
-    }
-  };
-
-  const handleNext = async () => {
-    switch (step) {
-      case 'welcome':
-        setStep('preset');
-        break;
-      case 'preset':
-        setStep('details');
-        // Pre-fill name based on preset
-        if (selectedPreset && !cohortName) {
-          setCohortName(`My ${selectedPreset.subjectConfig.labelPlural || 'Subjects'}`);
-        }
-        break;
-      case 'details':
-        await createCohortAndProceed();
-        break;
-      case 'ready':
-        if (createdCohortId) {
-          router.push(`/cohorts/${createdCohortId}/batch`);
-        }
-        onComplete?.();
-        break;
-    }
-  };
-
-  const handleBack = () => {
-    switch (step) {
-      case 'preset': setStep('welcome'); break;
-      case 'details': setStep('preset'); break;
-      case 'ready': setStep('details'); break;
-    }
-  };
-
-  const createCohortAndProceed = async () => {
-    if (!selectedPreset) return;
-    
+  async function createFirstCohort() {
+    if (!cohortName.trim()) return;
     setIsCreating(true);
+    setError("");
     try {
-      const formData = new FormData();
-      formData.set('name', cohortName);
-      formData.set('description', cohortDescription);
-      formData.set('type', selectedPreset.type);
-      formData.set('subject_config', JSON.stringify(selectedPreset.subjectConfig));
-      formData.set('log_config', JSON.stringify(selectedPreset.logConfig));
-      
-      // createCohort doesn't return the ID, so we need to fetch it
-      await createCohort(formData);
-      
-      // For now, redirect to cohorts page - in a real app we'd get the ID back
-      setStep('ready');
-      // We'll need to fetch the cohort ID - for now just go to cohorts
-      setCreatedCohortId(null);
-    } catch (error) {
-      console.error('Failed to create cohort:', error);
+      if (labMode) {
+        setCreatedCohortId("00000000-0000-4000-8000-000000000901");
+      } else {
+        const formData = new FormData();
+        formData.set("name", cohortName.trim());
+        formData.set("description", cohortDescription.trim());
+        formData.set("type", estrusPreset.type);
+        formData.set("subject_config", JSON.stringify(estrusPreset.subjectConfig));
+        formData.set("log_config", JSON.stringify(estrusPreset.logConfig));
+        const cohort = await createCohort(formData);
+        setCreatedCohortId(cohort.id);
+      }
+      setStep("ready");
+    } catch (cause) {
+      console.error("Failed to create cohort:", cause);
+      setError("The cohort could not be created. Your entries are still here; try again.");
     } finally {
       setIsCreating(false);
     }
-  };
+  }
+
+  function openCohort() {
+    if (labMode) return;
+    if (createdCohortId) {
+      router.push(`/cohorts/${createdCohortId}#subjects`);
+      return;
+    }
+    onComplete?.();
+  }
+
+  function returnToDashboard() {
+    if (labMode) return;
+    if (onComplete) onComplete();
+    else router.push("/dashboard");
+  }
 
   return (
-    <div className="fixed inset-0 z-50 bg-gradient-to-br from-slate-50 via-blue-50/30 to-purple-50/30 flex items-center justify-center p-3 sm:p-4 overflow-auto">
-      <motion.div
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        className="w-full max-w-4xl"
-      >
-        {/* Progress indicator */}
-        <div className="flex justify-center mb-4 sm:mb-8">
-          <div className="flex items-center gap-1 sm:gap-2">
-            {(['welcome', 'preset', 'details', 'ready'] as Step[]).map((s, i) => (
-              <div key={s} className="flex items-center">
-                <motion.div
-                  className={cn(
-                    "w-2 h-2 sm:w-3 sm:h-3 rounded-full transition-colors",
-                    step === s ? "bg-primary scale-125" : 
-                    (['welcome', 'preset', 'details', 'ready'].indexOf(step) > i) ? "bg-primary/50" : "bg-slate-200"
-                  )}
-                  animate={{ scale: step === s ? 1.25 : 1 }}
-                />
-                {i < 3 && (
-                  <div className={cn(
-                    "w-6 sm:w-12 h-0.5 mx-0.5 sm:mx-1",
-                    (['welcome', 'preset', 'details', 'ready'].indexOf(step) > i) ? "bg-primary/50" : "bg-slate-200"
-                  )} />
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <AnimatePresence mode="wait">
-          {step === 'welcome' && (
-            <motion.div
-              key="welcome"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-              className="text-center"
-            >
-              <motion.div
-                initial={{ scale: 0 }}
-                animate={{ scale: 1 }}
-                transition={{ type: "spring", delay: 0.2 }}
-                className="w-16 h-16 sm:w-24 sm:h-24 bg-gradient-to-br from-primary/20 to-purple-500/20 rounded-2xl sm:rounded-3xl flex items-center justify-center mx-auto mb-4 sm:mb-8 shadow-lg shadow-primary/10"
-              >
-                <FlaskConical className="w-8 h-8 sm:w-12 sm:h-12 text-primary" />
-              </motion.div>
-              
-              <h1 className="text-2xl sm:text-4xl md:text-5xl font-bold text-slate-900 mb-3 sm:mb-4 tracking-tight">
-                Welcome to <span className="text-primary">Estrus Log</span>
+    <div className="fixed inset-0 z-50 overflow-auto bg-[#f7f4ed] px-4 py-6 text-[#292b4c] sm:px-6 lg:py-10">
+      <div className="mx-auto flex min-h-full w-full max-w-5xl items-center justify-center">
+        {step === "details" ? (
+          <section className="grid w-full overflow-hidden rounded-[2rem] border border-[#ded9cd] bg-[#fbfaf7] shadow-[0_24px_80px_rgba(39,36,26,0.12)] lg:grid-cols-[0.9fr_1.1fr]">
+            <div className="border-b border-[#ded9cd] bg-[#eeedf9] p-6 sm:p-9 lg:border-b-0 lg:border-r lg:p-12">
+              <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#9a4f35]">First setup · 1 of 2</p>
+              <Rat className="mt-6 h-16 w-16 text-[#454a9f]" strokeWidth={1.5} />
+              <h1 className="mt-6 font-serif text-4xl tracking-[-0.04em] text-[#292b4c] sm:text-5xl">
+                Name your first mouse cohort
               </h1>
-              <p className="text-base sm:text-xl text-slate-500 mb-6 sm:mb-12 max-w-lg mx-auto px-2">
-                AI-powered image classification for biological research. 
-                Let&apos;s set up your first project in under a minute.
+              <p className="mt-4 max-w-md text-base leading-7 text-[#5e5d75]">
+                A cohort holds the mouse IDs and daily observations collected under one protocol.
               </p>
 
-              {/* Feature highlights */}
-              <div className="grid grid-cols-3 gap-2 sm:gap-6 mb-6 sm:mb-12 max-w-2xl mx-auto">
-                {[
-                  { icon: Upload, title: 'Batch Upload', desc: 'Drop images or ZIPs' },
-                  { icon: Zap, title: 'AI Classification', desc: 'Instant analysis' },
-                  { icon: BarChart3, title: 'Track Progress', desc: 'Beautiful insights' },
-                ].map((feature, i) => (
-                  <motion.div
-                    key={feature.title}
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.3 + i * 0.1 }}
-                    className="bg-white/60 backdrop-blur-sm rounded-xl sm:rounded-2xl p-2 sm:p-4 border border-white/50 shadow-sm"
-                  >
-                    <feature.icon className="w-5 h-5 sm:w-8 sm:h-8 text-primary/70 mb-1 sm:mb-2 mx-auto" />
-                    <h3 className="font-semibold text-slate-800 text-xs sm:text-base">{feature.title}</h3>
-                    <p className="text-[10px] sm:text-sm text-slate-500 hidden sm:block">{feature.desc}</p>
-                  </motion.div>
-                ))}
-              </div>
-            </motion.div>
-          )}
-
-          {step === 'preset' && (
-            <motion.div
-              key="preset"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-            >
-              <div className="text-center mb-4 sm:mb-8">
-                <h2 className="text-xl sm:text-3xl font-bold text-slate-900 mb-2">
-                  What are you tracking?
-                </h2>
-                <p className="text-sm sm:text-base text-slate-500">
-                  Choose a template to get started quickly, or customize later.
+              <div className="mt-8 border-t border-[#c9c7e7] pt-6">
+                <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#555a9d]">Already configured</p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {estrusPreset.logConfig.stages.map((stage) => (
+                    <span key={stage.name} className="rounded-full border border-[#c9c7e7] bg-white/70 px-2.5 py-1 text-xs font-medium text-[#353a87]">
+                      {stage.name}
+                    </span>
+                  ))}
+                </div>
+                <p className="mt-4 text-sm leading-6 text-[#5e5d75]">
+                  Each mouse can record coat colour and strain so later model evaluation can be subgroup-aware.
                 </p>
               </div>
+            </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 mb-4 sm:mb-8">
-                {PRESETS.map((preset, i) => (
-                  <PresetCard
-                    key={preset.type}
-                    preset={preset}
-                    isSelected={selectedPreset?.type === preset.type}
-                    onSelect={() => setSelectedPreset(preset)}
-                    index={i}
-                  />
-                ))}
-              </div>
+            <div className="flex flex-col justify-center p-6 sm:p-9 lg:p-12">
+              <div className="max-w-lg">
+                <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#66627a]">Cohort details</p>
+                <h2 className="mt-2 font-serif text-3xl text-[#292b4c]">What group are you starting with?</h2>
+                <p className="mt-2 text-sm leading-6 text-[#77736c]">You can add experiments and extra protocol fields later.</p>
 
-              <p className="text-center text-xs sm:text-sm text-slate-400">
-                Don&apos;t see what you need? You can fully customize stages and fields later.
-              </p>
-            </motion.div>
-          )}
-
-          {step === 'details' && (
-            <motion.div
-              key="details"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-              className="max-w-md mx-auto"
-            >
-              <div className="text-center mb-8">
-                <h2 className="text-3xl font-bold text-slate-900 mb-2">
-                  Name your project
-                </h2>
-                <p className="text-slate-500">
-                  This is a cohort - a group of {selectedPreset?.subjectConfig.labelPlural?.toLowerCase() || 'subjects'} you&apos;re tracking together.
-                </p>
-              </div>
-
-              <div className="bg-white/80 backdrop-blur-sm rounded-3xl p-8 border border-white/50 shadow-xl space-y-6">
-                <div className="space-y-2">
-                  <Label htmlFor="name" className="text-sm font-semibold text-slate-700">
-                    Cohort Name *
-                  </Label>
-                  <Input
-                    id="name"
-                    value={cohortName}
-                    onChange={(e) => setCohortName(e.target.value)}
-                    placeholder={`e.g., "Control Group" or "Batch ${new Date().toLocaleDateString()}"`}
-                    className="h-12 text-lg rounded-xl border-slate-200 focus:border-primary"
-                    autoFocus
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="description" className="text-sm font-semibold text-slate-700">
-                    Description <span className="text-slate-400 font-normal">(optional)</span>
-                  </Label>
-                  <Input
-                    id="description"
-                    value={cohortDescription}
-                    onChange={(e) => setCohortDescription(e.target.value)}
-                    placeholder="What's this cohort for?"
-                    className="h-12 rounded-xl border-slate-200 focus:border-primary"
-                  />
-                </div>
-
-                {selectedPreset && (
-                  <div className="pt-4 border-t border-slate-100">
-                    <p className="text-xs text-slate-400 mb-2">Template</p>
-                    <div className="flex items-center gap-3 bg-slate-50 rounded-xl p-3">
-                      <div className="flex gap-1">
-                        {selectedPreset.logConfig.stages.slice(0, 3).map((stage) => (
-                          <div
-                            key={stage.name}
-                            className="w-3 h-3 rounded-full"
-                            style={{ backgroundColor: stage.color }}
-                          />
-                        ))}
-                      </div>
-                      <span className="text-sm font-medium text-slate-700">{selectedPreset.name}</span>
-                    </div>
+                <div className="mt-8 space-y-6">
+                  <div className="space-y-2">
+                    <Label htmlFor="first-cohort-name" className="font-semibold text-[#353a87]">Cohort name</Label>
+                    <Input
+                      id="first-cohort-name"
+                      value={cohortName}
+                      onChange={(event) => setCohortName(event.target.value)}
+                      placeholder="e.g. Control · North colony"
+                      className="h-12 rounded-xl border-[#d7d1c5] bg-white text-base"
+                      autoFocus
+                    />
+                    <p className="text-xs text-[#77736c]">Required · use the name your team already recognizes.</p>
                   </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="first-cohort-note" className="font-semibold text-[#353a87]">Study note <span className="font-normal text-[#77736c]">(optional)</span></Label>
+                    <Textarea
+                      id="first-cohort-note"
+                      value={cohortDescription}
+                      onChange={(event) => setCohortDescription(event.target.value)}
+                      placeholder="Protocol, treatment, or housing context"
+                      rows={4}
+                      className="rounded-xl border-[#d7d1c5] bg-white"
+                    />
+                  </div>
+                </div>
+
+                {error && (
+                  <p role="alert" className="mt-5 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</p>
                 )}
+
+                <Button
+                  onClick={createFirstCohort}
+                  disabled={!cohortName.trim() || isCreating}
+                  className="mt-8 h-11 w-full bg-[#454a9f] text-white hover:bg-[#383d89] sm:w-auto"
+                >
+                  {isCreating ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                  {isCreating ? "Creating cohort…" : "Create mouse cohort"}
+                  {!isCreating ? <ArrowRight className="h-4 w-4" /> : null}
+                </Button>
               </div>
-            </motion.div>
-          )}
+            </div>
+          </section>
+        ) : (
+          <section className="w-full max-w-3xl rounded-[2rem] border border-[#ded9cd] bg-[#fbfaf7] p-6 text-center shadow-[0_24px_80px_rgba(39,36,26,0.12)] sm:p-10 lg:p-12">
+            <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#9a4f35]">First setup · 2 of 2</p>
+            <div className="mx-auto mt-5 flex h-20 w-20 items-center justify-center rounded-3xl bg-[#eeedf9]">
+              <CheckCircle2 className="h-12 w-12 text-[#454a9f]" strokeWidth={1.6} />
+            </div>
+            <h1 className="mt-5 font-serif text-4xl tracking-[-0.04em] text-[#292b4c] sm:text-5xl">Cohort ready</h1>
+            <p className="mx-auto mt-3 max-w-xl text-base leading-7 text-[#77736c]">
+              <strong className="text-[#292b4c]">{cohortName}</strong> is ready. Add the mouse identities before starting single or bulk capture.
+            </p>
 
-          {step === 'ready' && (
-            <motion.div
-              key="ready"
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="text-center"
-            >
-              <motion.div
-                initial={{ scale: 0 }}
-                animate={{ scale: 1 }}
-                transition={{ type: "spring", delay: 0.2 }}
-                className="w-24 h-24 bg-gradient-to-br from-green-400/20 to-emerald-500/20 rounded-3xl flex items-center justify-center mx-auto mb-8 shadow-lg shadow-green-500/10"
-              >
-                <Sparkles className="w-12 h-12 text-green-500" />
-              </motion.div>
-              
-              <h2 className="text-4xl font-bold text-slate-900 mb-4">
-                You&apos;re all set! 🎉
-              </h2>
-              <p className="text-xl text-slate-500 mb-8 max-w-lg mx-auto">
-                Your cohort <strong className="text-slate-700">&quot;{cohortName}&quot;</strong> is ready.
-                Let&apos;s upload your first batch of images!
-              </p>
+            <ol className="mx-auto mt-8 grid max-w-2xl gap-3 text-left sm:grid-cols-3">
+              {[
+                ["1", "Add subjects", "Mouse ID, coat colour, and strain"],
+                ["2", "Choose capture", "One observation or bulk scan"],
+                ["3", "Confirm stages", "Review the lead and save the scientist decision"],
+              ].map(([number, title, description]) => (
+                <li key={number} className="rounded-2xl border border-[#ded9cd] bg-[#f7f4ed] p-4">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#454a9f] text-xs font-bold text-white">{number}</span>
+                  <strong className="mt-3 block text-sm text-[#292b4c]">{title}</strong>
+                  <span className="mt-1 block text-xs leading-5 text-[#625f58]">{description}</span>
+                </li>
+              ))}
+            </ol>
 
-              <div className="bg-white/60 backdrop-blur-sm rounded-2xl p-6 border border-white/50 shadow-sm max-w-md mx-auto mb-8">
-                <h3 className="font-semibold text-slate-800 mb-3">Next steps:</h3>
-                <ol className="text-left text-sm text-slate-600 space-y-2">
-                  <li className="flex items-start gap-2">
-                    <span className="w-5 h-5 rounded-full bg-primary/10 text-primary text-xs flex items-center justify-center shrink-0 mt-0.5">1</span>
-                    Drop images or a ZIP file into the upload area
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <span className="w-5 h-5 rounded-full bg-primary/10 text-primary text-xs flex items-center justify-center shrink-0 mt-0.5">2</span>
-                    Click &quot;Analyze&quot; to classify with AI
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <span className="w-5 h-5 rounded-full bg-primary/10 text-primary text-xs flex items-center justify-center shrink-0 mt-0.5">3</span>
-                    Review results and assign to {selectedPreset?.subjectConfig.labelPlural?.toLowerCase() || 'subjects'}
-                  </li>
-                </ol>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Navigation */}
-        <div className="flex justify-between items-center mt-4 sm:mt-8">
-          <Button
-            variant="ghost"
-            onClick={handleBack}
-            disabled={step === 'welcome'}
-            className={cn(
-              "gap-1 sm:gap-2 text-slate-500 hover:text-slate-700 text-sm sm:text-base",
-              step === 'welcome' && "invisible"
-            )}
-          >
-            <ArrowLeft className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-            <span className="hidden sm:inline">Back</span>
-          </Button>
-
-          <Button
-            onClick={handleNext}
-            disabled={!canProceed() || isCreating}
-            size="default"
-            className="gap-1.5 sm:gap-2 px-4 sm:px-8 rounded-full shadow-lg shadow-primary/20 hover:shadow-primary/30 transition-all hover:scale-105 active:scale-95 text-sm sm:text-base"
-          >
-            {isCreating ? (
-              <>
-                <Loader2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 animate-spin" />
-                <span className="hidden sm:inline">Creating...</span>
-                <span className="sm:hidden">...</span>
-              </>
-            ) : step === 'ready' ? (
-              <>
-                <span className="hidden sm:inline">Start Uploading</span>
-                <span className="sm:hidden">Start</span>
-                <ArrowRight className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-              </>
-            ) : step === 'details' ? (
-              <>
-                <span className="hidden sm:inline">Create Cohort</span>
-                <span className="sm:hidden">Create</span>
-                <Sparkles className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-              </>
-            ) : (
-              <>
-                Continue
-                <ArrowRight className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-              </>
-            )}
-          </Button>
-        </div>
-      </motion.div>
+            <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
+              <Button onClick={openCohort} className="bg-[#454a9f] text-white hover:bg-[#383d89]">
+                Add mouse subjects <ArrowRight className="h-4 w-4" />
+              </Button>
+              <Button variant="outline" onClick={returnToDashboard}>
+                <Check className="h-4 w-4" /> Return to dashboard
+              </Button>
+            </div>
+            <p className="mt-5 text-xs text-[#625f58]">Bulk capture appears in the cohort workspace once subject identities are available.</p>
+          </section>
+        )}
+      </div>
     </div>
   );
 }
-

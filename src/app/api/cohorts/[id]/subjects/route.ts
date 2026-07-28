@@ -1,4 +1,4 @@
-import { auth } from "@clerk/nextjs/server";
+import { auth } from "@/lib/auth";
 import { NextRequest, NextResponse } from "next/server";
 import { createAuthClient } from "@/lib/supabase";
 
@@ -43,4 +43,3 @@ export async function GET(
     );
   }
 }
-

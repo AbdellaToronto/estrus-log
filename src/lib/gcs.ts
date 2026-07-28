@@ -8,6 +8,41 @@ export type GCSConfig = {
   cdnBaseUrl?: string
 }
 
+export type GcsObjectLocation = {
+  bucketName: string
+  objectPath: string
+}
+
+const GCS_URI_PREFIX = "gs://"
+
+/** Store object identifiers, not anonymously readable HTTP URLs. */
+export function toGcsObjectUri(bucketName: string, objectPath: string) {
+  return `${GCS_URI_PREFIX}${bucketName}/${objectPath}`
+}
+
+/** Accept new gs:// references and legacy storage.googleapis.com URLs. */
+export function getGcsObjectLocation(value: string | null | undefined): GcsObjectLocation | null {
+  if (!value) return null
+  if (value.startsWith(GCS_URI_PREFIX)) {
+    const remainder = value.slice(GCS_URI_PREFIX.length)
+    const slashIndex = remainder.indexOf("/")
+    if (slashIndex <= 0 || slashIndex === remainder.length - 1) return null
+    return {
+      bucketName: remainder.slice(0, slashIndex),
+      objectPath: remainder.slice(slashIndex + 1),
+    }
+  }
+  try {
+    const url = new URL(value)
+    if (url.protocol !== "https:" || url.hostname !== "storage.googleapis.com") return null
+    const [, bucketName, ...pathParts] = url.pathname.split("/")
+    if (!bucketName || pathParts.length === 0) return null
+    return { bucketName, objectPath: decodeURIComponent(pathParts.join("/")) }
+  } catch {
+    return null
+  }
+}
+
 /** Cache for initialized GCS SDK objects to avoid re-creating clients */
 let cached: {
   /** Google Cloud Storage client instance */
@@ -66,4 +101,28 @@ export function getGcs(config?: Partial<GCSConfig>) {
   const bucket = storage.bucket(cfg.bucketName)
   cached = { storage, bucket, cfg }
   return cached
+}
+
+/**
+ * Create a short-lived URL for a canonical gs:// reference. Legacy HTTP URLs
+ * are intentionally returned unchanged so an existing public bucket can be
+ * migrated without breaking historical records.
+ */
+export async function getReadableImageUrl(
+  value: string | null | undefined,
+  expiresInMs = 15 * 60 * 1000
+): Promise<string | null> {
+  if (!value) return null
+  if (!value.startsWith(GCS_URI_PREFIX)) return value.split("?")[0]
+
+  const location = getGcsObjectLocation(value)
+  if (!location) throw new Error("Stored image reference is invalid")
+  const { storage } = getGcs()
+  const file = storage.bucket(location.bucketName).file(location.objectPath)
+  const [url] = await file.getSignedUrl({
+    version: "v4",
+    action: "read",
+    expires: Date.now() + expiresInMs,
+  })
+  return url
 }
