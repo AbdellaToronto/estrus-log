@@ -3,7 +3,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Camera } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { formatDistanceToNow } from 'date-fns';
+import { formatDistance } from 'date-fns';
 
 type RecentActivityItem = {
   id: string;
@@ -21,7 +21,13 @@ const stageClass: Record<string, string> = {
   Diestrus: 'stage-diestrus',
 };
 
-export function RecentActivity({ activities }: { activities: RecentActivityItem[] }) {
+export function RecentActivity({
+  activities,
+  renderedAt,
+}: {
+  activities: RecentActivityItem[];
+  renderedAt: string;
+}) {
   return (
     <Card className="col-span-1 lg:col-span-2">
       <CardHeader className="flex flex-row items-center justify-between space-y-0">
@@ -63,7 +69,7 @@ export function RecentActivity({ activities }: { activities: RecentActivityItem[
                   {activity.mouseName}
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  {activity.cohortName} • {formatDistanceToNow(new Date(activity.time), { addSuffix: true })}
+                  {activity.cohortName} • {formatDistance(new Date(activity.time), new Date(renderedAt), { addSuffix: true })}
                 </p>
               </div>
               <div className="flex-none">
@@ -78,7 +84,6 @@ export function RecentActivity({ activities }: { activities: RecentActivityItem[
     </Card>
   );
 }
-
 
 
 

@@ -25,10 +25,12 @@ export function DashboardClient({
   initialCohorts,
   stats,
   todayKey: todayKeyOverride,
+  renderedAt,
 }: {
   initialCohorts: Cohort[];
   stats: DashboardStats;
   todayKey?: string;
+  renderedAt: string;
 }) {
   const [showOnboarding, setShowOnboarding] = useState(() => initialCohorts.length === 0);
   const todayKey = todayKeyOverride || format(new Date(), "yyyy-MM-dd");
@@ -215,7 +217,7 @@ export function DashboardClient({
         </summary>
         <div className="grid gap-5 border-t border-[#ded9cd] p-5 xl:grid-cols-2">
           <StageTrendChart data={stats.dailyTrend} />
-          <RecentActivity activities={stats.recentActivity} />
+          <RecentActivity activities={stats.recentActivity} renderedAt={renderedAt} />
         </div>
       </details>
     </div>

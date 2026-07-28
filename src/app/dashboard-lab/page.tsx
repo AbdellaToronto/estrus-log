@@ -88,5 +88,12 @@ export const metadata = { title: "Estrus dashboard audit lab" };
 
 export default function DashboardLabPage() {
   if (process.env.NODE_ENV === "production" && process.env.ESTRUS_WORKFLOW_LAB !== "true") notFound();
-  return <DashboardClient initialCohorts={cohorts} stats={stats} todayKey="2026-07-19" />;
+  return (
+    <DashboardClient
+      initialCohorts={cohorts}
+      stats={stats}
+      todayKey="2026-07-19"
+      renderedAt="2026-07-19T16:00:00.000Z"
+    />
+  );
 }
