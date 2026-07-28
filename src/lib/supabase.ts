@@ -7,6 +7,26 @@ export type SupabaseConfig = {
   serviceRoleKey?: string
 }
 
+const fetchWithAuthClockSkewRetry: typeof fetch = async (input, init) => {
+  const retryInput = input instanceof Request ? input.clone() : input
+  const response = await fetch(input, init)
+  if (response.status !== 401) return response
+
+  const body = await response
+    .clone()
+    .json()
+    .catch(() => null) as { code?: string; message?: string } | null
+  if (body?.code !== "PGRST303" || body.message !== "JWT not yet valid") {
+    return response
+  }
+
+  // Clerk already backdates `nbf`, but a newly minted token can still meet a
+  // Supabase worker whose clock is slightly behind. One bounded retry keeps a
+  // transient clock-skew response from turning into a full-page server error.
+  await new Promise((resolve) => setTimeout(resolve, 1_500))
+  return fetch(retryInput, init)
+}
+
 /**
  * Create a Supabase client with RLS enabled using the user's Clerk JWT token.
  * This should be used for all user-facing queries where RLS policies apply.
@@ -41,6 +61,9 @@ export function createAuthClient(accessToken: string): SupabaseClient {
     // token through accessToken so every Data API request is authenticated
     // against the configured Clerk OIDC issuer.
     accessToken: async () => accessToken,
+    global: {
+      fetch: fetchWithAuthClockSkewRetry,
+    },
     auth: {
       persistSession: false,
       autoRefreshToken: false,
