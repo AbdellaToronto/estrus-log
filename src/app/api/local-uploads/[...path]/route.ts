@@ -5,7 +5,13 @@ import { isLocalRehearsal } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
-const ROOT = resolve(process.cwd(), "tmp", "rehearsal-uploads");
+// This route is local-rehearsal-only. The trace ignore keeps Turbopack from
+// treating the dynamic project root as a production function dependency.
+const ROOT = join(
+  /* turbopackIgnore: true */ process.cwd(),
+  "tmp",
+  "rehearsal-uploads"
+);
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 
 const MIME_BY_EXTENSION: Record<string, string> = {
