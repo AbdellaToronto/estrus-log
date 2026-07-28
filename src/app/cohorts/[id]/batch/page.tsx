@@ -28,7 +28,6 @@ import {
   Cloud,
   CloudLightning,
   Sparkles,
-  X,
   AlertTriangle,
 } from "lucide-react";
 import { CycleWheel, ConfidenceBars } from "@/components/analysis";
@@ -1259,18 +1258,11 @@ export default function BatchUploadPage() {
                 <div className="mb-4 flex items-center justify-between">
                   <Link
                     href={`/cohorts/${cohortId}`}
+                    aria-label="Return to cohort"
                     className="text-slate-400 hover:text-slate-600 transition-colors p-2 hover:bg-slate-100 rounded-full -ml-2"
                   >
                     <ArrowLeft className="w-5 h-5" />
                   </Link>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="text-slate-400 hover:text-slate-600 rounded-full"
-                    onClick={() => setItems([])}
-                  >
-                    <X className="w-5 h-5" />
-                  </Button>
                 </div>
 
                 <div>
@@ -1810,6 +1802,7 @@ export default function BatchUploadPage() {
                 <Button
                   size="icon"
                   variant="secondary"
+                  aria-label="Close image detail"
                   onClick={() => setSelectedId(null)}
                   className="absolute top-4 right-4 bg-white/80 hover:bg-white shadow-sm rounded-full backdrop-blur-md z-10"
                 >
