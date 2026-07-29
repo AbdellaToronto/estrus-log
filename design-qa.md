@@ -214,6 +214,17 @@ comparison.
 - Earlier Recharts measurement warnings did not recur after adding initial
   responsive-container dimensions.
 
+## Production packaging check
+
+- The local-only upload route stores rehearsal files under the operating
+  system temp root and marks each dynamic filesystem operation as excluded from
+  production tracing.
+- The route trace is 1.82 MB across 156 files; it no longer captures the
+  repository's research corpora and the prior Turbopack trace warning is gone.
+- A local production-server round trip returned PUT 201 and GET 200. The source
+  and downloaded PNG shared SHA-256
+  `f283b96e7e52ce2cdea1d246834136916295303c9daab63a8e60fe315c030c7d`.
+
 ## Remaining findings
 
 No actionable P0, P1, or P2 findings remain.

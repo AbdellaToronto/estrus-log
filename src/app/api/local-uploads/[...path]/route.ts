@@ -1,17 +1,15 @@
 import { readFile, mkdir, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { extname, join, resolve } from "node:path";
 import { NextRequest, NextResponse } from "next/server";
 import { isLocalRehearsal } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
-// This route is local-rehearsal-only. The trace ignore keeps Turbopack from
-// treating the dynamic project root as a production function dependency.
-const ROOT = join(
-  /* turbopackIgnore: true */ process.cwd(),
-  "tmp",
-  "rehearsal-uploads"
-);
+// Rehearsal uploads are intentionally temporary and never deployed. Keeping
+// them under the OS temp root also prevents production file tracing from
+// treating the repository's research datasets as function dependencies.
+const ROOT = join(tmpdir(), "estrus-rehearsal-uploads");
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 
 const MIME_BY_EXTENSION: Record<string, string> = {
@@ -52,8 +50,10 @@ export async function PUT(
     return new NextResponse("Only images can be uploaded", { status: 415 });
   }
 
-  await mkdir(resolve(target, ".."), { recursive: true });
-  await writeFile(target, bytes, { flag: "wx" });
+  await mkdir(/* turbopackIgnore: true */ resolve(target, ".."), {
+    recursive: true,
+  });
+  await writeFile(/* turbopackIgnore: true */ target, bytes, { flag: "wx" });
   return new NextResponse(null, { status: 201 });
 }
 
@@ -66,7 +66,7 @@ export async function GET(
   if (!target) return new NextResponse("Invalid upload path", { status: 400 });
 
   try {
-    const bytes = await readFile(target);
+    const bytes = await readFile(/* turbopackIgnore: true */ target);
     return new NextResponse(bytes, {
       headers: {
         "Cache-Control": "private, max-age=3600",
