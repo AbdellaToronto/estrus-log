@@ -1,36 +1,51 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Estrus
+
+An AI-first estrous-cycle review workspace for research teams. The model proposes
+a stage and shows relative support across all four stages; the scientist reviews
+the image and context, then saves the scientific decision.
+
+## Supervisor demo
+
+The public rehearsal is available at
+[estrus-dusky.vercel.app/supervisor-demo](https://estrus-dusky.vercel.app/supervisor-demo).
+It is a complete, self-contained product journey:
+
+- **Prediction inbox** — triage eight observations by confidence and urgency.
+- **Focused review** — inspect the image, cycle history, and four-stage model support.
+- **Review receipt** — distinguish accepted, corrected, and uncertain decisions and
+  export a provenance-rich CSV.
+- **Day complete** — explore animated 7-, 14-, and 28-day subject histories,
+  coverage, stage distribution, corrections, uncertainty, and projected Estrus
+  windows.
+
+All subjects, images, histories, scores, and decisions in the public rehearsal are
+illustrative. Relative support scores are not calibrated probabilities, the model
+output is not live inference, and it never replaces the scientist's saved decision.
+The route is intentionally excluded from search indexing and does not write
+production records.
 
 ## Getting Started
 
-First, run the development server:
+Install dependencies and run the development server:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
+pnpm install
 pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000/supervisor-demo](http://localhost:3000/supervisor-demo).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Validation
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+pnpm workflow:test
+pnpm build
+```
 
-## Learn More
+The workflow suite exercises the full eight-observation journey, data-export
+semantics, accessibility, responsive layouts, and public-demo isolation from
+authentication.
 
-To learn more about Next.js, take a look at the following resources:
+## Stack
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Next.js 16, React 19, TypeScript, Tailwind CSS, Clerk, Supabase, and Playwright.
