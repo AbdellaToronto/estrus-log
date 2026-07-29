@@ -23,7 +23,12 @@ import {
   X,
 } from "lucide-react";
 import { StageDistribution } from "@/components/prediction/stage-distribution";
-import type { ClassificationStage } from "@/lib/classification";
+import { ESTRUS_STAGES, type ClassificationStage } from "@/lib/classification";
+import {
+  fourStagePosterior,
+  posteriorStrength,
+  type BinaryGroup as PosteriorGroup,
+} from "@/lib/four-stage-posterior";
 import { cn } from "@/lib/utils";
 
 type Neighbour = { label: ClassificationStage; similarity: number };
@@ -158,6 +163,10 @@ export function LiveAnalysis() {
   );
   const [elapsed, setElapsed] = useState(0);
   const [copied, setCopied] = useState(false);
+  // Optional cycle context. The binary model cannot separate the two stages
+  // inside its half; a recent confirmed stage is what breaks that tie.
+  const [previousStage, setPreviousStage] = useState<ClassificationStage | "">("");
+  const [daysSince, setDaysSince] = useState(1);
   const inputRef = useRef<HTMLInputElement>(null);
   const previewRef = useRef<string | null>(null);
 
@@ -712,32 +721,33 @@ export function LiveAnalysis() {
                 </div>
               )}
 
-              <div className="border-b border-[#ded9cd] p-6">
-                <Eyebrow>
-                  {result.abstained
-                    ? "Four-stage · abstained · not validated"
-                    : "Four-stage · not validated"}
-                </Eyebrow>
-                <div className="mt-2 flex flex-wrap items-end justify-between gap-4">
-                  <div>
-                    <h3 className="font-serif text-2xl text-[#292b4c]">
-                      {result.abstained
-                        ? "No confident stage"
-                        : `Closest to ${result.stage}`}
-                    </h3>
-                    <p className="mt-1 text-sm text-[#625f58]">
-                      {Math.round(result.scores[result.stage] * 100)}% relative support ·
-                      near chance on held-out mice, shown for transparency
-                    </p>
-                  </div>
-                </div>
-              </div>
+              {/* Four stages assembled from the validated binary call and the
+                  subject's own history, rather than from a four-way classifier
+                  that would sit at chance. */}
+              {result.binary && (
+                <FourStageEstimate
+                  group={result.binary.group as PosteriorGroup}
+                  probabilityProestrusOrEstrus={
+                    result.binary.source === "promoted_ensemble"
+                      ? result.binary.probability_proestrus_or_estrus
+                      : result.binary.scores.PROESTRUS_OR_ESTRUS
+                  }
+                  abstained={
+                    result.binary.source === "promoted_ensemble" &&
+                    result.binary.decision_status === "abstain"
+                  }
+                  previousStage={previousStage}
+                  daysSince={daysSince}
+                  onPreviousStageChange={setPreviousStage}
+                  onDaysSinceChange={setDaysSince}
+                />
+              )}
 
               <div className="p-6">
                 <div className="flex items-center justify-between">
-                  <Eyebrow>All stage scores</Eyebrow>
+                  <Eyebrow>Reference-match scores · not validated</Eyebrow>
                   <span className="text-[10px] text-[#625f58]">
-                    relative model support
+                    relative support, near chance held out by mouse
                   </span>
                 </div>
                 <StageDistribution
@@ -994,6 +1004,263 @@ export function LiveAnalysis() {
           </div>
         </div>
       </section>
+
+      <Provenance />
     </main>
+  );
+}
+
+const STAGE_TONE: Record<ClassificationStage, string> = {
+  Proestrus: "bg-[#8f83d8]",
+  Estrus: "bg-[#c76f87]",
+  Metestrus: "bg-[#d3a450]",
+  Diestrus: "bg-[#6493ba]",
+};
+
+/**
+ * Four stages derived from the validated binary call plus cycle history, rather
+ * than from a four-way classifier. The history control is interactive because the
+ * effect it has is the entire argument: without it the two stages inside a half
+ * are genuinely indistinguishable, and the panel says so instead of guessing.
+ */
+function FourStageEstimate({
+  group,
+  probabilityProestrusOrEstrus,
+  abstained,
+  previousStage,
+  daysSince,
+  onPreviousStageChange,
+  onDaysSinceChange,
+}: {
+  group: PosteriorGroup;
+  probabilityProestrusOrEstrus: number;
+  abstained: boolean;
+  previousStage: ClassificationStage | "";
+  daysSince: number;
+  onPreviousStageChange: (stage: ClassificationStage | "") => void;
+  onDaysSinceChange: (days: number) => void;
+}) {
+  const posterior = fourStagePosterior({
+    group,
+    probabilityProestrusOrEstrus,
+    previousStage: previousStage || null,
+    daysSincePrevious: previousStage ? daysSince : null,
+    abstained,
+  });
+  const strength = posteriorStrength(posterior);
+
+  return (
+    <div className="border-b border-[#ded9cd] p-6">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <Eyebrow>Four-stage estimate · derived, not classified</Eyebrow>
+        <span
+          className={cn(
+            "px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.1em]",
+            strength === "informative"
+              ? "bg-[#dcece2] text-[#2f5a41]"
+              : strength === "directional"
+                ? "bg-[#efece5] text-[#68645d]"
+                : "bg-[#fbeee0] text-[#7d4a2f]"
+          )}
+        >
+          {strength}
+        </span>
+      </div>
+
+      <h3 className="mt-2 font-serif text-3xl text-[#292b4c]">
+        {posterior.leading ?? "No stage favoured"}
+      </h3>
+      <p className="mt-1 max-w-2xl text-[13px] leading-5 text-[#625f58]">
+        {posterior.explanation}
+      </p>
+
+      <div className="mt-5 space-y-2">
+        {ESTRUS_STAGES.map((stage) => {
+          const percentage = Math.round(posterior.scores[stage] * 100);
+          const leading = posterior.leading === stage;
+          return (
+            <div
+              key={stage}
+              className="grid grid-cols-[92px_minmax(0,1fr)_44px] items-center gap-3"
+            >
+              <span
+                className={cn(
+                  "text-sm",
+                  leading ? "font-semibold text-[#292b4c]" : "text-[#6f6b64]"
+                )}
+              >
+                {stage}
+              </span>
+              <div className="h-2 overflow-hidden rounded-full bg-[#ebe7df]">
+                <div
+                  className={cn(
+                    "h-full rounded-full transition-[width] duration-300 motion-reduce:transition-none",
+                    STAGE_TONE[stage],
+                    !leading && "opacity-70"
+                  )}
+                  style={{ width: `${percentage}%` }}
+                />
+              </div>
+              <span className="text-right text-sm tabular-nums text-[#625f58]">
+                {percentage}%
+              </span>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="mt-5 border-t border-[#e8e3da] pt-4">
+        <Eyebrow>Cycle context</Eyebrow>
+        <p className="mt-1 text-[13px] leading-5 text-[#625f58]">
+          The binary model cannot separate the two stages inside its half. A recent
+          confirmed stage is what breaks that tie — try it.
+        </p>
+        <div className="mt-3 flex flex-wrap items-end gap-4">
+          <label className="flex flex-col gap-1">
+            <span className="text-[11px] font-semibold text-[#68645d]">
+              Last confirmed stage
+            </span>
+            <select
+              value={previousStage}
+              onChange={(event) =>
+                onPreviousStageChange(event.target.value as ClassificationStage | "")
+              }
+              className="border border-[#ded9cd] bg-white px-3 py-2 text-sm text-[#292b4c]"
+            >
+              <option value="">None on record</option>
+              {ESTRUS_STAGES.map((stage) => (
+                <option key={stage} value={stage}>
+                  {stage}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-[11px] font-semibold text-[#68645d]">
+              Days since
+            </span>
+            <select
+              value={daysSince}
+              onChange={(event) => onDaysSinceChange(Number(event.target.value))}
+              disabled={!previousStage}
+              className="border border-[#ded9cd] bg-white px-3 py-2 text-sm text-[#292b4c] disabled:opacity-50"
+            >
+              {[1, 2, 3, 4, 5].map((days) => (
+                <option key={days} value={days}>
+                  {days} {days === 1 ? "day" : "days"}
+                </option>
+              ))}
+            </select>
+          </label>
+          {previousStage && posterior.priorWeight < 1 && (
+            <p className="max-w-xs text-[12px] leading-4 text-[#7d4a2f]">
+              At {daysSince} days the prior is discounted to{" "}
+              {Math.round(posterior.priorWeight * 100)}% and the estimate falls back
+              toward the image alone.
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Where the method comes from, what was reproduced, and what comes next. */
+function Provenance() {
+  return (
+    <section className="mt-5 border border-[#ded9cd] bg-white">
+      <div className="border-b border-[#ded9cd] p-6">
+        <Eyebrow>Standing on</Eyebrow>
+        <h2 className="mt-2 max-w-3xl font-serif text-3xl leading-tight text-[#292b4c]">
+          A published method, reproduced and then pushed a little further.
+        </h2>
+        <p className="mt-3 max-w-3xl text-sm leading-6 text-[#625f58]">
+          The staging approach here follows the 2025 <em>Repro Cycle Net</em> preprint,
+          which showed that a mouse&apos;s cycle can be read from an ordinary external
+          photograph rather than a stained smear under a microscope. Its authors published
+          their images as{" "}
+          <span className="font-medium text-[#292b4c]">S-BIAD2395</span> on EBI
+          BioStudies, which is what made independent reproduction possible at all — and
+          what this work is built on.
+        </p>
+      </div>
+
+      <div className="grid gap-px bg-[#ded9cd] md:grid-cols-3">
+        {[
+          {
+            label: "Reproduced",
+            value: "63 / 76",
+            detail:
+              "The paper's own reported result on its sealed test split, at ROC-AUC 0.90.",
+          },
+          {
+            label: "This implementation",
+            value: "66 / 76",
+            detail:
+              "An eight-head ensemble over frozen DINOv2 features and robust colour views, at ROC-AUC 0.914. Three photographs better than the published baseline, on the same untouched images.",
+            highlight: true,
+          },
+          {
+            label: "With guards applied",
+            value: "89.2%",
+            detail:
+              "Selective accuracy once the acquisition and reference-domain checks are honoured. The model declines the photographs it should decline instead of guessing.",
+          },
+        ].map((item) => (
+          <div
+            key={item.label}
+            className={cn("p-6", item.highlight ? "bg-[#f3faf5]" : "bg-white")}
+          >
+            <Eyebrow>{item.label}</Eyebrow>
+            <p
+              className={cn(
+                "mt-2 font-serif text-4xl",
+                item.highlight ? "text-[#2f5a41]" : "text-[#292b4c]"
+              )}
+            >
+              {item.value}
+            </p>
+            <p className="mt-2 text-[13px] leading-5 text-[#625f58]">{item.detail}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="border-t border-[#ded9cd] p-6">
+        <Eyebrow>Where this goes next</Eyebrow>
+        <div className="mt-4 grid gap-6 md:grid-cols-2">
+          <div className="border-l-2 border-[#454a9f] pl-4">
+            <h3 className="font-serif text-xl text-[#292b4c]">
+              Mice of every colour
+            </h3>
+            <p className="mt-2 text-sm leading-6 text-[#625f58]">
+              The published images are white-coated, so that is the only coat this
+              inherits any evidence for. On dark-coated animals the same features fall to
+              near chance, and the model&apos;s own domain guard already flags every one
+              of them as unfamiliar. The fix is not a cleverer network — we tested that,
+              twice, and it moved nothing. It is a reference library that actually
+              contains the animals a lab works with: white, agouti, brown, grey, black,
+              photographed by different hands on different days.
+            </p>
+          </div>
+          <div className="border-l-2 border-[#c76f87] pl-4">
+            <h3 className="font-serif text-xl text-[#292b4c]">
+              Four stages, not two
+            </h3>
+            <p className="mt-2 text-sm leading-6 text-[#625f58]">
+              Today the honest output is a half of the cycle: heading into oestrus, or
+              coming out of it. Proestrus and estrus are not separated, nor are metestrus
+              and diestrus, because the published labels never made that distinction.
+              Pairing photographs with a scientist-read cytology smear is what turns two
+              answers into four — and four is what fills in the cycle wheel, projects the
+              next fertile window, and lets a per-stage confidence mean something.
+            </p>
+          </div>
+        </div>
+        <p className="mt-6 max-w-3xl border-t border-[#e8e3da] pt-4 text-[13px] leading-5 text-[#625f58]">
+          Both are collection problems rather than modelling problems, which is the more
+          encouraging kind. The instrument works; it needs to be shown more of the world.
+        </p>
+      </div>
+    </section>
   );
 }
