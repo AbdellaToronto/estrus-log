@@ -1068,7 +1068,7 @@ function FourStageEstimate({
       </div>
 
       <h3 className="mt-2 font-serif text-3xl text-[#292b4c]">
-        {posterior.leading ?? "No stage favoured"}
+        {posterior.headline}
       </h3>
       <p className="mt-1 max-w-2xl text-[13px] leading-5 text-[#625f58]">
         {posterior.explanation}
@@ -1175,8 +1175,8 @@ function Provenance() {
           A published method, reproduced and then pushed a little further.
         </h2>
         <p className="mt-3 max-w-3xl text-sm leading-6 text-[#625f58]">
-          The staging approach here follows the 2025 <em>Repro Cycle Net</em> preprint,
-          which showed that a mouse&apos;s cycle can be read from an ordinary external
+          The staging approach here follows the 2025 <em>Repro Cycle Net</em>{" "}
+          preprint, which showed that a mouse&apos;s cycle can be read from an ordinary external
           photograph rather than a stained smear under a microscope. Its authors published
           their images as{" "}
           <span className="font-medium text-[#292b4c]">S-BIAD2395</span> on EBI

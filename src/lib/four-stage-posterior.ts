@@ -84,6 +84,15 @@ export type FourStagePosterior = {
   scores: Record<ClassificationStage, number>;
   /** Highest-scoring stage, or undefined when the estimate is too flat to name one. */
   leading?: ClassificationStage;
+  /**
+   * What to actually show as the answer. When the top two stages are effectively
+   * tied — which is exactly what happens with no cycle history, since the binary
+   * model cannot see inside its own half — naming one of them would be an
+   * artefact of sort order. In that case this is the half, not a stage.
+   */
+  headline: string;
+  /** True when `headline` names a pair rather than a single stage. */
+  headlineIsPair: boolean;
   margin: number;
   /** How much of the estimate came from history rather than the image. */
   priorWeight: number;
@@ -101,6 +110,15 @@ const emptyScores = (): Record<ClassificationStage, number> => ({
 
 /** Below this the estimate is too flat to name a single stage. */
 const FLAT_BELOW = 0.34;
+
+/** Within this the top two stages are a tie, and picking one would be sort order
+ *  masquerading as a finding. */
+const TIE_WITHIN = 0.03;
+
+const PAIR_LABEL: Record<BinaryGroup, string> = {
+  PROESTRUS_OR_ESTRUS: "Proestrus or Estrus",
+  METESTRUS_OR_DIESTRUS: "Metestrus or Diestrus",
+};
 
 export function fourStagePosterior(input: PosteriorInput): FourStagePosterior {
   const {
@@ -153,6 +171,20 @@ export function fourStagePosterior(input: PosteriorInput): FourStagePosterior {
   const margin = combined[ranked[0]] - combined[ranked[1]];
   const informative = combined[ranked[0]] >= FLAT_BELOW;
 
+  // A tie between the top two is the expected result when there is no history to
+  // separate the stages inside a half. Report the pair rather than letting sort
+  // order pick a winner the numbers do not support.
+  const tied = margin < TIE_WITHIN;
+  const sameHalf =
+    tied && groupForStage(ranked[0]) === groupForStage(ranked[1]);
+  const headline = !informative
+    ? "No stage favoured"
+    : sameHalf
+      ? PAIR_LABEL[groupForStage(ranked[0])]
+      : tied
+        ? `${ranked[0]} or ${ranked[1]}`
+        : ranked[0];
+
   const usesHistory = Boolean(previousStage) && weight > 0;
   const basis: FourStagePosterior["basis"] = abstained
     ? usesHistory
@@ -164,7 +196,10 @@ export function fourStagePosterior(input: PosteriorInput): FourStagePosterior {
 
   return {
     scores: combined,
-    leading: informative ? ranked[0] : undefined,
+    // Only a genuine single winner counts as leading; a tie has no leader.
+    leading: informative && !tied ? ranked[0] : undefined,
+    headline,
+    headlineIsPair: informative && tied,
     margin,
     priorWeight: weight,
     basis,
@@ -200,6 +235,10 @@ function explain(
 export function posteriorStrength(
   posterior: FourStagePosterior
 ): "informative" | "directional" | "uninformative" {
-  if (posterior.basis === "uninformative" || !posterior.leading) return "uninformative";
+  if (posterior.basis === "uninformative") return "uninformative";
+  // A tied pair still carries the binary half, which is real information — it is
+  // just not a four-stage answer.
+  if (posterior.headlineIsPair) return "directional";
+  if (!posterior.leading) return "uninformative";
   return posterior.margin >= 0.18 ? "informative" : "directional";
 }
