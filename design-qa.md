@@ -221,6 +221,8 @@ comparison.
   production tracing.
 - The route trace is 1.82 MB across 156 files; it no longer captures the
   repository's research corpora and the prior Turbopack trace warning is gone.
+- Clerk routing now uses the supported Next.js 16 `proxy.ts` convention; the
+  deprecated `middleware.ts` build warning is gone and all 44 workflows pass.
 - A local production-server round trip returned PUT 201 and GET 200. The source
   and downloaded PNG shared SHA-256
   `f283b96e7e52ce2cdea1d246834136916295303c9daab63a8e60fe315c030c7d`.
