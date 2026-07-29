@@ -4,10 +4,10 @@ An AI-first estrous-cycle review workspace for research teams. The model propose
 a stage and shows relative support across all four stages; the scientist reviews
 the image and context, then saves the scientific decision.
 
-## Supervisor demo
+## Demo
 
 The public rehearsal is available at
-[estrus-dusky.vercel.app/supervisor-demo](https://estrus-dusky.vercel.app/supervisor-demo).
+[estrus-dusky.vercel.app/demo](https://estrus-dusky.vercel.app/demo).
 It is a complete, self-contained product journey:
 
 - **Prediction inbox** — triage eight observations by model support and urgency.
@@ -64,7 +64,7 @@ pnpm install
 pnpm dev
 ```
 
-Open [http://localhost:3000/supervisor-demo](http://localhost:3000/supervisor-demo).
+Open [http://localhost:3000/demo](http://localhost:3000/demo).
 
 ## Validation
 

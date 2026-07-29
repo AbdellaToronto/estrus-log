@@ -2,9 +2,9 @@ import { expect, test } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 import { text } from "node:stream/consumers";
 
-test.describe("supervisor demo connected workflow", () => {
-  test("keeps the public supervisor journey independent from Clerk", async ({ page }) => {
-    await page.goto("/supervisor-demo");
+test.describe("demo connected workflow", () => {
+  test("keeps the public public journey independent from Clerk", async ({ page }) => {
+    await page.goto("/demo");
     await expect(page.getByRole("heading", { name: "Prediction inbox" })).toBeVisible();
     await expect(page.locator('meta[name="robots"]')).toHaveAttribute(
       "content",
@@ -53,7 +53,7 @@ test.describe("supervisor demo connected workflow", () => {
   });
 
   test("turns a completed AI review into an explorable longitudinal record", async ({ page }) => {
-    await page.goto("/supervisor-demo");
+    await page.goto("/demo");
     await page.getByRole("button", { name: "Day complete" }).click();
 
     await expect(page.getByRole("heading", { name: "Morning review complete" })).toBeVisible();
@@ -87,7 +87,7 @@ test.describe("supervisor demo connected workflow", () => {
   });
 
   test("carries real review decisions into the completed-day history", async ({ page }) => {
-    await page.goto("/supervisor-demo");
+    await page.goto("/demo");
     const progress = page.getByRole("progressbar", { name: "Review progress" });
     await expect(progress).toHaveAttribute("aria-valuenow", "0");
 
@@ -124,7 +124,7 @@ test.describe("supervisor demo connected workflow", () => {
   });
 
   test("keeps complete-review provenance available in the receipt export", async ({ page }) => {
-    await page.goto("/supervisor-demo");
+    await page.goto("/demo");
     await page.getByRole("button", { name: "Day complete" }).click();
 
     const downloadPromise = page.waitForEvent("download");
@@ -170,7 +170,7 @@ test.describe("supervisor demo connected workflow", () => {
   });
 
   test("keeps a partial receipt partial when it is exported", async ({ page }) => {
-    await page.goto("/supervisor-demo");
+    await page.goto("/demo");
     await page.getByRole("button", { name: "Accept Metestrus" }).click();
     await page.getByRole("button", { name: "Review receipt" }).click();
 
@@ -193,7 +193,7 @@ test.describe("supervisor demo connected workflow", () => {
   test("keeps the completed-day dashboard accessible and contained on mobile", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.emulateMedia({ reducedMotion: "reduce" });
-    await page.goto("/supervisor-demo");
+    await page.goto("/demo");
     await page.getByRole("button", { name: "Day complete" }).click();
 
     const pageWidth = await page.evaluate(() => ({
@@ -219,7 +219,7 @@ test.describe("supervisor demo connected workflow", () => {
   test("keeps the prediction and receipt pages usable on mobile", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.emulateMedia({ reducedMotion: "reduce" });
-    await page.goto("/supervisor-demo");
+    await page.goto("/demo");
 
     const expectContained = async () => {
       const width = await page.evaluate(() => ({
@@ -251,10 +251,10 @@ test.describe("supervisor demo connected workflow", () => {
 
   test("captures the selected day-complete visual target", async ({ page }) => {
     await page.setViewportSize({ width: 1488, height: 1058 });
-    await page.goto("/supervisor-demo");
+    await page.goto("/demo");
     await page.getByRole("button", { name: "Day complete" }).click();
     await expect(page.getByTestId("expanded-cycle-history")).toBeVisible();
-    await expect(page).toHaveScreenshot("supervisor-day-complete.png", {
+    await expect(page).toHaveScreenshot("demo-day-complete.png", {
       animations: "disabled",
       fullPage: true,
     });

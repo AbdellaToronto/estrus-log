@@ -11,7 +11,7 @@ export const DEMO_COHORT: Cohort = {
   type: "Estrus tracking",
   color: "#454a9f",
   created_at: "2026-06-02T14:00:00.000Z",
-  user_id: "supervisor-demo",
+  user_id: "demo",
   org_id: null,
   log_config: null,
   subject_config: null,

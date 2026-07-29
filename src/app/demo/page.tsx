@@ -1,7 +1,7 @@
-import { SupervisorDemoClient } from "./supervisor-demo-client";
+import { DemoClient } from "./demo-client";
 
 export const metadata = {
-  title: "North Colony supervisor demo · Estrus",
+  title: "North Colony demo · Estrus",
   description: "A pre-populated walkthrough of AI-first estrus prediction review, correction, and animated longitudinal cycle history.",
   robots: {
     index: false,
@@ -9,6 +9,6 @@ export const metadata = {
   },
 };
 
-export default function SupervisorDemoPage() {
-  return <SupervisorDemoClient />;
+export default function DemoPage() {
+  return <DemoClient />;
 }

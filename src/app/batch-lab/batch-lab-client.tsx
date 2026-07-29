@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { ArrowLeft, Check, ChevronRight, FileImage, FlaskConical, Loader2, Plus, Sparkles, UploadCloud } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { DEMO_IMAGE, DEMO_SUBJECTS, DEMO_TODAY } from "@/lib/supervisor-demo-data";
+import { DEMO_IMAGE, DEMO_SUBJECTS, DEMO_TODAY } from "@/lib/demo-data";
 import { cn } from "@/lib/utils";
 
 type DemoBatchItem = {
@@ -81,7 +81,7 @@ export function BatchLabClient() {
         <nav className="flex items-center gap-2 text-xs font-medium text-[#77736c]"><Link href="/cohort-lab" className="inline-flex items-center gap-1 hover:text-[#454a9f]"><ArrowLeft className="h-3.5 w-3.5" /> Cohort</Link><span>/</span><span>Batch capture</span></nav>
         <header className="mt-5 grid gap-6 border-b border-[#ded9cd] pb-7 lg:grid-cols-[1fr_auto] lg:items-end">
           <div>
-            <p className="page-eyebrow">Supervisor demo · capture session</p>
+            <p className="page-eyebrow">Demo · capture session</p>
             <h1 className="mt-2 font-serif text-4xl tracking-tight text-[#292b4c] sm:text-5xl">Review a batch without losing the scientist in the queue.</h1>
             <p className="mt-3 max-w-3xl text-sm leading-6 text-[#625f58]">Eight public-reference examples are ready below. Add your own images to this browser, run a clearly labelled demonstration analysis, then confirm every saved stage.</p>
           </div>

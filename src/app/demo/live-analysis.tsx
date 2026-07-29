@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * The one part of the supervisor demo that is not illustrative.
+ * The one part of the demo that is not illustrative.
  *
  * Every other view replays fixed data. This view sends the uploaded photograph
  * to the deployed BioCLIP encoder and classifies it against the reference
@@ -13,7 +13,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
+  Check,
   ImageUp,
+  Link as LinkIcon,
   Loader2,
   RotateCcw,
   Sparkles,
@@ -42,9 +44,33 @@ type AnalysisResponse = {
   review_reasons: string[];
   cropped_image: string | null;
   elapsed_ms: number;
+  /** Present once the analysis has been persisted; null when storage is off. */
+  id: string | null;
+  original_url?: string | null;
+  created_at?: string;
 };
 
 type Phase = "idle" | "working" | "done" | "error";
+
+/** Stages the route reports as it goes, in order. */
+type Stage = "encoding" | "matching" | "storing";
+
+const STAGE_SEQUENCE: readonly Stage[] = ["encoding", "matching", "storing"];
+
+const STAGE_COPY: Record<Stage, { label: string; detail: string }> = {
+  encoding: {
+    label: "Segmenting and encoding",
+    detail: "SAM3 and BioCLIP run together on GPU. A cold container adds up to 40 seconds.",
+  },
+  matching: {
+    label: "Matching against references",
+    detail: "Comparing the embedding to every labelled reference photograph.",
+  },
+  storing: {
+    label: "Storing the result",
+    detail: "Writing the photograph, the crop, and the scores so this stays shareable.",
+  },
+};
 
 const MAX_BYTES = 10 * 1024 * 1024;
 
@@ -63,13 +89,28 @@ function Eyebrow({ children }: { children: React.ReactNode }) {
   );
 }
 
+/** A shared result link carries the analysis id in the fragment. */
+function sharedAnalysisId(): string | null {
+  if (typeof window === "undefined") return null;
+  return /#analysis=([0-9a-f-]{36})/i.exec(window.location.hash)?.[1] ?? null;
+}
+
 export function LiveAnalysis() {
-  const [phase, setPhase] = useState<Phase>("idle");
+  // Start in the loading state when arriving on a shared link, so the effect
+  // that fetches it does not have to set state synchronously.
+  const [phase, setPhase] = useState<Phase>(() =>
+    sharedAnalysisId() ? "working" : "idle"
+  );
   const [preview, setPreview] = useState<string | null>(null);
   const [filename, setFilename] = useState<string>("");
   const [result, setResult] = useState<AnalysisResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
+  const [stage, setStage] = useState<Stage | null>(() =>
+    sharedAnalysisId() ? "storing" : null
+  );
+  const [elapsed, setElapsed] = useState(0);
+  const [copied, setCopied] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const previewRef = useRef<string | null>(null);
 
@@ -87,6 +128,15 @@ export function LiveAnalysis() {
     []
   );
 
+  // A running clock while work is in flight. Without it a forty-second cold
+  // start is indistinguishable from a hang.
+  useEffect(() => {
+    if (phase !== "working") return;
+    const startedAt = Date.now();
+    const timer = setInterval(() => setElapsed(Date.now() - startedAt), 200);
+    return () => clearInterval(timer);
+  }, [phase]);
+
   const reset = useCallback(() => {
     if (previewRef.current) {
       URL.revokeObjectURL(previewRef.current);
@@ -97,8 +147,25 @@ export function LiveAnalysis() {
     setFilename("");
     setResult(null);
     setError(null);
+    setStage(null);
+    setCopied(false);
     if (inputRef.current) inputRef.current.value = "";
+    if (typeof window !== "undefined" && window.location.hash) {
+      window.history.replaceState(null, "", window.location.pathname);
+    }
   }, []);
+
+  const copyPermalink = useCallback(async () => {
+    if (!result?.id) return;
+    const url = `${window.location.origin}${window.location.pathname}#analysis=${result.id}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard permission can be denied; the address bar still carries the id.
+    }
+  }, [result]);
 
   const analyze = useCallback(async (file: File) => {
     if (!file.type.startsWith("image/")) {
@@ -120,26 +187,108 @@ export function LiveAnalysis() {
     setFilename(file.name);
     setResult(null);
     setError(null);
+    setStage(null);
+    setCopied(false);
     setPhase("working");
 
     try {
       const body = new FormData();
       body.append("file", file);
       const response = await fetch("/api/analyze", { method: "POST", body });
-      const payload = await response.json();
 
-      if (!response.ok) {
-        setError(payload?.error ?? `Analysis failed (${response.status}).`);
+      if (!response.ok || !response.body) {
+        let message = `Analysis failed (${response.status}).`;
+        try {
+          const payload = await response.json();
+          if (payload?.error) message = payload.error;
+        } catch {
+          // Non-JSON error body; the status message above is enough.
+        }
+        setError(message);
         setPhase("error");
         return;
       }
 
-      setResult(payload as AnalysisResponse);
-      setPhase("done");
+      // Newline-delimited JSON: one stage event per step, then the result.
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let settled = false;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          let payload: Record<string, unknown>;
+          try {
+            payload = JSON.parse(line);
+          } catch {
+            continue;
+          }
+
+          if (payload.event === "stage") {
+            setStage(payload.stage as Stage);
+          } else if (payload.event === "result") {
+            setResult(payload as unknown as AnalysisResponse);
+            setPhase("done");
+            settled = true;
+            if (typeof payload.id === "string") {
+              window.history.replaceState(null, "", `#analysis=${payload.id}`);
+            }
+          } else if (payload.event === "error") {
+            setError(String(payload.error ?? "Analysis failed."));
+            setPhase("error");
+            settled = true;
+          }
+        }
+      }
+
+      if (!settled) {
+        setError("The analysis stream ended before returning a result.");
+        setPhase("error");
+      }
     } catch {
       setError("Could not reach the analysis service. Check your connection and retry.");
       setPhase("error");
     }
+  }, []);
+
+  // Restore a shared analysis from #analysis=<id>. Phase and stage were already
+  // seeded from the fragment, so nothing is set synchronously here.
+  useEffect(() => {
+    const id = sharedAnalysisId();
+    if (!id) return;
+    let cancelled = false;
+
+    fetch(`/api/analyze/${id}`)
+      .then(async (response) => {
+        if (cancelled) return;
+        const payload = await response.json();
+        if (!response.ok) {
+          setError(payload?.error ?? "That shared analysis is no longer available.");
+          setPhase("error");
+          return;
+        }
+        setResult(payload as AnalysisResponse);
+        setPreview(payload.original_url ?? null);
+        setFilename(payload.id ? `Shared analysis ${payload.id.slice(0, 8)}` : "Shared analysis");
+        setPhase("done");
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setError("Could not load that shared analysis.");
+        setPhase("error");
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const onDrop = useCallback(
@@ -317,13 +466,61 @@ export function LiveAnalysis() {
           )}
 
           {working && (
-            <div className="flex min-h-[420px] flex-col items-center justify-center px-8 text-center">
-              <Loader2 className="h-6 w-6 animate-spin text-[#454a9f] motion-reduce:animate-none" />
-              <p className="mt-4 font-serif text-2xl text-[#292b4c]">Analyzing</p>
-              <p className="mt-2 max-w-sm text-sm leading-6 text-[#625f58]">
-                Running SAM3 segmentation and the BioCLIP encoder, then matching
-                against the reference library.
-              </p>
+            <div className="flex min-h-[420px] flex-col justify-center p-8">
+              <div className="flex items-baseline justify-between">
+                <p className="font-serif text-2xl text-[#292b4c]">Analyzing</p>
+                <p className="text-sm tabular-nums text-[#625f58]">
+                  {(elapsed / 1000).toFixed(1)}s
+                </p>
+              </div>
+
+              <ol className="mt-6 space-y-1">
+                {STAGE_SEQUENCE.map((candidate) => {
+                  const position = stage ? STAGE_SEQUENCE.indexOf(stage) : -1;
+                  const index = STAGE_SEQUENCE.indexOf(candidate);
+                  const state =
+                    position > index ? "done" : position === index ? "active" : "waiting";
+
+                  return (
+                    <li
+                      key={candidate}
+                      className={cn(
+                        "flex gap-3 border-l-2 py-3 pl-4",
+                        state === "active"
+                          ? "border-[#454a9f]"
+                          : state === "done"
+                          ? "border-[#9ec2ab]"
+                          : "border-[#e4dfd5]"
+                      )}
+                    >
+                      <span className="mt-0.5 shrink-0">
+                        {state === "done" ? (
+                          <Check className="h-4 w-4 text-[#356449]" />
+                        ) : state === "active" ? (
+                          <Loader2 className="h-4 w-4 animate-spin text-[#454a9f] motion-reduce:animate-none" />
+                        ) : (
+                          <span className="block h-4 w-4 rounded-full border border-[#d9d4c8]" />
+                        )}
+                      </span>
+                      <span>
+                        <span
+                          className={cn(
+                            "block text-sm font-semibold",
+                            state === "waiting" ? "text-[#8d887e]" : "text-[#292b4c]"
+                          )}
+                        >
+                          {STAGE_COPY[candidate].label}
+                        </span>
+                        {state !== "waiting" && (
+                          <span className="mt-0.5 block text-xs leading-5 text-[#625f58]">
+                            {STAGE_COPY[candidate].detail}
+                          </span>
+                        )}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ol>
             </div>
           )}
 
@@ -455,13 +652,32 @@ export function LiveAnalysis() {
                   ))}
                 </dl>
 
-                <button
-                  type="button"
-                  onClick={reset}
-                  className="mt-6 flex items-center gap-2 border border-[#ded9cd] px-4 py-2 text-sm font-semibold text-[#292b4c] hover:bg-[#fbfaf7]"
-                >
-                  <RotateCcw className="h-4 w-4" /> Analyze another
-                </button>
+                <div className="mt-6 flex flex-wrap items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={reset}
+                    className="flex items-center gap-2 border border-[#ded9cd] px-4 py-2 text-sm font-semibold text-[#292b4c] hover:bg-[#fbfaf7]"
+                  >
+                    <RotateCcw className="h-4 w-4" /> Analyze another
+                  </button>
+                  {result.id && (
+                    <button
+                      type="button"
+                      onClick={copyPermalink}
+                      className="flex items-center gap-2 border border-[#ded9cd] px-4 py-2 text-sm font-semibold text-[#292b4c] hover:bg-[#fbfaf7]"
+                    >
+                      {copied ? (
+                        <>
+                          <Check className="h-4 w-4 text-[#356449]" /> Link copied
+                        </>
+                      ) : (
+                        <>
+                          <LinkIcon className="h-4 w-4" /> Copy link to this result
+                        </>
+                      )}
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           )}

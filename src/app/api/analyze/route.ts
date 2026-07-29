@@ -1,5 +1,5 @@
 /**
- * Public single-image analysis for the supervisor demo.
+ * Public single-image analysis for the demo.
  *
  * Runs the same encoder the production pipeline uses — SAM3 for the visual
  * crop, BioCLIP for the embedding — but classifies synchronously against the
@@ -167,73 +167,112 @@ export async function POST(request: NextRequest) {
   }
 
   const startedAt = Date.now();
+  const upload = file;
 
-  try {
-    const originalBytes = Buffer.from(await file.arrayBuffer());
-    const base64Image = originalBytes.toString("base64");
+  // Newline-delimited JSON rather than one opaque response. A cold GPU can take
+  // forty seconds, and during a live demo the difference between "spinner" and
+  // "encoding on a cold GPU" is the difference between broken and working.
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const encoder = new TextEncoder();
+      const send = (payload: unknown) =>
+        controller.enqueue(encoder.encode(`${JSON.stringify(payload)}\n`));
 
-    // Segmentation runs alongside the embedding: the crop is shown to the
-    // reviewer, but the classifier reads the photograph as supplied, which is
-    // the domain the reference library was built from.
-    const [segmentation, embedding] = await Promise.all([
-      segment(base64Image),
-      embed(base64Image),
-    ]);
+      try {
+        await runAnalysis(upload, startedAt, send);
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Analysis failed for an unknown reason.";
+        console.error("[api/analyze]", message);
+        send({ event: "error", error: message });
+      } finally {
+        controller.close();
+      }
+    },
+  });
 
-    const classification = await classifyEmbedding(embedding);
-    const abstained = shouldAbstain(classification);
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "application/x-ndjson; charset=utf-8",
+      "Cache-Control": "no-store, no-transform",
+      // Stops proxies from buffering the stage events into one flush.
+      "X-Accel-Buffering": "no",
+    },
+  });
+}
 
-    const result = {
-      stage: classification.stage,
-      abstained,
-      scores: classification.scores,
-      neighbours: classification.neighbours.slice(0, 5).map((neighbour) => ({
-        label: neighbour.label,
-        similarity: Number(neighbour.similarity.toFixed(4)),
-      })),
-      evidence: {
-        method: `BioCLIP embedding + similarity-weighted k-NN (k=${CLASSIFIER_SETTINGS.NEIGHBOUR_COUNT})`,
-        reference_source: classification.source,
-        reference_count: classification.referenceCount,
-        nearest_similarity: Number(classification.nearestSimilarity.toFixed(4)),
-        mean_similarity: Number(classification.meanSimilarity.toFixed(4)),
-        margin: Number(classification.margin.toFixed(4)),
-      },
-      review_required: true,
-      review_reasons: classification.reviewReasons,
-    };
+async function runAnalysis(
+  file: File,
+  startedAt: number,
+  send: (payload: unknown) => void
+): Promise<void> {
+  const originalBytes = Buffer.from(await file.arrayBuffer());
+  const base64Image = originalBytes.toString("base64");
 
-    // Persist so the analysis can be revisited and shared. A storage failure
-    // degrades to an in-memory result rather than losing the analysis.
-    const stored = await saveDemoAnalysis({
-      original: { bytes: originalBytes, mimeType: file.type },
-      segmented: segmentation,
-      result,
-    });
+  // Segmentation and embedding are issued together, so they are reported as
+  // one stage rather than pretending they are sequential.
+  send({ event: "stage", stage: "encoding" });
 
-    let originalUrl: string | null = null;
-    let segmentedUrl: string | null = null;
-    if (stored) {
-      ({ originalUrl, segmentedUrl } = await signStoredImages(stored));
-    }
+  // Segmentation is shown to the reviewer, but the classifier reads the
+  // photograph as supplied, which is the domain the reference library was
+  // built from.
+  const [segmentation, embedding] = await Promise.all([
+    segment(base64Image),
+    embed(base64Image),
+  ]);
 
-    return Response.json({
-      ...result,
-      id: stored?.id ?? null,
-      original_url: originalUrl,
-      // Fall back to an inline data URI when object storage is unavailable, so
-      // the segmentation is still visible.
-      cropped_image:
-        segmentedUrl ??
-        (segmentation
-          ? `data:${segmentation.mimeType};base64,${segmentation.bytes.toString("base64")}`
-          : null),
-      elapsed_ms: Date.now() - startedAt,
-    });
-  } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Analysis failed for an unknown reason.";
-    console.error("[api/analyze]", message);
-    return Response.json({ error: message }, { status: 502 });
+  send({ event: "stage", stage: "matching" });
+  const classification = await classifyEmbedding(embedding);
+  const abstained = shouldAbstain(classification);
+
+  const result = {
+    stage: classification.stage,
+    abstained,
+    scores: classification.scores,
+    neighbours: classification.neighbours.slice(0, 5).map((neighbour) => ({
+      label: neighbour.label,
+      similarity: Number(neighbour.similarity.toFixed(4)),
+    })),
+    evidence: {
+      method: `BioCLIP embedding + similarity-weighted k-NN (k=${CLASSIFIER_SETTINGS.NEIGHBOUR_COUNT})`,
+      reference_source: classification.source,
+      reference_count: classification.referenceCount,
+      nearest_similarity: Number(classification.nearestSimilarity.toFixed(4)),
+      mean_similarity: Number(classification.meanSimilarity.toFixed(4)),
+      margin: Number(classification.margin.toFixed(4)),
+    },
+    review_required: true,
+    review_reasons: classification.reviewReasons,
+  };
+
+  send({ event: "stage", stage: "storing" });
+
+  // Persist so the analysis can be revisited and shared. A storage failure
+  // degrades to an inline result rather than losing the analysis.
+  const stored = await saveDemoAnalysis({
+    original: { bytes: originalBytes, mimeType: file.type },
+    segmented: segmentation,
+    result,
+  });
+
+  let originalUrl: string | null = null;
+  let segmentedUrl: string | null = null;
+  if (stored) {
+    ({ originalUrl, segmentedUrl } = await signStoredImages(stored));
   }
+
+  send({
+    event: "result",
+    ...result,
+    id: stored?.id ?? null,
+    original_url: originalUrl,
+    // Fall back to an inline data URI when object storage is unavailable, so
+    // the segmentation is still visible.
+    cropped_image:
+      segmentedUrl ??
+      (segmentation
+        ? `data:${segmentation.mimeType};base64,${segmentation.bytes.toString("base64")}`
+        : null),
+    elapsed_ms: Date.now() - startedAt,
+  });
 }

@@ -25,7 +25,7 @@ const HIDDEN_PATHS = [
   "/experiments-lab",
   "/experiment-detail-lab",
   "/batch-lab",
-  "/supervisor-demo",
+  "/demo",
 ];
 
 /**

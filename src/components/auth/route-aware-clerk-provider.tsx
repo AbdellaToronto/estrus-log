@@ -12,13 +12,13 @@ const PUBLIC_REHEARSAL_PATHS = [
   "/experiments-lab",
   "/experiment-detail-lab",
   "/batch-lab",
-  "/supervisor-demo",
+  "/demo",
 ] as const;
 
 /**
  * Public workflow rehearsals are self-contained and never read authenticated
  * records. Keeping Clerk outside those routes removes a third-party dependency
- * (and its development-instance limits) from the supervisor demonstration,
+ * (and its development-instance limits) from the demonstration,
  * while the real application remains behind the normal Clerk provider.
  */
 export function RouteAwareClerkProvider({

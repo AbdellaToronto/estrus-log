@@ -188,7 +188,7 @@ function DemoHeader({
         <div className="mx-auto flex max-w-[1500px] flex-col gap-3 px-5 py-3 sm:px-8 lg:flex-row lg:items-center lg:px-12">
           <div>
             <p className="font-serif text-xl font-semibold text-[#30345f]">Estrus</p>
-            <p className="text-[10px] font-bold uppercase tracking-[0.17em] text-[#625f58]">Supervisor demonstration</p>
+            <p className="text-[10px] font-bold uppercase tracking-[0.17em] text-[#625f58]">Demonstration</p>
           </div>
           <nav className="flex lg:ml-10" aria-label="Demo pages">
             {[
@@ -547,7 +547,7 @@ function Method() {
   );
 }
 
-export function SupervisorDemoClient() {
+export function DemoClient() {
   const [view, setView] = useState<DemoView>("review");
   const [items, setItems] = useState(STARTING_ITEMS);
   const [selectedId, setSelectedId] = useState("demo-223");
@@ -688,7 +688,7 @@ export function SupervisorDemoClient() {
       <footer className="mt-8 border-t border-[#ded9cd] bg-[#f0ede5]">
         <div className="mx-auto flex max-w-[1500px] flex-col gap-3 px-5 py-4 text-[10px] leading-4 text-[#625f58] sm:px-8 lg:flex-row lg:items-center lg:justify-between lg:px-12">
           <div>
-            <p>Estrus supervisor demo · public reference photographs · no production record is changed</p>
+            <p>Estrus demo · public reference photographs · no production record is changed</p>
             {/* The live view is the one place the numbers come from a real
                 encoder call, so it must not carry the "illustrative" caption. */}
             <p className="mt-1">

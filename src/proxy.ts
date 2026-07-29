@@ -23,7 +23,7 @@ const isPublicRoute = createRouteMatcher([
   "/experiment-detail-lab",
   "/onboarding-flow-lab",
   "/batch-lab",
-  "/supervisor-demo",
+  "/demo",
   "/api/webhooks(.*)",
   // Live single-image analysis for the public demo, plus retrieval of a stored
   // result by id. Writes only to the demo-analyses object-storage prefix; it

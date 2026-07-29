@@ -93,7 +93,7 @@ export function CohortClient({ cohort, initialLogs, initialInsights, initialSubj
       const href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
       const anchor = document.createElement("a");
       anchor.href = href;
-      anchor.download = "estrus-supervisor-demo-manifest.csv";
+      anchor.download = "estrus-demo-manifest.csv";
       anchor.click();
       URL.revokeObjectURL(href);
       setDemoNotice("Illustrative manifest downloaded. It contains no live laboratory data.");

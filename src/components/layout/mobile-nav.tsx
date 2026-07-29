@@ -45,7 +45,7 @@ const EXPLORE_NAV_ITEMS = [
   { label: "Find a Lab", href: "/discover", icon: Search },
 ];
 
-const HIDDEN_PATHS = ["/sign-in", "/sign-up", "/onboarding", "/onboarding-flow-lab", "/workflow-lab", "/observation-lab", "/cohort-lab", "/dashboard-lab", "/experiments-lab", "/experiment-detail-lab", "/batch-lab", "/supervisor-demo"];
+const HIDDEN_PATHS = ["/sign-in", "/sign-up", "/onboarding", "/onboarding-flow-lab", "/workflow-lab", "/observation-lab", "/cohort-lab", "/dashboard-lab", "/experiments-lab", "/experiment-detail-lab", "/batch-lab", "/demo"];
 
 export function MobileNav() {
   const pathname = usePathname();

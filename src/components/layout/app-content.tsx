@@ -3,7 +3,7 @@
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
 
-const FULL_BLEED_PATHS = ['/sign-in', '/sign-up', '/onboarding', '/onboarding-flow-lab', '/workflow-lab', '/observation-lab', '/cohort-lab', '/dashboard-lab', '/experiments-lab', '/experiment-detail-lab', '/batch-lab', '/supervisor-demo'];
+const FULL_BLEED_PATHS = ['/sign-in', '/sign-up', '/onboarding', '/onboarding-flow-lab', '/workflow-lab', '/observation-lab', '/cohort-lab', '/dashboard-lab', '/experiments-lab', '/experiment-detail-lab', '/batch-lab', '/demo'];
 
 export function AppContent({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();

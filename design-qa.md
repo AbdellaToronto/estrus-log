@@ -4,11 +4,11 @@
 
 - Source visual truth:
   `/Users/della/.codex/generated_images/019f783b-ec9b-77e3-81c7-bc9bbc53fc28/call_OtV9aiTYQoHYOMvTuonQKfi1.png`
-- Implementation route: `http://localhost:3100/supervisor-demo`
+- Implementation route: `http://localhost:3100/demo`
 - Browser-rendered implementation:
   `work/design-qa/day-complete-iab.jpg`
 - Stable workflow screenshot:
-  `tests/workflows/__screenshots__/supervisor-day-complete.png`
+  `tests/workflows/__screenshots__/demo-day-complete.png`
 - Full side-by-side evidence:
   `work/design-qa/day-complete-side-by-side.png`
 - Focused cycle-history evidence:
@@ -127,7 +127,7 @@ comparison.
 - Fix: added range-specific date labels and keyed both the trajectory and
   distribution animations to the replay state.
 - Post-fix evidence: the 7/14/28 and replay workflow assertions pass in
-  `tests/workflows/supervisor-demo-connected.spec.ts`.
+  `tests/workflows/demo-connected.spec.ts`.
 
 ### Iteration 4
 
@@ -219,7 +219,7 @@ comparison.
 ## Console check
 
 - In-app browser console errors: none.
-- The public rehearsal routes no longer initialize Clerk, so the supervisor
+- The public rehearsal routes no longer initialize Clerk, so the reviewer
   demo has no development-key warning and makes no request to the Clerk browser
   client at `*.clerk.accounts.dev`. Authenticated application routes retain the
   normal Clerk provider.
@@ -235,7 +235,7 @@ comparison.
   repository's research corpora and the prior Turbopack trace warning is gone.
 - Clerk routing now uses the supported Next.js 16 `proxy.ts` convention; the
   deprecated `middleware.ts` build warning is gone and all 44 workflows pass.
-- Public production routing returned 200 for `/supervisor-demo`; a browser-like
+- Public production routing returned 200 for `/demo`; a browser-like
   unauthenticated request to `/dashboard` returned 307 into Clerk's handshake,
   confirming that the demo exemption did not open the real application.
 - The shareable demo remains link-accessible but emits `noindex, nofollow`, so
