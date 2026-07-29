@@ -28,13 +28,29 @@ view, relative support scores are not calibrated probabilities and never replace
 scientist's saved decision. The route is intentionally excluded from search indexing
 and does not write production records.
 
-### Accuracy, stated plainly
+### Scope and accuracy, stated plainly
 
-The four-stage classifier is **not usable for staging today**. Held out by mouse across
-222 local photographs it reaches 27.7% balanced accuracy against a 25% chance rate, and
-recalls Estrus at 68% but the other three stages at 10–17%. `Analyze a photo` is a live
-demonstration of the encode-and-match pipeline, not evidence that staging works. See
-[docs/model-evaluation-plan.md](docs/model-evaluation-plan.md).
+This is a **proof of concept on white-coated mice**, reproducing the published
+external-photo protocol. Within that scope the guarded binary model — proestrus-or-estrus
+against metestrus-or-diestrus, or abstain — scores **66/76 on the sealed public test
+against the paper's own 63/76**, at ROC-AUC 0.914, and 89.2% selective accuracy once its
+acquisition and reference-domain guards are applied.
+
+Two boundaries on that claim:
+
+- **Binary, not four-stage.** No exact four-stage model has been validated. Extending
+  DINOv2 to four stages on local data reaches 28.2% balanced accuracy against a 25%
+  chance rate, statistically tied with BioCLIP's 27.7%, so the four-stage view is
+  labelled unvalidated in the interface.
+- **White coats, not yet all coats.** On this lab's dark-coated photographs the same
+  features reach 55.2% binary and 28.2% four-stage. That gap is data — coat colour,
+  label provenance, subject count — not architecture, which is why expansion means
+  collecting cytology-grounded labels across more coat colours rather than swapping
+  backbones. Full numbers in
+  [docs/model-evaluation-plan.md](docs/model-evaluation-plan.md).
+
+Every figure holds each mouse out of its own training set. An image-level split leaks and
+inflates the same data to 53.3%.
 
 ## Live analysis setup
 

@@ -64,6 +64,13 @@ terms. Leave-one-mouse-out over all 222 local photographs, k=15, softmax tempera
 Scoring the same bank with the leaky image-level split instead reports 53.3%, so that
 number should never be quoted. It measures mouse recognition, not staging.
 
+### Scope note
+
+The product's validated scope is **white-coated mice**, following the published
+external-photo protocol. The dark-coat results below are expansion diagnostics, not a
+verdict on the method: they establish what collecting more data has to fix, and they are
+the reason four-stage automation stays unavailable.
+
 ### 2026-07-29 can DINOv2 carry four stages on this colony?
 
 No. `python-service/four_stage_dinov2_experiment.py` fits four-stage heads on the

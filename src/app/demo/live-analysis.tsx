@@ -18,6 +18,7 @@ import {
   Link as LinkIcon,
   Loader2,
   RotateCcw,
+  ShieldCheck,
   Sparkles,
   X,
 } from "lucide-react";
@@ -313,10 +314,11 @@ export function LiveAnalysis() {
               Analyze a photograph
             </h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-[#625f58]">
-              Drop any mouse photograph here and it runs through the same encoder the
-              batch pipeline uses. The result below is produced live, unlike the
-              worked examples in the rest of this demo — which also means it shows
-              the classifier&apos;s real accuracy, and that is currently near chance.
+              Drop a photograph and it runs through the same encoder the batch pipeline
+              uses. The result is produced live, unlike the worked examples in the rest
+              of this demo. The validated scope is white-coated mice, following the
+              published protocol this work reproduces; other coat colours are the
+              expansion target, not a current claim.
             </p>
           </div>
           <div className="border border-[#ded9cd] bg-white p-4">
@@ -326,6 +328,11 @@ export function LiveAnalysis() {
               512-dimension embedding. That embedding is compared against a library of
               labelled reference photographs, and the nearest matches vote — weighted by
               how similar they are.
+            </p>
+            <p className="mt-2 text-xs leading-5 text-[#625f58]">
+              The reference library is this lab&apos;s own dark-coated photographs, so a
+              white-coated upload will often land far from every reference and abstain.
+              That is the domain guard working, not a failure.
             </p>
           </div>
         </div>
@@ -685,67 +692,126 @@ export function LiveAnalysis() {
       </section>
 
       <section className="mt-5 border border-[#ded9cd] bg-white">
-        <div className="flex gap-3 border-b border-[#ded9cd] bg-[#fff7e9] p-5 text-[#7d4a2f]">
-          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+        <div className="flex gap-3 border-b border-[#ded9cd] bg-[#f3faf5] p-5 text-[#356449]">
+          <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0" />
           <div>
             <p className="font-semibold">
-              This pipeline is live. No four-stage classifier is usable on this colony yet.
+              Proof of concept, scoped to white-coated mice.
             </p>
             <p className="mt-1 text-sm leading-6">
-              Every figure below holds each mouse out of its own training set, because an
-              image-level split leaks: the same photographs score 53.3% that way, which
-              measures mouse recognition rather than staging.
+              Within that scope the guarded binary model reaches 66 of 76 on the sealed
+              public test, ahead of the paper&apos;s own 63 of 76, at ROC-AUC 0.914.
+              Everything below holds each mouse out of its own training set — an
+              image-level split leaks and inflates the same data to 53.3%.
             </p>
           </div>
         </div>
 
         <div className="overflow-x-auto p-5">
-          <table className="w-full min-w-[640px] border-collapse text-sm">
+          <table className="w-full min-w-[680px] border-collapse text-sm">
             <caption className="mb-3 text-left text-[10px] font-bold uppercase tracking-[0.16em] text-[#68645d]">
               Held out by mouse · balanced accuracy
             </caption>
             <thead>
               <tr className="border-b border-[#ded9cd] text-left text-[11px] uppercase tracking-[0.1em] text-[#68645d]">
+                <th className="pb-2 font-bold">Coat</th>
                 <th className="pb-2 font-bold">Photographs</th>
                 <th className="pb-2 font-bold">Method</th>
-                <th className="pb-2 text-right font-bold">Four-stage</th>
                 <th className="pb-2 text-right font-bold">Binary</th>
+                <th className="pb-2 text-right font-bold">Four-stage</th>
               </tr>
             </thead>
             <tbody className="text-[#292b4c]">
               {[
-                ["222 whole-animal · 11 mice", "BioCLIP + similarity k-NN", "27.7%", "—", false],
-                ["222 whole-animal · 11 mice", "DINOv2-base + logistic", "28.2%", "55.2%", false],
-                ["56 tight ROI · 14 mice", "DINOv2-base + logistic", "22.8%", "51.7%", false],
-                ["Public light-coated benchmark", "DINOv2 eight-head ensemble", "not applicable", "86.8%", true],
-              ].map(([data, method, four, binary, highlight]) => (
+                {
+                  coat: "White",
+                  data: "Public sealed test",
+                  method: "DINOv2 eight-head ensemble",
+                  binary: "86.8%",
+                  four: "not yet built",
+                  tone: "in-scope" as const,
+                },
+                {
+                  coat: "Dark",
+                  data: "222 whole-animal · 11 mice",
+                  method: "DINOv2-base + logistic",
+                  binary: "55.2%",
+                  four: "28.2%",
+                  tone: "future" as const,
+                },
+                {
+                  coat: "Dark",
+                  data: "222 whole-animal · 11 mice",
+                  method: "BioCLIP + similarity k-NN",
+                  binary: "—",
+                  four: "27.7%",
+                  tone: "future" as const,
+                },
+                {
+                  coat: "Dark",
+                  data: "56 tight ROI · 14 mice",
+                  method: "DINOv2-base + logistic",
+                  binary: "51.7%",
+                  four: "22.8%",
+                  tone: "future" as const,
+                },
+              ].map((row) => (
                 <tr
-                  key={String(data) + String(method)}
+                  key={row.coat + row.data + row.method}
                   className={cn(
                     "border-b border-[#f0ece3]",
-                    highlight && "bg-[#f3faf5]"
+                    row.tone === "in-scope" ? "bg-[#f3faf5]" : "text-[#6f6b64]"
                   )}
                 >
-                  <td className="py-2 pr-4">{String(data)}</td>
-                  <td className="py-2 pr-4 text-[#625f58]">{String(method)}</td>
-                  <td className="py-2 text-right tabular-nums">{String(four)}</td>
-                  <td className={cn("py-2 text-right tabular-nums", highlight && "font-semibold")}>
-                    {String(binary)}
+                  <td className="py-2 pr-4">
+                    <span
+                      className={cn(
+                        "inline-block px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.1em]",
+                        row.tone === "in-scope"
+                          ? "bg-[#dcece2] text-[#2f5a41]"
+                          : "bg-[#efece5] text-[#68645d]"
+                      )}
+                    >
+                      {row.coat}
+                    </span>
                   </td>
+                  <td className="py-2 pr-4">{row.data}</td>
+                  <td className="py-2 pr-4 text-[#625f58]">{row.method}</td>
+                  <td
+                    className={cn(
+                      "py-2 text-right tabular-nums",
+                      row.tone === "in-scope" && "font-semibold text-[#292b4c]"
+                    )}
+                  >
+                    {row.binary}
+                  </td>
+                  <td className="py-2 text-right tabular-nums">{row.four}</td>
                 </tr>
               ))}
             </tbody>
           </table>
-          <p className="mt-4 max-w-3xl text-sm leading-6 text-[#625f58]">
-            Chance is 25% for four stages and 50% for binary. Swapping BioCLIP for DINOv2
-            moves four-stage accuracy by half a point across 11 mice, and tighter ROI
-            crops score below chance — so the backbone was never the bottleneck. The
-            useful signal is the last row: the same architecture reaches 86.8% on the
-            public light-coated benchmark. What separates those two numbers is the data —
-            coat colour, label provenance, and how many mice — not the model. Percentages
-            shown above the fold are relative support among nearest references, never
-            calibrated probabilities.
-          </p>
+
+          <div className="mt-5 grid gap-5 border-t border-[#e8e3da] pt-5 md:grid-cols-2">
+            <div>
+              <Eyebrow>Where the concept stands</Eyebrow>
+              <p className="mt-2 text-sm leading-6 text-[#625f58]">
+                On white mice the binary task — proestrus-or-estrus against
+                metestrus-or-diestrus — is reproduced and slightly improved over the
+                published baseline, with guards that abstain rather than guess when a
+                photograph sits outside the reference set. That is the claim this demo
+                makes, and no more than that.
+              </p>
+            </div>
+            <div>
+              <Eyebrow>What expansion needs</Eyebrow>
+              <p className="mt-2 text-sm leading-6 text-[#625f58]">
+                The greyed rows are the next frontier, not a verdict on the method. Dark
+                coats sit near chance under both backbones and both framings, so the
+                limit is data rather than architecture: cytology-grounded labels across
+                more coat colours and more mice. Chance is 50% binary and 25% four-stage.
+              </p>
+            </div>
+          </div>
         </div>
       </section>
     </main>

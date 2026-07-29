@@ -49,7 +49,9 @@ COPY python-service/model-policies /app/python-service/model-policies
 # from object storage first. Baking them in keeps cold starts to model load only.
 COPY artifacts/public-confirmatory-20260719 /app/work/model-eval/public-confirmatory-20260719
 COPY artifacts/public-foundation-benchmark-20260719 /app/work/model-eval/public-foundation-benchmark-20260719
-COPY artifacts/public-data /app/work/model-eval/public/S-BIAD2395/estrus images
+# JSON-array form is required: the upstream dataset directory name contains a
+# space, and shell-form COPY splits the destination on it.
+COPY ["artifacts/public-data", "/app/work/model-eval/public/S-BIAD2395/estrus images/"]
 
 # Pre-download the backbones at the revisions pinned in the policy so a cold
 # start does not also wait on Hugging Face.
