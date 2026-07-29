@@ -152,7 +152,7 @@ comparison.
   timeline fits without scrolling.
 - Post-fix evidence: the connected suite now includes the complete eight-mouse
   review path plus mobile prediction, receipt, history, and accessibility
-  checks; all 43
+  checks; all 44
   workflows pass.
 
 ### Iteration 6
@@ -195,6 +195,9 @@ comparison.
   reduced-motion preferences.
 - Open saved records preserves AI proposal and scientist-saved decision side by
   side.
+- Opening Review Receipt before any interaction presents the completed
+  demonstration state, while opening it after one or more real demo decisions
+  preserves and exports the actual partial review.
 - Export review receipt downloads a CSV with the proposal, all four relative
   support scores, image reference, guardrail, scientist decision, review
   outcome, timestamp, and explicit illustrative-demo scope.

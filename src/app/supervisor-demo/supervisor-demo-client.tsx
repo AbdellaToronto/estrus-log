@@ -527,6 +527,10 @@ export function SupervisorDemoClient() {
     () => (items.every((item) => item.finalStage) ? items : COMPLETED_ITEMS),
     [items]
   );
+  const receiptItems = useMemo(
+    () => (view === "receipt" && confirmedCount === 0 ? COMPLETED_ITEMS : items),
+    [confirmedCount, items, view]
+  );
 
   const reviewNext = (updated: DemoPrediction[]) => {
     const next = updated.find((item) => !item.finalStage);
@@ -551,7 +555,7 @@ export function SupervisorDemoClient() {
     setItems(dayCompleteItems);
     setView("receipt");
   };
-  const exportReceipt = () => {
+  const exportReceipt = (sourceItems: DemoPrediction[]) => {
     const header = [
       "record_scope",
       "subject",
@@ -570,10 +574,12 @@ export function SupervisorDemoClient() {
       "inference_mode",
       "reviewed_at",
     ];
-    const rows = dayCompleteItems.map((item, index) => {
+    const rows = sourceItems.map((item, index) => {
       const savedDecision = item.finalStage ?? "";
       const reviewOutcome =
-        savedDecision === "Uncertain / transition"
+        !savedDecision
+          ? "pending"
+          : savedDecision === "Uncertain / transition"
           ? "uncertain"
           : savedDecision === item.prediction
             ? "accepted"
@@ -595,7 +601,9 @@ export function SupervisorDemoClient() {
         item.guardrail,
         "relative_support_not_calibrated_probability",
         "illustrative_not_live_inference",
-        `2026-07-28T09:${String(24 + index).padStart(2, "0")}:00-04:00`,
+        savedDecision
+          ? `2026-07-28T09:${String(24 + index).padStart(2, "0")}:00-04:00`
+          : "",
       ];
     });
     const csv = [header, ...rows]
@@ -608,7 +616,10 @@ export function SupervisorDemoClient() {
     link.click();
     URL.revokeObjectURL(url);
   };
-  const displayedCount = view === "complete" ? 8 : confirmedCount;
+  const displayedCount =
+    view === "complete" || (view === "receipt" && confirmedCount === 0)
+      ? 8
+      : confirmedCount;
 
   return (
     <div className="min-h-screen bg-[#f7f4ed] text-[#292b4c]">
@@ -629,17 +640,17 @@ export function SupervisorDemoClient() {
       )}
       {view === "receipt" && (
         <Receipt
-          items={items}
+          items={receiptItems}
           onBack={() => setView("review")}
           onRestart={restart}
-          onExport={exportReceipt}
+          onExport={() => exportReceipt(receiptItems)}
         />
       )}
       {view === "complete" && (
         <DayComplete
           items={dayCompleteItems}
           onOpenRecords={openCompleteRecords}
-          onExport={exportReceipt}
+          onExport={() => exportReceipt(dayCompleteItems)}
         />
       )}
       {view === "method" && <Method />}

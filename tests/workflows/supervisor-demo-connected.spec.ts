@@ -165,6 +165,27 @@ test.describe("supervisor demo connected workflow", () => {
     await expect(correctedRow).toContainText("Proestrus");
   });
 
+  test("keeps a partial receipt partial when it is exported", async ({ page }) => {
+    await page.goto("/supervisor-demo");
+    await page.getByRole("button", { name: "Accept Metestrus" }).click();
+    await page.getByRole("button", { name: "Review receipt" }).click();
+
+    await expect(page.getByRole("heading", { name: "Partial review saved" })).toBeVisible();
+    await expect(
+      page.getByRole("progressbar", { name: "Review progress" })
+    ).toHaveAttribute("aria-valuenow", "1");
+
+    const downloadPromise = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Export receipt" }).click();
+    const csv = await text(await (await downloadPromise).createReadStream());
+    expect(csv).toContain(
+      '"illustrative_demo","N-223","BALB/c","15 weeks","S-BIAD2395 · external photograph 106","Metestrus","0.05","0.1","0.68","0.17","Metestrus","accepted"'
+    );
+    expect(csv).toContain(
+      '"illustrative_demo","N-221","BALB/c","14 weeks","S-BIAD2395 · external photograph 139","Estrus","0.06","0.82","0.08","0.04","","pending"'
+    );
+  });
+
   test("keeps the completed-day dashboard accessible and contained on mobile", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.emulateMedia({ reducedMotion: "reduce" });
@@ -209,7 +230,10 @@ test.describe("supervisor demo connected workflow", () => {
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
 
     await page.getByRole("button", { name: "Review receipt" }).click();
-    await expect(page.getByRole("heading", { name: "Partial review saved" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Review complete" })).toBeVisible();
+    await expect(
+      page.getByRole("progressbar", { name: "Review progress" })
+    ).toHaveAttribute("aria-valuenow", "8");
     await expectContained();
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
   });
