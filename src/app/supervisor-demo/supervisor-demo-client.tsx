@@ -245,7 +245,7 @@ function PredictionInbox({
   return (
     <main className="mx-auto max-w-[1500px] px-5 py-7 sm:px-8 lg:px-12">
       <div className="border-b border-[#d9d4c8] pb-6">
-        <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#77736c]">North colony · 8 photographs analyzed</p>
+        <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#68645d]">North colony · 8 photographs analyzed</p>
         <div className="mt-2 grid gap-5 xl:grid-cols-[minmax(0,1fr)_520px] xl:items-end">
           <div>
             <h1 className="font-serif text-4xl tracking-tight text-[#292b4c] sm:text-5xl">Prediction inbox</h1>
@@ -259,7 +259,7 @@ function PredictionInbox({
               ["Abstained", items.filter((item) => item.state === "abstained" && !item.finalStage).length],
             ].map(([label, value], index) => (
               <div key={String(label)} className={cn("p-3", index > 0 && "border-l border-[#ded9cd]")}>
-                <p className="text-[9px] font-bold uppercase tracking-[0.13em] text-[#77736c]">{label}</p>
+                <p className="text-[9px] font-bold uppercase tracking-[0.13em] text-[#68645d]">{label}</p>
                 <p className="mt-1 font-serif text-2xl text-[#292b4c]">{value}</p>
               </div>
             ))}
@@ -276,7 +276,7 @@ function PredictionInbox({
           ] as const).map(([key, label, group]) => (
             <div key={key} className="border-b border-[#ded9cd]">
               <div className="flex items-center justify-between px-4 py-3">
-                <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#77736c]">{label}</p>
+                <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#68645d]">{label}</p>
                 <span className="text-xs font-semibold text-[#555a9d]">{group.length}</span>
               </div>
               {group.map((item) => (
@@ -294,17 +294,17 @@ function PredictionInbox({
                   </div>
                   <span>
                     <span className="block text-sm font-semibold text-[#292b4c]">{item.subject}</span>
-                    <span className="block text-xs text-[#77736c]">{item.prediction}</span>
+                    <span className="block text-xs text-[#68645d]">{item.prediction}</span>
                   </span>
                   <span className="text-xs font-semibold text-[#555a9d]">{Math.round(item.scores[item.prediction] * 100)}%</span>
                 </button>
               ))}
-              {group.length === 0 && <p className="border-t border-[#e8e3da] px-4 py-4 text-xs text-[#8a867e]">Group clear.</p>}
+              {group.length === 0 && <p className="border-t border-[#e8e3da] px-4 py-4 text-xs text-[#625f58]">Group clear.</p>}
             </div>
           ))}
           {reviewed > 0 && (
             <div className="px-4 py-4">
-              <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#77736c]">Reviewed</p>
+              <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#68645d]">Reviewed</p>
               <p className="mt-1 text-sm font-semibold text-[#356449]">{reviewed} record{reviewed === 1 ? "" : "s"} ready</p>
             </div>
           )}
@@ -313,7 +313,7 @@ function PredictionInbox({
         <div className="order-1 grid lg:grid-cols-[minmax(0,1fr)_330px] xl:order-2">
           <div className="flex min-w-0 flex-col">
             <div className="border-b border-[#ded9cd] p-6">
-              <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#77736c]">{selected.subject} · {selected.strain} · {selected.age}</p>
+              <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#68645d]">{selected.subject} · {selected.strain} · {selected.age}</p>
               <div className="mt-2 flex flex-wrap items-end justify-between gap-4">
                 <div>
                   <h2 className="font-serif text-4xl text-[#292b4c]">AI predicts {selected.prediction}</h2>
@@ -324,8 +324,8 @@ function PredictionInbox({
 
             <div className="flex-1 p-6">
               <div className="flex items-center justify-between">
-                <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#77736c]">All stage scores</p>
-                <span className="text-[10px] text-[#8a867e]">relative model support</span>
+                <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#68645d]">All stage scores</p>
+                <span className="text-[10px] text-[#625f58]">relative model support</span>
               </div>
               <StageDistribution className="mt-5 max-w-2xl" scores={selected.scores} predictedStage={selected.prediction} />
               <div className={cn(
@@ -366,21 +366,21 @@ function PredictionInbox({
           </div>
 
           <aside className="border-t border-[#ded9cd] bg-[#f4f1e9] p-5 lg:border-l lg:border-t-0">
-            <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#77736c]">Supporting photograph</p>
+            <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#68645d]">Supporting photograph</p>
             <div className="relative mt-4 h-[390px] overflow-hidden border border-[#d9d4c8] bg-[#e7e2d9]">
               <Image src={selected.image} alt={`Prepared external photograph for ${selected.subject}`} fill sizes="330px" className="object-contain" priority />
             </div>
-            <div className="mt-4 border-t border-[#d9d4c8] pt-4 text-xs leading-5 text-[#77736c]">
+            <div className="mt-4 border-t border-[#d9d4c8] pt-4 text-xs leading-5 text-[#68645d]">
               <p className="font-semibold text-[#292b4c]">{selected.filename}</p>
               <p className="mt-1">Prepared crop shown exactly as analyzed.</p>
             </div>
             <div className="mt-4 grid grid-cols-2 gap-2 border-t border-[#d9d4c8] pt-4">
               <div>
-                <p className="text-[10px] uppercase tracking-[0.12em] text-[#77736c]">Previous</p>
+                <p className="text-[10px] uppercase tracking-[0.12em] text-[#68645d]">Previous</p>
                 <p className="mt-1 text-sm font-semibold text-[#292b4c]">{selected.previousStage}</p>
               </div>
               <div>
-                <p className="text-[10px] uppercase tracking-[0.12em] text-[#77736c]">Cycle</p>
+                <p className="text-[10px] uppercase tracking-[0.12em] text-[#68645d]">Cycle</p>
                 <p className="mt-1 text-sm font-semibold text-[#292b4c]">Day {selected.cycleDay}</p>
               </div>
             </div>
@@ -409,7 +409,7 @@ function Receipt({
     <main className="mx-auto max-w-[1200px] px-5 py-8 sm:px-8 lg:px-12">
       <button type="button" onClick={onBack} className="inline-flex items-center gap-2 text-sm font-semibold text-[#625f58] hover:text-[#353a87]"><ChevronLeft className="h-4 w-4" />Back to predictions</button>
       <div className="mt-6 border-b border-[#d9d4c8] pb-6">
-        <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#77736c]">Review receipt · North colony</p>
+        <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#68645d]">Review receipt · North colony</p>
         <h1 className="mt-2 font-serif text-4xl text-[#292b4c] sm:text-5xl">{finalized.length === items.length ? "Review complete" : "Partial review saved"}</h1>
         <p className="mt-2 text-sm text-[#625f58]">The receipt keeps the AI proposal and scientist&apos;s final decision side by side.</p>
       </div>
@@ -422,14 +422,14 @@ function Receipt({
           ["Corrected", corrected],
         ].map(([label, value], index) => (
           <div key={String(label)} className={cn("p-5", index > 0 && "border-t border-[#ded9cd] sm:border-l sm:border-t-0")}>
-            <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#77736c]">{label}</p>
+            <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#68645d]">{label}</p>
             <p className="mt-2 font-serif text-3xl text-[#292b4c]">{value}</p>
           </div>
         ))}
       </section>
 
       <section className="mt-5 border border-[#ded9cd] bg-white">
-        <div className="grid grid-cols-[1fr_120px_120px] border-b border-[#ded9cd] bg-[#fbfaf7] px-4 py-3 text-[10px] font-bold uppercase tracking-[0.14em] text-[#77736c] sm:grid-cols-[1fr_180px_180px]">
+        <div className="grid grid-cols-[1fr_120px_120px] border-b border-[#ded9cd] bg-[#fbfaf7] px-4 py-3 text-[10px] font-bold uppercase tracking-[0.14em] text-[#68645d] sm:grid-cols-[1fr_180px_180px]">
           <span>Subject</span><span>AI proposal</span><span>Saved decision</span>
         </div>
         {items.map((item) => (
@@ -440,7 +440,7 @@ function Receipt({
           >
             <div>
               <p className="font-semibold text-[#292b4c]">{item.subject}</p>
-              <p className="mt-0.5 text-xs text-[#77736c]">{item.strain}</p>
+              <p className="mt-0.5 text-xs text-[#68645d]">{item.strain}</p>
             </div>
             <span className="text-[#555a9d]">{item.prediction}</span>
             <span className={cn("font-semibold", item.finalStage ? "text-[#292b4c]" : "text-[#a25a3f]")}>{item.finalStage || "Pending"}</span>
@@ -460,7 +460,7 @@ function Method() {
   return (
     <main className="mx-auto max-w-[1100px] px-5 py-8 sm:px-8 lg:px-12">
       <div className="border-b border-[#d9d4c8] pb-6">
-        <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#77736c]">The product model</p>
+        <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#68645d]">The product model</p>
         <h1 className="mt-2 font-serif text-4xl text-[#292b4c] sm:text-5xl">AI proposes. Scientists supervise.</h1>
         <p className="mt-3 max-w-2xl text-sm leading-6 text-[#625f58]">Estrus Log is not a blank data-entry form. It turns external photographs into reviewable stage proposals, then builds a traceable record from the scientist&apos;s decisions.</p>
       </div>

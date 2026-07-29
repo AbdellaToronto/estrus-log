@@ -154,6 +154,29 @@ test.describe("supervisor demo connected workflow", () => {
     await expect(page.getByText("Swipe the timeline for earlier and later days")).toBeHidden();
   });
 
+  test("keeps the prediction and receipt pages usable on mobile", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.goto("/supervisor-demo");
+
+    const expectContained = async () => {
+      const width = await page.evaluate(() => ({
+        client: document.documentElement.clientWidth,
+        scroll: document.documentElement.scrollWidth,
+      }));
+      expect(width.scroll).toBeLessThanOrEqual(width.client);
+    };
+
+    await expect(page.getByRole("heading", { name: "Prediction inbox" })).toBeVisible();
+    await expectContained();
+    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+
+    await page.getByRole("button", { name: "Review receipt" }).click();
+    await expect(page.getByRole("heading", { name: "Partial review saved" })).toBeVisible();
+    await expectContained();
+    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+  });
+
   test("captures the selected day-complete visual target", async ({ page }) => {
     await page.setViewportSize({ width: 1488, height: 1058 });
     await page.goto("/supervisor-demo");

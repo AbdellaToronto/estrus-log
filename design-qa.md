@@ -151,8 +151,19 @@ comparison.
   remains visible through the tablet breakpoint and disappears once the
   timeline fits without scrolling.
 - Post-fix evidence: the connected suite now includes the complete eight-mouse
-  review path plus the mobile affordance and accessibility checks; all 42
+  review path plus mobile prediction, receipt, history, and accessibility
+  checks; all 43
   workflows pass.
+
+### Iteration 6
+
+- P1: extending the mobile audit from Day Complete to the Prediction Inbox
+  exposed small neutral labels that measured between 3.62:1 and 4.29:1 against
+  white, ivory, and lavender surfaces.
+- Fix: darkened the secondary neutral text tokens without changing the
+  hierarchy or selected-state palette.
+- Post-fix evidence: Prediction Inbox and Review Receipt both pass Axe at
+  390 x 844 with no violations.
 
 ## Primary interactions tested
 
