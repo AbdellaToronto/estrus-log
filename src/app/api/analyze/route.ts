@@ -135,8 +135,32 @@ export async function GET() {
     }
   };
 
-  const [encoder, segmenter] = await Promise.all([ping(BIOCLIP_URL), ping(SAM3_URL)]);
-  return Response.json({ warm: { encoder, segmenter } });
+  // The Cloud Run ensemble also scales to zero, and its cold start is the
+  // largest single component of a first analysis. /health forces the container up
+  // and loads the model without running inference.
+  const warmEnsemble = async () => {
+    const baseUrl = process.env.ESTRUS_BINARY_MODEL_API_URL?.trim();
+    if (!baseUrl) return { ok: false, ms: 0, configured: false };
+    const started = Date.now();
+    const token = process.env.ESTRUS_BINARY_API_TOKEN?.trim();
+    try {
+      const response = await fetch(`${baseUrl.replace(/\/$/, "")}/health`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        signal: AbortSignal.timeout(120_000),
+        cache: "no-store",
+      });
+      return { ok: response.ok, ms: Date.now() - started, configured: true };
+    } catch {
+      return { ok: false, ms: Date.now() - started, configured: true };
+    }
+  };
+
+  const [encoder, segmenter, ensemble] = await Promise.all([
+    ping(BIOCLIP_URL),
+    ping(SAM3_URL),
+    warmEnsemble(),
+  ]);
+  return Response.json({ warm: { encoder, segmenter, ensemble } });
 }
 
 export async function POST(request: NextRequest) {
