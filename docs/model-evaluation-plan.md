@@ -45,9 +45,37 @@ The subject-held-out local evaluation used 222 external photographs from 11 mice
 
 These are research results, not deployment evidence. Keep four-stage automation unavailable. The binary result is only a lead for a better standardized-ROI dataset and still requires scientist confirmation.
 
+### 2026-07-29 reference-bank k-NN result
+
+The single-image route (`/api/analyze`) classifies by similarity-weighted k-NN over a
+bundled BioCLIP reference bank rather than a trained probe, so it was scored on its own
+terms. Leave-one-mouse-out over all 222 local photographs, k=15, softmax temperature
+0.04:
+
+- **27.7% balanced accuracy** against a 25% chance rate; 35.1% plain accuracy against a
+  39.2% majority-class baseline, i.e. below the majority baseline.
+- Per-stage recall: Estrus 68%, Proestrus 16%, Diestrus 17%, Metestrus 10%. The
+  classifier is an Estrus detector that over-predicts Estrus, not a four-stage model.
+- The abstention gate does not rescue it: on the 43% of photographs where it does
+  commit, it is still only 45.3% correct.
+- This independently reproduces the 0.286 balanced accuracy of the four-stage BioCLIP
+  probe above by a different method, which is the useful part of the result.
+
+Scoring the same bank with the leaky image-level split instead reports 53.3%, so that
+number should never be quoted. It measures mouse recognition, not staging.
+
+Domain note: `dataset_split_cropped/` holds whole-animal photographs and
+`dataset_split/` holds tight ROI crops, despite the names suggesting the reverse. A bank
+built only from the 56 ROI crops scores **below** its own majority baseline (33.9% versus
+35.7%) and collapses to predicting Metestrus for 52 of 56 images. The shipped bank
+therefore combines both domains, 233 references, which leaves whole-animal accuracy
+unchanged while letting ROI-framed queries match something at all.
+
 Reproducible runners:
 
 ```bash
+python3 scripts/build_reference_bank.py --help
+python3 scripts/evaluate_reference_bank.py --help
 python python-service/evaluate_external_cnn.py --help
 python python-service/evaluate_external_binary_rcn.py --help
 python python-service/prepare_session_anchored_roi.py --help

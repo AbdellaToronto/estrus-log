@@ -25,6 +25,9 @@ const isPublicRoute = createRouteMatcher([
   "/batch-lab",
   "/supervisor-demo",
   "/api/webhooks(.*)",
+  // Live single-image analysis for the public demo. Read-only: it calls the
+  // encoder and the reference library, and writes nothing.
+  "/api/analyze",
 ]);
 
 // Routes that work without an org (user can see their personal data)

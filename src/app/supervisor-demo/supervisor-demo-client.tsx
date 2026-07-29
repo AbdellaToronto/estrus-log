@@ -12,12 +12,17 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { DayComplete } from "./day-complete";
+import { LiveAnalysis } from "./live-analysis";
 import { StageDistribution } from "@/components/prediction/stage-distribution";
+import {
+  EXTERNAL_ROI_REFERENCE_HEIGHT,
+  EXTERNAL_ROI_REFERENCE_WIDTH,
+} from "@/components/prepared-roi-cropper";
 import { ESTRUS_STAGES, type ClassificationStage } from "@/lib/classification";
 import { cn } from "@/lib/utils";
 
 type ReviewState = "ready" | "attention" | "abstained";
-type DemoView = "review" | "receipt" | "complete" | "method";
+type DemoView = "review" | "receipt" | "complete" | "live" | "method";
 
 type DemoPrediction = {
   id: string;
@@ -190,6 +195,7 @@ function DemoHeader({
               ["review", "Prediction inbox"],
               ["receipt", "Review receipt"],
               ["complete", "Day complete"],
+              ["live", "Analyze a photo"],
             ].map(([target, label]) => (
               <button
                 key={target}
@@ -197,11 +203,18 @@ function DemoHeader({
                 aria-current={view === target ? "page" : undefined}
                 onClick={() => onNavigate(target as DemoView)}
                 className={cn(
-                  "relative px-3 py-2 text-sm font-semibold",
+                  "relative flex items-center gap-1.5 px-3 py-2 text-sm font-semibold",
                   view === target ? "text-[#292b4c]" : "text-[#625f58] hover:text-[#454a9f]"
                 )}
               >
                 {label}
+                {/* The only view backed by real inference rather than replayed data. */}
+                {target === "live" && (
+                  <span
+                    className="h-1.5 w-1.5 rounded-full bg-[#c76f87]"
+                    aria-label="live inference"
+                  />
+                )}
                 {view === target && <span className="absolute inset-x-2 bottom-0 h-0.5 bg-[#454a9f]" />}
               </button>
             ))}
@@ -300,8 +313,10 @@ function PredictionInbox({
                     selected.id === item.id ? "bg-[#eeedf9]" : "hover:bg-white"
                   )}
                 >
-                  <div className="relative h-10 w-10 overflow-hidden bg-[#ece8df]">
-                    <Image src={item.image} alt="" fill sizes="40px" className="object-cover" />
+                  {/* Portrait thumbnail matching the 83:128 source. A square
+                      crop cut away the top and bottom of every photograph. */}
+                  <div className="relative mx-auto h-[52px] w-[34px] overflow-hidden bg-[#ece8df]">
+                    <Image src={item.image} alt="" fill sizes="34px" className="object-cover" />
                   </div>
                   <span>
                     <span className="block text-sm font-semibold text-[#292b4c]">{item.subject}</span>
@@ -378,12 +393,27 @@ function PredictionInbox({
 
           <aside className="border-t border-[#ded9cd] bg-[#f4f1e9] p-5 lg:border-l lg:border-t-0">
             <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#68645d]">Supporting photograph</p>
-            <div className="relative mt-4 h-[390px] overflow-hidden border border-[#d9d4c8] bg-[#e7e2d9]">
-              <Image src={selected.image} alt={`Prepared external photograph for ${selected.subject}`} fill sizes="330px" className="object-contain" priority />
-            </div>
+            {/* The public benchmark crops are natively 83x128. Filling a 390px
+                box upscaled them almost 3x and turned the most important
+                evidence on the page into mush. The frame hugs the photograph at
+                2x instead, so it reads as a deliberate contact print rather
+                than a stretched thumbnail. */}
+            <figure className="mt-4 flex justify-center">
+              <Image
+                src={selected.image}
+                alt={`Prepared external photograph for ${selected.subject}`}
+                width={EXTERNAL_ROI_REFERENCE_WIDTH * 2}
+                height={EXTERNAL_ROI_REFERENCE_HEIGHT * 2}
+                className="border border-[#d9d4c8] bg-[#e7e2d9]"
+                priority
+              />
+            </figure>
             <div className="mt-4 border-t border-[#d9d4c8] pt-4 text-xs leading-5 text-[#68645d]">
               <p className="font-semibold text-[#292b4c]">{selected.filename}</p>
-              <p className="mt-1">Prepared crop shown exactly as analyzed.</p>
+              <p className="mt-1">
+                Prepared crop shown exactly as analyzed, at its native {EXTERNAL_ROI_REFERENCE_WIDTH}&times;
+                {EXTERNAL_ROI_REFERENCE_HEIGHT} capture resolution.
+              </p>
             </div>
             <div className="mt-4 grid grid-cols-2 gap-2 border-t border-[#d9d4c8] pt-4">
               <div>
@@ -653,12 +683,19 @@ export function SupervisorDemoClient() {
           onExport={() => exportReceipt(dayCompleteItems)}
         />
       )}
+      {view === "live" && <LiveAnalysis />}
       {view === "method" && <Method />}
       <footer className="mt-8 border-t border-[#ded9cd] bg-[#f0ede5]">
         <div className="mx-auto flex max-w-[1500px] flex-col gap-3 px-5 py-4 text-[10px] leading-4 text-[#625f58] sm:px-8 lg:flex-row lg:items-center lg:justify-between lg:px-12">
           <div>
             <p>Estrus supervisor demo · public reference photographs · no production record is changed</p>
-            <p className="mt-1">Historical observations are illustrative demo data. Scores are relative model support, not live calibrated inference.</p>
+            {/* The live view is the one place the numbers come from a real
+                encoder call, so it must not carry the "illustrative" caption. */}
+            <p className="mt-1">
+              {view === "live"
+                ? "This view runs live inference against the deployed encoder. Scores are relative model support, not calibrated probabilities, and nothing is saved."
+                : "Historical observations are illustrative demo data. Scores are relative model support, not live calibrated inference."}
+            </p>
           </div>
           <button
             type="button"

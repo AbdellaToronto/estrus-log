@@ -1,0 +1,492 @@
+"use client";
+
+/**
+ * The one part of the supervisor demo that is not illustrative.
+ *
+ * Every other view replays fixed data. This view sends the uploaded photograph
+ * to the deployed BioCLIP encoder and classifies it against the reference
+ * library in real time, so the labelling is deliberately inverted here: the
+ * rest of the demo is captioned "not live inference", and this is captioned
+ * "live".
+ */
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  AlertTriangle,
+  ImageUp,
+  Loader2,
+  RotateCcw,
+  Sparkles,
+  X,
+} from "lucide-react";
+import { StageDistribution } from "@/components/prediction/stage-distribution";
+import type { ClassificationStage } from "@/lib/classification";
+import { cn } from "@/lib/utils";
+
+type Neighbour = { label: ClassificationStage; similarity: number };
+
+type AnalysisResponse = {
+  stage: ClassificationStage;
+  abstained: boolean;
+  scores: Record<ClassificationStage, number>;
+  neighbours: Neighbour[];
+  evidence: {
+    method: string;
+    reference_source: "database" | "bundled";
+    reference_count: number;
+    nearest_similarity: number;
+    mean_similarity: number;
+    margin: number;
+  };
+  review_required: boolean;
+  review_reasons: string[];
+  cropped_image: string | null;
+  elapsed_ms: number;
+};
+
+type Phase = "idle" | "working" | "done" | "error";
+
+const MAX_BYTES = 10 * 1024 * 1024;
+
+const STAGE_SWATCH: Record<ClassificationStage, string> = {
+  Proestrus: "bg-[#8f83d8]",
+  Estrus: "bg-[#c76f87]",
+  Metestrus: "bg-[#d3a450]",
+  Diestrus: "bg-[#6493ba]",
+};
+
+function Eyebrow({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#68645d]">
+      {children}
+    </p>
+  );
+}
+
+export function LiveAnalysis() {
+  const [phase, setPhase] = useState<Phase>("idle");
+  const [preview, setPreview] = useState<string | null>(null);
+  const [filename, setFilename] = useState<string>("");
+  const [result, setResult] = useState<AnalysisResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const previewRef = useRef<string | null>(null);
+
+  // Both endpoints are GPU-backed and scale to zero. Warming them while the
+  // reviewer is still reading the page turns a ~35 s cold start into a
+  // few-second analysis.
+  useEffect(() => {
+    fetch("/api/analyze").catch(() => undefined);
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (previewRef.current) URL.revokeObjectURL(previewRef.current);
+    },
+    []
+  );
+
+  const reset = useCallback(() => {
+    if (previewRef.current) {
+      URL.revokeObjectURL(previewRef.current);
+      previewRef.current = null;
+    }
+    setPhase("idle");
+    setPreview(null);
+    setFilename("");
+    setResult(null);
+    setError(null);
+    if (inputRef.current) inputRef.current.value = "";
+  }, []);
+
+  const analyze = useCallback(async (file: File) => {
+    if (!file.type.startsWith("image/")) {
+      setError("That file is not an image.");
+      setPhase("error");
+      return;
+    }
+    if (file.size > MAX_BYTES) {
+      setError("Images must be 10 MB or smaller.");
+      setPhase("error");
+      return;
+    }
+
+    if (previewRef.current) URL.revokeObjectURL(previewRef.current);
+    const objectUrl = URL.createObjectURL(file);
+    previewRef.current = objectUrl;
+
+    setPreview(objectUrl);
+    setFilename(file.name);
+    setResult(null);
+    setError(null);
+    setPhase("working");
+
+    try {
+      const body = new FormData();
+      body.append("file", file);
+      const response = await fetch("/api/analyze", { method: "POST", body });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        setError(payload?.error ?? `Analysis failed (${response.status}).`);
+        setPhase("error");
+        return;
+      }
+
+      setResult(payload as AnalysisResponse);
+      setPhase("done");
+    } catch {
+      setError("Could not reach the analysis service. Check your connection and retry.");
+      setPhase("error");
+    }
+  }, []);
+
+  const onDrop = useCallback(
+    (event: React.DragEvent) => {
+      event.preventDefault();
+      setDragging(false);
+      const file = event.dataTransfer.files?.[0];
+      if (file) analyze(file);
+    },
+    [analyze]
+  );
+
+  const working = phase === "working";
+
+  return (
+    <main className="mx-auto max-w-[1500px] px-5 py-7 sm:px-8 lg:px-12">
+      <div className="border-b border-[#d9d4c8] pb-6">
+        <Eyebrow>Live inference · not illustrative</Eyebrow>
+        <div className="mt-2 grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px] xl:items-end">
+          <div>
+            <h1 className="font-serif text-4xl tracking-tight text-[#292b4c] sm:text-5xl">
+              Analyze a photograph
+            </h1>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-[#625f58]">
+              Drop any mouse photograph here and it runs through the same encoder the
+              batch pipeline uses. The result below is produced live, unlike the
+              worked examples in the rest of this demo — which also means it shows
+              the classifier&apos;s real accuracy, and that is currently near chance.
+            </p>
+          </div>
+          <div className="border border-[#ded9cd] bg-white p-4">
+            <Eyebrow>How the answer is produced</Eyebrow>
+            <p className="mt-2 text-xs leading-5 text-[#625f58]">
+              SAM3 segments the animal for display. BioCLIP turns the photograph into a
+              512-dimension embedding. That embedding is compared against a library of
+              labelled reference photographs, and the nearest matches vote — weighted by
+              how similar they are.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <section className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,420px)_minmax(0,1fr)] lg:items-start">
+        {/* Upload / source column */}
+        <div className="border border-[#ded9cd] bg-white">
+          <div className="flex items-center justify-between border-b border-[#ded9cd] px-4 py-3">
+            <Eyebrow>Photograph</Eyebrow>
+            {preview && (
+              <button
+                type="button"
+                onClick={reset}
+                className="flex items-center gap-1 text-xs font-semibold text-[#625f58] hover:text-[#454a9f]"
+              >
+                <X className="h-3.5 w-3.5" /> Clear
+              </button>
+            )}
+          </div>
+
+          {!preview ? (
+            <div
+              onDragOver={(event) => {
+                event.preventDefault();
+                setDragging(true);
+              }}
+              onDragLeave={() => setDragging(false)}
+              onDrop={onDrop}
+              className={cn(
+                "m-4 flex flex-col items-center justify-center border border-dashed px-6 py-14 text-center transition-colors",
+                dragging
+                  ? "border-[#454a9f] bg-[#eeedf9]"
+                  : "border-[#cfc9bb] bg-[#fbfaf7]"
+              )}
+            >
+              <ImageUp className="h-8 w-8 text-[#8d887e]" />
+              <p className="mt-4 font-serif text-xl text-[#292b4c]">
+                Drop a photograph
+              </p>
+              <p className="mt-1 text-xs leading-5 text-[#625f58]">
+                JPEG, PNG or WebP · up to 10 MB
+              </p>
+              <button
+                type="button"
+                onClick={() => inputRef.current?.click()}
+                className="mt-5 bg-[#454a9f] px-4 py-2 text-sm font-semibold text-white hover:bg-[#383d8a]"
+              >
+                Choose a file
+              </button>
+              <input
+                ref={inputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (file) analyze(file);
+                }}
+              />
+            </div>
+          ) : (
+            <div className="p-4">
+              <div className="relative overflow-hidden bg-[#ece8df]">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={preview}
+                  alt={filename || "Uploaded photograph"}
+                  className="mx-auto max-h-[360px] w-auto object-contain"
+                />
+                {working && (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-[#f7f4ed]/85">
+                    <Loader2 className="h-6 w-6 animate-spin text-[#454a9f] motion-reduce:animate-none" />
+                    <p className="text-xs font-semibold text-[#292b4c]">
+                      Encoding and matching…
+                    </p>
+                    <p className="max-w-[240px] text-center text-[11px] leading-4 text-[#625f58]">
+                      A cold GPU can take up to 40 seconds on the first photograph.
+                    </p>
+                  </div>
+                )}
+              </div>
+              <p className="mt-3 truncate text-xs text-[#625f58]" title={filename}>
+                {filename}
+              </p>
+
+              {result?.cropped_image && (
+                <div className="mt-4 border-t border-[#e8e3da] pt-4">
+                  <Eyebrow>Segmented by SAM3</Eyebrow>
+                  <div className="mt-2 bg-[#1c1b19]">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={result.cropped_image}
+                      alt="Animal segmented from the background"
+                      className="mx-auto max-h-[220px] w-auto object-contain"
+                    />
+                  </div>
+                  <p className="mt-2 text-[11px] leading-4 text-[#625f58]">
+                    Shown for orientation. The classifier reads the photograph as
+                    supplied, which is the framing the reference library was built from.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Result column */}
+        <div className="border border-[#ded9cd] bg-white">
+          {phase === "idle" && (
+            <div className="flex min-h-[420px] flex-col items-center justify-center px-8 text-center">
+              <Sparkles className="h-6 w-6 text-[#b4afa4]" />
+              <p className="mt-4 font-serif text-2xl text-[#292b4c]">
+                No photograph yet
+              </p>
+              <p className="mt-2 max-w-sm text-sm leading-6 text-[#625f58]">
+                The stage proposal, all four support scores, and the reference
+                photographs that drove the answer will appear here.
+              </p>
+            </div>
+          )}
+
+          {phase === "error" && (
+            <div className="flex min-h-[420px] flex-col items-center justify-center px-8 text-center">
+              <AlertTriangle className="h-6 w-6 text-[#a8613c]" />
+              <p className="mt-4 font-serif text-2xl text-[#292b4c]">
+                That did not go through
+              </p>
+              <p className="mt-2 max-w-sm text-sm leading-6 text-[#625f58]">{error}</p>
+              <button
+                type="button"
+                onClick={reset}
+                className="mt-5 flex items-center gap-2 border border-[#ded9cd] px-4 py-2 text-sm font-semibold text-[#292b4c] hover:bg-[#fbfaf7]"
+              >
+                <RotateCcw className="h-4 w-4" /> Try another photograph
+              </button>
+            </div>
+          )}
+
+          {working && (
+            <div className="flex min-h-[420px] flex-col items-center justify-center px-8 text-center">
+              <Loader2 className="h-6 w-6 animate-spin text-[#454a9f] motion-reduce:animate-none" />
+              <p className="mt-4 font-serif text-2xl text-[#292b4c]">Analyzing</p>
+              <p className="mt-2 max-w-sm text-sm leading-6 text-[#625f58]">
+                Running SAM3 segmentation and the BioCLIP encoder, then matching
+                against the reference library.
+              </p>
+            </div>
+          )}
+
+          {phase === "done" && result && (
+            <div>
+              <div className="border-b border-[#ded9cd] p-6">
+                <Eyebrow>
+                  {result.abstained ? "Model abstained" : "Model proposal"}
+                </Eyebrow>
+                <div className="mt-2 flex flex-wrap items-end justify-between gap-4">
+                  <div>
+                    <h2 className="font-serif text-4xl text-[#292b4c]">
+                      {result.abstained
+                        ? "No confident stage"
+                        : `Closest to ${result.stage}`}
+                    </h2>
+                    <p className="mt-1 text-sm font-semibold text-[#555a9d]">
+                      {Math.round(result.scores[result.stage] * 100)}% relative support
+                      {" · "}
+                      {(result.elapsed_ms / 1000).toFixed(1)}s
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-6">
+                <div className="flex items-center justify-between">
+                  <Eyebrow>All stage scores</Eyebrow>
+                  <span className="text-[10px] text-[#625f58]">
+                    relative model support
+                  </span>
+                </div>
+                <StageDistribution
+                  className="mt-5 max-w-2xl"
+                  scores={result.scores}
+                  predictedStage={result.stage}
+                />
+
+                <div className="mt-6 border-t border-[#e8e3da] pt-5">
+                  <div className="flex items-center justify-between">
+                    <Eyebrow>Nearest reference photographs</Eyebrow>
+                    <span className="text-[10px] text-[#625f58]">cosine similarity</span>
+                  </div>
+                  <ul className="mt-4 space-y-2">
+                    {result.neighbours.map((neighbour, index) => (
+                      <li
+                        key={`${neighbour.label}-${index}`}
+                        className="grid grid-cols-[88px_minmax(0,1fr)_46px] items-center gap-3"
+                      >
+                        <span className="flex items-center gap-2 text-sm text-[#292b4c]">
+                          <span
+                            className={cn(
+                              "h-2 w-2 shrink-0 rounded-full",
+                              STAGE_SWATCH[neighbour.label]
+                            )}
+                          />
+                          {neighbour.label}
+                        </span>
+                        <div className="h-1.5 overflow-hidden rounded-full bg-[#ebe7df]">
+                          <div
+                            className={cn("h-full rounded-full", STAGE_SWATCH[neighbour.label])}
+                            // Similarities live in a narrow band near 1.0, so the bar is
+                            // stretched across 0.5–1.0 to make differences legible.
+                            style={{
+                              width: `${Math.max(
+                                4,
+                                Math.min(100, (neighbour.similarity - 0.5) * 200)
+                              )}%`,
+                            }}
+                          />
+                        </div>
+                        <span className="text-right text-sm tabular-nums text-[#625f58]">
+                          {(neighbour.similarity * 100).toFixed(1)}%
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                <div
+                  className={cn(
+                    "mt-6 flex gap-2 border px-4 py-3 text-sm",
+                    result.abstained
+                      ? "border-[#e2bf95] bg-[#fff7e9] text-[#7d4a2f]"
+                      : "border-[#cddfd4] bg-[#f3faf5] text-[#356449]"
+                  )}
+                >
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                  <div>
+                    <p className="font-semibold">
+                      {result.abstained
+                        ? "Support is too spread out to propose one stage"
+                        : "A scientist still confirms this stage"}
+                    </p>
+                    <ul className="mt-1 space-y-0.5 text-[13px] leading-5">
+                      {result.review_reasons.map((reason) => (
+                        <li key={reason}>{reason}</li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+
+                <dl className="mt-6 grid gap-x-6 gap-y-3 border-t border-[#e8e3da] pt-5 text-xs sm:grid-cols-2">
+                  {[
+                    ["Method", result.evidence.method],
+                    [
+                      "Reference library",
+                      `${result.evidence.reference_count} nearest of the ${
+                        result.evidence.reference_source === "database"
+                          ? "live library"
+                          : "bundled bank"
+                      }`,
+                    ],
+                    [
+                      "Nearest match",
+                      `${(result.evidence.nearest_similarity * 100).toFixed(1)}%`,
+                    ],
+                    [
+                      "Margin over runner-up",
+                      `${(result.evidence.margin * 100).toFixed(1)} points`,
+                    ],
+                  ].map(([label, value]) => (
+                    <div key={label}>
+                      <dt className="font-bold uppercase tracking-[0.13em] text-[#68645d]">
+                        {label}
+                      </dt>
+                      <dd className="mt-1 text-[#292b4c]">{value}</dd>
+                    </div>
+                  ))}
+                </dl>
+
+                <button
+                  type="button"
+                  onClick={reset}
+                  className="mt-6 flex items-center gap-2 border border-[#ded9cd] px-4 py-2 text-sm font-semibold text-[#292b4c] hover:bg-[#fbfaf7]"
+                >
+                  <RotateCcw className="h-4 w-4" /> Analyze another
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </section>
+
+      <section className="mt-5 flex gap-3 border border-[#e2bf95] bg-[#fff7e9] p-5 text-[#7d4a2f]">
+        <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+        <div>
+          <p className="font-semibold">
+            This pipeline is live. The four-stage classifier behind it is not yet usable.
+          </p>
+          <p className="mt-1 text-sm leading-6">
+            Evaluated across 222 photographs with every mouse held out of its own
+            reference set, four-stage agreement is 27.7% balanced accuracy against a
+            25% chance rate, and 35.1% plain accuracy against a 39.2% majority-class
+            baseline. Recall is 68% for Estrus and 10–17% for the other three stages:
+            in practice this is an Estrus detector that over-predicts Estrus, not a
+            stage classifier. Treat what you see below as a working demonstration of
+            the encode-and-match pipeline, not as a staging result. Percentages are
+            relative support among the nearest references, never calibrated
+            probabilities.
+          </p>
+        </div>
+      </section>
+    </main>
+  );
+}
