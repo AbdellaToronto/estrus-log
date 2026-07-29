@@ -177,6 +177,18 @@ comparison.
 - Post-fix evidence: the receipt workflow asserts each outcome count and the
   exact corrected and uncertain rows.
 
+### Iteration 8
+
+- P2: the project handoff still used the word "confidence" for inbox triage,
+  even though the demo correctly describes the four outputs as relative model
+  support rather than calibrated probabilities.
+- Fix: updated the handoff language and documented the full public journey,
+  evidence limits, validation commands, and local entrypoint.
+- Post-fix evidence: a repository-wide terminology audit found no remaining
+  confidence or probability claim in the public-demo UI. The live replay
+  produced distinct before, mid-animation, and settled frame hashes, and the
+  28-day production view remained contained at both 1280 x 720 and 390 x 844.
+
 ## Primary interactions tested
 
 - Day Complete is directly reachable from the demo navigation.
