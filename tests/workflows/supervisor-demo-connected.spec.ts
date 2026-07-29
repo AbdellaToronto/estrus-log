@@ -6,6 +6,10 @@ test.describe("supervisor demo connected workflow", () => {
   test("keeps the public supervisor journey independent from Clerk", async ({ page }) => {
     await page.goto("/supervisor-demo");
     await expect(page.getByRole("heading", { name: "Prediction inbox" })).toBeVisible();
+    await expect(page.locator('meta[name="robots"]')).toHaveAttribute(
+      "content",
+      "noindex, nofollow"
+    );
 
     const clerkBrowserRequests = await page.evaluate(() =>
       performance

@@ -223,6 +223,12 @@ comparison.
   repository's research corpora and the prior Turbopack trace warning is gone.
 - Clerk routing now uses the supported Next.js 16 `proxy.ts` convention; the
   deprecated `middleware.ts` build warning is gone and all 44 workflows pass.
+- Public production routing returned 200 for `/supervisor-demo`; a browser-like
+  unauthenticated request to `/dashboard` returned 307 into Clerk's handshake,
+  confirming that the demo exemption did not open the real application.
+- The shareable demo remains link-accessible but emits `noindex, nofollow`, so
+  illustrative records and public reference images are not invited into search
+  indexes.
 - A local production-server round trip returned PUT 201 and GET 200. The source
   and downloaded PNG shared SHA-256
   `f283b96e7e52ce2cdea1d246834136916295303c9daab63a8e60fe315c030c7d`.
