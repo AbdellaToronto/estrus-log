@@ -236,6 +236,13 @@ test.describe("supervisor demo connected workflow", () => {
     ).toHaveAttribute("aria-valuenow", "8");
     await expectContained();
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+
+    await page.getByRole("button", { name: "How it works" }).click();
+    await expect(
+      page.getByRole("heading", { name: "AI proposes. Scientists supervise." })
+    ).toBeVisible();
+    await expectContained();
+    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
   });
 
   test("captures the selected day-complete visual target", async ({ page }) => {
