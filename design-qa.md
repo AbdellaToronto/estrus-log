@@ -165,6 +165,18 @@ comparison.
 - Post-fix evidence: Prediction Inbox and Review Receipt both pass Axe at
   390 x 844 with no violations.
 
+### Iteration 7
+
+- P1: the receipt summary originally counted an uncertain transition as a
+  correction because both outcomes differ from the AI proposal. That disagreed
+  with Day Complete, which correctly reported one correction and one uncertain
+  record.
+- Fix: split uncertain transitions into their own receipt metric. The completed
+  demo now reports six accepted proposals, one corrected stage, and one
+  uncertain transition across eight reviewed observations.
+- Post-fix evidence: the receipt workflow asserts each outcome count and the
+  exact corrected and uncertain rows.
+
 ## Primary interactions tested
 
 - Day Complete is directly reachable from the demo navigation.

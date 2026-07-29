@@ -149,6 +149,9 @@ test.describe("supervisor demo connected workflow", () => {
 
     await page.getByRole("button", { name: "Open saved records" }).click();
     await expect(page.getByRole("heading", { name: "Review complete" })).toBeVisible();
+    await expect(page.getByTestId("receipt-stat-accepted")).toContainText("6");
+    await expect(page.getByTestId("receipt-stat-corrected")).toContainText("1");
+    await expect(page.getByTestId("receipt-stat-uncertain")).toContainText("1");
     const correctedRow = page.getByTestId("receipt-row-demo-225");
     await expect(correctedRow).toContainText("Estrus");
     await expect(correctedRow).toContainText("Proestrus");

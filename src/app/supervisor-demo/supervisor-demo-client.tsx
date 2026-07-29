@@ -404,7 +404,14 @@ function Receipt({
 }) {
   const finalized = items.filter((item) => item.finalStage);
   const accepted = finalized.filter((item) => item.finalStage === item.prediction).length;
-  const corrected = finalized.filter((item) => item.finalStage !== item.prediction).length;
+  const corrected = finalized.filter(
+    (item) =>
+      item.finalStage !== item.prediction &&
+      item.finalStage !== "Uncertain / transition"
+  ).length;
+  const uncertain = finalized.filter(
+    (item) => item.finalStage === "Uncertain / transition"
+  ).length;
   return (
     <main className="mx-auto max-w-[1200px] px-5 py-8 sm:px-8 lg:px-12">
       <button type="button" onClick={onBack} className="inline-flex items-center gap-2 text-sm font-semibold text-[#625f58] hover:text-[#353a87]"><ChevronLeft className="h-4 w-4" />Back to predictions</button>
@@ -414,14 +421,22 @@ function Receipt({
         <p className="mt-2 text-sm text-[#625f58]">The receipt keeps the AI proposal and scientist&apos;s final decision side by side.</p>
       </div>
 
-      <section className="mt-6 grid border border-[#ded9cd] bg-white sm:grid-cols-4">
+      <section
+        className="mt-6 grid border border-[#ded9cd] bg-white sm:grid-cols-5"
+        data-testid="receipt-summary"
+      >
         {[
           ["Analyzed", items.length],
           ["Reviewed", finalized.length],
           ["Accepted", accepted],
           ["Corrected", corrected],
+          ["Uncertain", uncertain],
         ].map(([label, value], index) => (
-          <div key={String(label)} className={cn("p-5", index > 0 && "border-t border-[#ded9cd] sm:border-l sm:border-t-0")}>
+          <div
+            key={String(label)}
+            data-testid={`receipt-stat-${String(label).toLowerCase()}`}
+            className={cn("p-5", index > 0 && "border-t border-[#ded9cd] sm:border-l sm:border-t-0")}
+          >
             <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#68645d]">{label}</p>
             <p className="mt-2 font-serif text-3xl text-[#292b4c]">{value}</p>
           </div>
