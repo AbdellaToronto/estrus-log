@@ -625,7 +625,17 @@ export function DayComplete({
             {replaying ? `Replaying the last ${range} days of observations.` : ""}
           </p>
 
-          <div className="mt-5 overflow-x-auto border-y border-[#ded9cd] bg-white">
+          <p className="mt-3 inline-flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-[#625f58] sm:hidden">
+            Swipe the timeline for earlier and later days
+            <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+          </p>
+
+          <div
+            className="mt-3 overflow-x-auto border-y border-[#ded9cd] bg-white sm:mt-5"
+            role="region"
+            aria-label="Scrollable cycle histories"
+            tabIndex={0}
+          >
             <div className="min-w-[780px]">
               <div className="grid grid-cols-[150px_minmax(620px,1fr)] items-end border-b border-[#ded9cd] bg-[#fbfaf7] px-3 py-2 text-[9px] font-bold uppercase tracking-[0.13em] text-[#625f58]">
                 <span>Mouse</span>

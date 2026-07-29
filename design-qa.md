@@ -88,7 +88,8 @@ comparison.
   replay, insight shortcuts, saved records, and export are visibly interactive.
 - Responsiveness: the 390 x 844 workflow check reports no document-level
   horizontal overflow. The dense history is deliberately contained in a
-  horizontally scrollable evidence region on small screens.
+  horizontally scrollable, named evidence region on small screens, with a
+  visible swipe instruction before the timeline.
 - Accessibility: the reduced-motion state passes Axe with no violations;
   chart SVGs are not nested focus targets; the two complementary landmarks have
   distinct names; semantic headings, labels, controls, image alt text, and a
@@ -138,9 +139,23 @@ comparison.
 - Post-fix evidence: the mobile accessibility workflow passes with zero Axe
   violations.
 
+### Iteration 5
+
+- P2: on the 390 px production capture, the timeline correctly stayed inside
+  its own horizontal scroller, but the first viewport made the remaining dates
+  look clipped rather than intentionally swipeable.
+- Fix: added a concise mobile-only swipe instruction and named the scrollable
+  history region for assistive technology and keyboard access.
+- Post-fix evidence: the connected suite now includes the complete eight-mouse
+  review path plus the mobile affordance and accessibility checks; all 41
+  workflows pass.
+
 ## Primary interactions tested
 
 - Day Complete is directly reachable from the demo navigation.
+- The real queue can be completed from AI proposals through five accepted
+  predictions, one corrected stage, and one uncertain transition; those exact
+  scientist decisions then appear in Day Complete and the saved-record receipt.
 - 7-, 14-, and 28-day ranges update the visible history window and date labels.
 - History coverage updates with each range and preserves missing records.
 - Hovering the expanded trajectory reveals the exact date and saved stage.
@@ -152,7 +167,8 @@ comparison.
   side.
 - Export review receipt downloads a CSV with proposal, decision, and model
   support provenance.
-- Mobile at 390 x 844 has no page-level overflow and passes Axe.
+- Mobile at 390 x 844 has no page-level overflow, explains how to swipe the
+  dense timeline, and passes Axe.
 
 ## Console check
 
