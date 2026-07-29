@@ -28,7 +28,25 @@ import { cn } from "@/lib/utils";
 
 type Neighbour = { label: ClassificationStage; similarity: number };
 
+type BinaryGroup = "PROESTRUS_OR_ESTRUS" | "METESTRUS_OR_DIESTRUS";
+
+type BinaryResult = {
+  group: BinaryGroup;
+  scores: Record<BinaryGroup, number>;
+  in_reference_domain: boolean;
+  nearest_similarity: number;
+  reference_count: number;
+  method: string;
+  sealed_test: { records: number; correct: number; balancedAccuracy: number };
+};
+
+const BINARY_LABEL: Record<BinaryGroup, string> = {
+  PROESTRUS_OR_ESTRUS: "Proestrus or Estrus",
+  METESTRUS_OR_DIESTRUS: "Metestrus or Diestrus",
+};
+
 type AnalysisResponse = {
+  binary: BinaryResult | null;
   stage: ClassificationStage;
   abstained: boolean;
   scores: Record<ClassificationStage, number>;
@@ -533,21 +551,86 @@ export function LiveAnalysis() {
 
           {phase === "done" && result && (
             <div>
+              {/* The validated claim leads. The four-stage guess follows, marked. */}
+              {result.binary && (
+                <div className="border-b border-[#ded9cd] bg-[#fbfaf7] p-6">
+                  <div className="flex items-center justify-between">
+                    <Eyebrow>Validated task · white-coat binary</Eyebrow>
+                    <span className="text-[10px] text-[#625f58]">
+                      {result.binary.sealed_test.correct}/
+                      {result.binary.sealed_test.records} on the sealed public test
+                    </span>
+                  </div>
+                  <h2 className="mt-2 font-serif text-4xl text-[#292b4c]">
+                    {BINARY_LABEL[result.binary.group]}
+                  </h2>
+                  <p className="mt-1 text-sm font-semibold text-[#555a9d]">
+                    {Math.round(result.binary.scores[result.binary.group] * 100)}% relative
+                    support · {(result.elapsed_ms / 1000).toFixed(1)}s
+                  </p>
+
+                  <div className="mt-5 space-y-2">
+                    {(
+                      ["PROESTRUS_OR_ESTRUS", "METESTRUS_OR_DIESTRUS"] as BinaryGroup[]
+                    ).map((group) => {
+                      const percentage = Math.round(result.binary!.scores[group] * 100);
+                      const leading = group === result.binary!.group;
+                      return (
+                        <div
+                          key={group}
+                          className="grid grid-cols-[170px_minmax(0,1fr)_44px] items-center gap-3"
+                        >
+                          <span
+                            className={cn(
+                              "text-sm",
+                              leading ? "font-semibold text-[#292b4c]" : "text-[#6f6b64]"
+                            )}
+                          >
+                            {BINARY_LABEL[group]}
+                          </span>
+                          <div className="h-2 overflow-hidden rounded-full bg-[#ebe7df]">
+                            <div
+                              className={cn(
+                                "h-full rounded-full",
+                                leading ? "bg-[#454a9f]" : "bg-[#b4b2d4]"
+                              )}
+                              style={{ width: `${percentage}%` }}
+                            />
+                          </div>
+                          <span className="text-right text-sm tabular-nums text-[#625f58]">
+                            {percentage}%
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {!result.binary.in_reference_domain && (
+                    <p className="mt-4 border border-[#e2bf95] bg-[#fff7e9] px-3 py-2 text-[13px] leading-5 text-[#7d4a2f]">
+                      This photograph sits outside the white-coat reference set — nearest
+                      match {(result.binary.nearest_similarity * 100).toFixed(1)}%. Read the
+                      binary call as out-of-domain.
+                    </p>
+                  )}
+                </div>
+              )}
+
               <div className="border-b border-[#ded9cd] p-6">
                 <Eyebrow>
-                  {result.abstained ? "Model abstained" : "Model proposal"}
+                  {result.abstained
+                    ? "Four-stage · abstained · not validated"
+                    : "Four-stage · not validated"}
                 </Eyebrow>
                 <div className="mt-2 flex flex-wrap items-end justify-between gap-4">
                   <div>
-                    <h2 className="font-serif text-4xl text-[#292b4c]">
+                    <h3 className="font-serif text-2xl text-[#292b4c]">
                       {result.abstained
                         ? "No confident stage"
                         : `Closest to ${result.stage}`}
-                    </h2>
-                    <p className="mt-1 text-sm font-semibold text-[#555a9d]">
-                      {Math.round(result.scores[result.stage] * 100)}% relative support
-                      {" · "}
-                      {(result.elapsed_ms / 1000).toFixed(1)}s
+                    </h3>
+                    <p className="mt-1 text-sm text-[#625f58]">
+                      {Math.round(result.scores[result.stage] * 100)}% relative support ·
+                      near chance on held-out mice, shown for transparency
                     </p>
                   </div>
                 </div>

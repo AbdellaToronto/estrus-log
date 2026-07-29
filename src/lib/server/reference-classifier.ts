@@ -22,6 +22,7 @@ import {
   type ClassificationStage,
 } from "@/lib/classification";
 import bundledBank from "@/lib/reference-bank.json";
+import whiteBinaryBank from "@/lib/white-binary-bank.json";
 
 export type ReferenceNeighbour = {
   label: ClassificationStage;
@@ -80,15 +81,15 @@ type DecodedBank = {
 
 let decodedBank: DecodedBank | null = null;
 
-/** Decode the int8 bank once per process and re-normalise each row so cosine
- *  similarity is a plain dot product. */
-function getBundledBank(): DecodedBank {
-  if (decodedBank) return decodedBank;
-
-  const bank = bundledBank as unknown as BundledBank;
-  const { dimensions } = bank;
-  const raw = Buffer.from(bank.vectors, "base64");
-  const rows = bank.labels.length;
+/** Decode an int8 bank and re-normalise each row so cosine similarity is a plain
+ *  dot product. Labels are kept as raw strings; callers narrow them. */
+function decodeInt8Bank(
+  base64Vectors: string,
+  labels: string[],
+  dimensions: number
+): { labels: string[]; matrix: Float32Array; dimensions: number } {
+  const raw = Buffer.from(base64Vectors, "base64");
+  const rows = labels.length;
   const matrix = new Float32Array(rows * dimensions);
 
   for (let row = 0; row < rows; row += 1) {
@@ -107,10 +108,20 @@ function getBundledBank(): DecodedBank {
     }
   }
 
+  return { labels, matrix, dimensions };
+}
+
+/** Decode the four-stage bank once per process. */
+function getBundledBank(): DecodedBank {
+  if (decodedBank) return decodedBank;
+
+  const bank = bundledBank as unknown as BundledBank;
+  const decoded = decodeInt8Bank(bank.vectors, bank.labels, bank.dimensions);
+
   decodedBank = {
-    labels: bank.labels.filter(isClassificationStage) as ClassificationStage[],
-    matrix,
-    dimensions,
+    labels: decoded.labels.filter(isClassificationStage) as ClassificationStage[],
+    matrix: decoded.matrix,
+    dimensions: decoded.dimensions,
   };
   return decodedBank;
 }
@@ -299,3 +310,111 @@ export const CLASSIFIER_SETTINGS = {
   NARROW_MARGIN,
   OUT_OF_DOMAIN_SIMILARITY,
 } as const;
+
+// ---------------------------------------------------------------------------
+// White-coat binary task
+// ---------------------------------------------------------------------------
+
+/**
+ * The demo's validated scope is white-coated mice, but the four-stage bank above
+ * is built from this lab's dark-coated photographs. A white upload lands far from
+ * every dark reference and abstains — correct, but it leaves the reviewer with
+ * nothing.
+ *
+ * This is a second bank over the public white-coated benchmark, on the binary
+ * task the published protocol actually validates: proestrus-or-estrus against
+ * metestrus-or-diestrus. It scores 52/76 (68.4% balanced) on the sealed test.
+ * That is well clear of the 50% chance line and well behind the promoted DINOv2
+ * eight-head ensemble's 66/76, which is the point — it is a nearest-neighbour
+ * floor, shown when the GPU ensemble is unreachable.
+ */
+export type BinaryGroup = "PROESTRUS_OR_ESTRUS" | "METESTRUS_OR_DIESTRUS";
+
+export type BinaryClassification = {
+  group: BinaryGroup;
+  scores: Record<BinaryGroup, number>;
+  nearestSimilarity: number;
+  referenceCount: number;
+  method: string;
+  sealedTest: { records: number; correct: number; balancedAccuracy: number };
+  /** True when the photograph resembles the white-coat reference set at all. */
+  inReferenceDomain: boolean;
+};
+
+const BINARY_GROUPS: readonly BinaryGroup[] = [
+  "PROESTRUS_OR_ESTRUS",
+  "METESTRUS_OR_DIESTRUS",
+];
+
+type WhiteBank = {
+  labels: string[];
+  vectors: string;
+  dimensions: number;
+  settings: { k: number; temperature: number };
+  sealed_test: { records: number; correct: number; balanced_accuracy: number };
+};
+
+let decodedWhiteBank: { labels: string[]; matrix: Float32Array; dimensions: number } | null =
+  null;
+
+function getWhiteBank() {
+  if (decodedWhiteBank) return decodedWhiteBank;
+  const bank = whiteBinaryBank as unknown as WhiteBank;
+  decodedWhiteBank = decodeInt8Bank(bank.vectors, bank.labels, bank.dimensions);
+  return decodedWhiteBank;
+}
+
+export function classifyWhiteCoatBinary(embedding: number[]): BinaryClassification | null {
+  const bank = whiteBinaryBank as unknown as WhiteBank;
+  const decoded = getWhiteBank();
+  if (embedding.length !== decoded.dimensions) return null;
+
+  const { k, temperature } = bank.settings;
+  const query = normalise(embedding);
+
+  const scored = decoded.labels.map((label, row) => {
+    const offset = row * decoded.dimensions;
+    let dot = 0;
+    for (let column = 0; column < decoded.dimensions; column += 1) {
+      dot += query[column] * decoded.matrix[offset + column];
+    }
+    return { label, similarity: dot };
+  });
+
+  const nearest = scored.sort((a, b) => b.similarity - a.similarity).slice(0, k);
+  const best = nearest[0].similarity;
+
+  const scores: Record<BinaryGroup, number> = {
+    PROESTRUS_OR_ESTRUS: 0,
+    METESTRUS_OR_DIESTRUS: 0,
+  };
+  let total = 0;
+  for (const neighbour of nearest) {
+    if (!BINARY_GROUPS.includes(neighbour.label as BinaryGroup)) continue;
+    const weight = Math.exp((neighbour.similarity - best) / temperature);
+    scores[neighbour.label as BinaryGroup] += weight;
+    total += weight;
+  }
+  if (total > 0) {
+    for (const group of BINARY_GROUPS) scores[group] /= total;
+  }
+
+  const group =
+    scores.PROESTRUS_OR_ESTRUS >= scores.METESTRUS_OR_DIESTRUS
+      ? "PROESTRUS_OR_ESTRUS"
+      : "METESTRUS_OR_DIESTRUS";
+
+  return {
+    group,
+    scores,
+    nearestSimilarity: best,
+    referenceCount: nearest.length,
+    method: `BioCLIP embedding + similarity-weighted k-NN (k=${k}) over the white-coat public benchmark`,
+    sealedTest: {
+      records: bank.sealed_test.records,
+      correct: bank.sealed_test.correct,
+      balancedAccuracy: bank.sealed_test.balanced_accuracy,
+    },
+    inReferenceDomain: best >= OUT_OF_DOMAIN_SIMILARITY,
+  };
+}

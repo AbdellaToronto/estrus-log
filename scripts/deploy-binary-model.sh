@@ -128,6 +128,9 @@ gcloud run deploy "${SERVICE}" \
   --concurrency 4 \
   --min-instances 0 \
   --max-instances 3 \
+  `# Startup loads eight heads, two DINOv2 backbones, and hashes 758 reference` \
+  `# images before serving, which overruns the default probe on CPU.` \
+  --startup-probe "tcpSocket.port=8080,initialDelaySeconds=30,periodSeconds=15,failureThreshold=30,timeoutSeconds=10" \
   --set-env-vars "ESTRUS_BINARY_API_TOKEN=${TOKEN}" \
   --quiet
 

@@ -13,6 +13,7 @@
 import { NextRequest } from "next/server";
 import {
   classifyEmbedding,
+  classifyWhiteCoatBinary,
   shouldAbstain,
   CLASSIFIER_SETTINGS,
 } from "@/lib/server/reference-classifier";
@@ -225,7 +226,22 @@ async function runAnalysis(
   const classification = await classifyEmbedding(embedding);
   const abstained = shouldAbstain(classification);
 
+  // The demo's validated scope is the binary task on white-coated mice, so that
+  // is reported alongside the unvalidated four-stage guess rather than buried.
+  const binary = classifyWhiteCoatBinary(embedding);
+
   const result = {
+    binary: binary
+      ? {
+          group: binary.group,
+          scores: binary.scores,
+          in_reference_domain: binary.inReferenceDomain,
+          nearest_similarity: Number(binary.nearestSimilarity.toFixed(4)),
+          reference_count: binary.referenceCount,
+          method: binary.method,
+          sealed_test: binary.sealedTest,
+        }
+      : null,
     stage: classification.stage,
     abstained,
     scores: classification.scores,

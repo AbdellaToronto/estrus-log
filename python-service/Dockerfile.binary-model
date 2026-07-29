@@ -31,7 +31,10 @@ RUN pip install --no-cache-dir \
       torch==2.8.0 torchvision==0.23.0 \
  && pip install --no-cache-dir \
       "transformers==4.57.1" \
-      "scikit-learn==1.7.2" \
+      `# Must match the version that fitted the heads. They were pickled by` \
+      `# 1.9.0, which no longer stores LogisticRegression.multi_class; loading` \
+      `# them under 1.7.x crashes because that code still reads the attribute.` \
+      "scikit-learn==1.9.0" \
       "joblib==1.5.2" \
       "numpy==2.3.4" \
       "pillow==11.3.0" \
