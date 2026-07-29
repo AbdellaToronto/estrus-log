@@ -70,7 +70,9 @@ export async function requestExternalBinarySuggestion(
         method: "POST",
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
         body: formData,
-        signal: AbortSignal.timeout(45_000),
+        // The service scales to zero, so a cold container loads eight heads and
+        // two DINOv2 backbones before it can answer.
+        signal: AbortSignal.timeout(120_000),
         cache: "no-store",
       }
     );

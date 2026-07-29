@@ -18,6 +18,7 @@ import {
   CLASSIFIER_SETTINGS,
 } from "@/lib/server/reference-classifier";
 import { saveDemoAnalysis, signStoredImages } from "@/lib/server/demo-analysis-store";
+import { requestExternalBinarySuggestion } from "@/lib/server/external-binary";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -210,16 +211,21 @@ async function runAnalysis(
   const originalBytes = Buffer.from(await file.arrayBuffer());
   const base64Image = originalBytes.toString("base64");
 
-  // Segmentation and embedding are issued together, so they are reported as
-  // one stage rather than pretending they are sequential.
+  // Segmentation, the BioCLIP embedding, and the promoted DINOv2 ensemble are
+  // all issued together, so they are reported as one stage rather than
+  // pretending they are sequential.
   send({ event: "stage", stage: "encoding" });
 
   // Segmentation is shown to the reviewer, but the classifier reads the
   // photograph as supplied, which is the domain the reference library was
   // built from.
-  const [segmentation, embedding] = await Promise.all([
+  //
+  // The ensemble is the validated model for this task and returns undefined when
+  // its service is unconfigured or asleep, so it can never fail the request.
+  const [segmentation, embedding, ensemble] = await Promise.all([
     segment(base64Image),
     embed(base64Image),
+    requestExternalBinarySuggestion(file, true),
   ]);
 
   send({ event: "stage", stage: "matching" });
@@ -228,18 +234,48 @@ async function runAnalysis(
 
   // The demo's validated scope is the binary task on white-coated mice, so that
   // is reported alongside the unvalidated four-stage guess rather than buried.
-  const binary = classifyWhiteCoatBinary(embedding);
+  //
+  // Two sources, deliberately both reported. The promoted ensemble is the
+  // validated model at 66/76 on the sealed test; the k-NN bank is a
+  // nearest-neighbour floor at 52/76 that needs no GPU. Showing the floor makes
+  // the ensemble's contribution legible instead of asking for trust.
+  const floor = classifyWhiteCoatBinary(embedding);
 
   const result = {
-    binary: binary
+    binary: ensemble
       ? {
-          group: binary.group,
-          scores: binary.scores,
-          in_reference_domain: binary.inReferenceDomain,
-          nearest_similarity: Number(binary.nearestSimilarity.toFixed(4)),
-          reference_count: binary.referenceCount,
-          method: binary.method,
-          sealed_test: binary.sealedTest,
+          source: "promoted_ensemble" as const,
+          group: ensemble.reference_backed_binary_suggestion ?? ensemble.binary_suggestion,
+          probability_proestrus_or_estrus: ensemble.probability_proestrus_or_estrus,
+          threshold: ensemble.threshold,
+          decision_status: ensemble.decision_status,
+          model_version: ensemble.model_version,
+          out_of_reference: ensemble.reference_domain.out_of_reference,
+          acquisition_out_of_range: ensemble.acquisition_domain.out_of_range,
+          dark_coat_agrees: ensemble.synthetic_dark_coat.agrees_with_clean,
+          abstention_reasons: ensemble.abstention_reasons,
+          method: "DINOv2 eight-head robust ensemble, guarded",
+          sealed_test: { records: 76, correct: 66, balancedAccuracy: 0.868 },
+        }
+      : floor
+        ? {
+            source: "knn_floor" as const,
+            group: floor.group,
+            scores: floor.scores,
+            in_reference_domain: floor.inReferenceDomain,
+            nearest_similarity: Number(floor.nearestSimilarity.toFixed(4)),
+            reference_count: floor.referenceCount,
+            method: floor.method,
+            sealed_test: floor.sealedTest,
+          }
+        : null,
+    // Retained even when the ensemble answers, so the two can be compared.
+    binary_floor: floor
+      ? {
+          group: floor.group,
+          scores: floor.scores,
+          in_reference_domain: floor.inReferenceDomain,
+          sealed_test: floor.sealedTest,
         }
       : null,
     stage: classification.stage,

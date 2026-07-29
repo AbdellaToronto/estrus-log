@@ -30,15 +30,37 @@ type Neighbour = { label: ClassificationStage; similarity: number };
 
 type BinaryGroup = "PROESTRUS_OR_ESTRUS" | "METESTRUS_OR_DIESTRUS";
 
-type BinaryResult = {
+type SealedTest = { records: number; correct: number; balancedAccuracy: number };
+
+/** The validated DINOv2 ensemble, when its service answers. */
+type EnsembleResult = {
+  source: "promoted_ensemble";
+  group: BinaryGroup;
+  probability_proestrus_or_estrus: number;
+  threshold: number;
+  decision_status: "reference_backed_suggestion" | "abstain";
+  model_version: string;
+  out_of_reference: boolean;
+  acquisition_out_of_range: boolean;
+  dark_coat_agrees: boolean;
+  abstention_reasons: string[];
+  method: string;
+  sealed_test: SealedTest;
+};
+
+/** The GPU-free nearest-neighbour floor, used when the ensemble is unreachable. */
+type FloorResult = {
+  source: "knn_floor";
   group: BinaryGroup;
   scores: Record<BinaryGroup, number>;
   in_reference_domain: boolean;
   nearest_similarity: number;
   reference_count: number;
   method: string;
-  sealed_test: { records: number; correct: number; balancedAccuracy: number };
+  sealed_test: SealedTest;
 };
+
+type BinaryResult = EnsembleResult | FloorResult;
 
 const BINARY_LABEL: Record<BinaryGroup, string> = {
   PROESTRUS_OR_ESTRUS: "Proestrus or Estrus",
@@ -47,6 +69,12 @@ const BINARY_LABEL: Record<BinaryGroup, string> = {
 
 type AnalysisResponse = {
   binary: BinaryResult | null;
+  binary_floor: {
+    group: BinaryGroup;
+    scores: Record<BinaryGroup, number>;
+    in_reference_domain: boolean;
+    sealed_test: SealedTest;
+  } | null;
   stage: ClassificationStage;
   abstained: boolean;
   scores: Record<ClassificationStage, number>;
@@ -554,63 +582,132 @@ export function LiveAnalysis() {
               {/* The validated claim leads. The four-stage guess follows, marked. */}
               {result.binary && (
                 <div className="border-b border-[#ded9cd] bg-[#fbfaf7] p-6">
-                  <div className="flex items-center justify-between">
-                    <Eyebrow>Validated task · white-coat binary</Eyebrow>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <Eyebrow>
+                      {result.binary.source === "promoted_ensemble"
+                        ? "Validated model · white-coat binary"
+                        : "Nearest-neighbour floor · white-coat binary"}
+                    </Eyebrow>
                     <span className="text-[10px] text-[#625f58]">
                       {result.binary.sealed_test.correct}/
                       {result.binary.sealed_test.records} on the sealed public test
                     </span>
                   </div>
+
                   <h2 className="mt-2 font-serif text-4xl text-[#292b4c]">
-                    {BINARY_LABEL[result.binary.group]}
+                    {result.binary.source === "promoted_ensemble" &&
+                    result.binary.decision_status === "abstain"
+                      ? "Abstained"
+                      : BINARY_LABEL[result.binary.group]}
                   </h2>
-                  <p className="mt-1 text-sm font-semibold text-[#555a9d]">
-                    {Math.round(result.binary.scores[result.binary.group] * 100)}% relative
-                    support · {(result.elapsed_ms / 1000).toFixed(1)}s
-                  </p>
 
-                  <div className="mt-5 space-y-2">
-                    {(
-                      ["PROESTRUS_OR_ESTRUS", "METESTRUS_OR_DIESTRUS"] as BinaryGroup[]
-                    ).map((group) => {
-                      const percentage = Math.round(result.binary!.scores[group] * 100);
-                      const leading = group === result.binary!.group;
-                      return (
-                        <div
-                          key={group}
-                          className="grid grid-cols-[170px_minmax(0,1fr)_44px] items-center gap-3"
-                        >
-                          <span
-                            className={cn(
-                              "text-sm",
-                              leading ? "font-semibold text-[#292b4c]" : "text-[#6f6b64]"
-                            )}
-                          >
-                            {BINARY_LABEL[group]}
-                          </span>
-                          <div className="h-2 overflow-hidden rounded-full bg-[#ebe7df]">
-                            <div
-                              className={cn(
-                                "h-full rounded-full",
-                                leading ? "bg-[#454a9f]" : "bg-[#b4b2d4]"
-                              )}
-                              style={{ width: `${percentage}%` }}
-                            />
+                  {result.binary.source === "promoted_ensemble" ? (
+                    <>
+                      <p className="mt-1 text-sm font-semibold text-[#555a9d]">
+                        P(proestrus or estrus) ={" "}
+                        {result.binary.probability_proestrus_or_estrus.toFixed(3)} against a{" "}
+                        {result.binary.threshold} threshold ·{" "}
+                        {(result.elapsed_ms / 1000).toFixed(1)}s
+                      </p>
+                      <dl className="mt-5 grid gap-x-6 gap-y-2 text-xs sm:grid-cols-2">
+                        {[
+                          ["Model", result.binary.model_version],
+                          [
+                            "Decision",
+                            result.binary.decision_status === "reference_backed_suggestion"
+                              ? "Reference-backed suggestion"
+                              : "Abstained",
+                          ],
+                          [
+                            "Reference domain",
+                            result.binary.out_of_reference ? "Outside" : "Inside",
+                          ],
+                          [
+                            "Acquisition guard",
+                            result.binary.acquisition_out_of_range ? "Out of range" : "In range",
+                          ],
+                          [
+                            "Dark-coat stress view",
+                            result.binary.dark_coat_agrees ? "Agrees" : "Disagrees",
+                          ],
+                        ].map(([label, value]) => (
+                          <div key={String(label)}>
+                            <dt className="font-bold uppercase tracking-[0.1em] text-[#68645d]">
+                              {label}
+                            </dt>
+                            <dd className="mt-0.5 break-words text-[#292b4c]">{String(value)}</dd>
                           </div>
-                          <span className="text-right text-sm tabular-nums text-[#625f58]">
-                            {percentage}%
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {!result.binary.in_reference_domain && (
-                    <p className="mt-4 border border-[#e2bf95] bg-[#fff7e9] px-3 py-2 text-[13px] leading-5 text-[#7d4a2f]">
-                      This photograph sits outside the white-coat reference set — nearest
-                      match {(result.binary.nearest_similarity * 100).toFixed(1)}%. Read the
-                      binary call as out-of-domain.
-                    </p>
+                        ))}
+                      </dl>
+                      {/* The floor is kept visible so the ensemble's contribution is
+                          legible rather than asserted. */}
+                      {result.binary_floor && (
+                        <p className="mt-4 border-t border-[#e8e3da] pt-3 text-[13px] leading-5 text-[#625f58]">
+                          A GPU-free nearest-neighbour baseline over the same references
+                          would have said{" "}
+                          <span className="font-semibold text-[#292b4c]">
+                            {BINARY_LABEL[result.binary_floor.group]}
+                          </span>{" "}
+                          ({result.binary_floor.sealed_test.correct}/
+                          {result.binary_floor.sealed_test.records} on the same sealed test).
+                        </p>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <p className="mt-1 text-sm font-semibold text-[#555a9d]">
+                        {Math.round(result.binary.scores[result.binary.group] * 100)}% relative
+                        support · {(result.elapsed_ms / 1000).toFixed(1)}s
+                      </p>
+                      <div className="mt-5 space-y-2">
+                        {(
+                          ["PROESTRUS_OR_ESTRUS", "METESTRUS_OR_DIESTRUS"] as BinaryGroup[]
+                        ).map((group) => {
+                          const floor = result.binary as FloorResult;
+                          const percentage = Math.round(floor.scores[group] * 100);
+                          const leading = group === floor.group;
+                          return (
+                            <div
+                              key={group}
+                              className="grid grid-cols-[170px_minmax(0,1fr)_44px] items-center gap-3"
+                            >
+                              <span
+                                className={cn(
+                                  "text-sm",
+                                  leading ? "font-semibold text-[#292b4c]" : "text-[#6f6b64]"
+                                )}
+                              >
+                                {BINARY_LABEL[group]}
+                              </span>
+                              <div className="h-2 overflow-hidden rounded-full bg-[#ebe7df]">
+                                <div
+                                  className={cn(
+                                    "h-full rounded-full",
+                                    leading ? "bg-[#454a9f]" : "bg-[#b4b2d4]"
+                                  )}
+                                  style={{ width: `${percentage}%` }}
+                                />
+                              </div>
+                              <span className="text-right text-sm tabular-nums text-[#625f58]">
+                                {percentage}%
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <p className="mt-4 text-[13px] leading-5 text-[#625f58]">
+                        The validated DINOv2 ensemble was unreachable, so this is the
+                        nearest-neighbour floor. It scores 18 points lower on the same sealed
+                        test.
+                      </p>
+                      {!result.binary.in_reference_domain && (
+                        <p className="mt-3 border border-[#e2bf95] bg-[#fff7e9] px-3 py-2 text-[13px] leading-5 text-[#7d4a2f]">
+                          This photograph also sits outside the white-coat reference set —
+                          nearest match{" "}
+                          {(result.binary.nearest_similarity * 100).toFixed(1)}%.
+                        </p>
+                      )}
+                    </>
                   )}
                 </div>
               )}
