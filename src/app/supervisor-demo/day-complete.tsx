@@ -625,7 +625,7 @@ export function DayComplete({
             {replaying ? `Replaying the last ${range} days of observations.` : ""}
           </p>
 
-          <p className="mt-3 inline-flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-[#625f58] sm:hidden">
+          <p className="mt-3 inline-flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-[#625f58] lg:hidden">
             Swipe the timeline for earlier and later days
             <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
           </p>

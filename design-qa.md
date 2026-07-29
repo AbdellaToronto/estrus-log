@@ -89,7 +89,8 @@ comparison.
 - Responsiveness: the 390 x 844 workflow check reports no document-level
   horizontal overflow. The dense history is deliberately contained in a
   horizontally scrollable, named evidence region on small screens, with a
-  visible swipe instruction before the timeline.
+  visible swipe instruction before the timeline at every breakpoint where
+  horizontal scrolling is still required.
 - Accessibility: the reduced-motion state passes Axe with no violations;
   chart SVGs are not nested focus targets; the two complementary landmarks have
   distinct names; semantic headings, labels, controls, image alt text, and a
@@ -143,9 +144,12 @@ comparison.
 
 - P2: on the 390 px production capture, the timeline correctly stayed inside
   its own horizontal scroller, but the first viewport made the remaining dates
-  look clipped rather than intentionally swipeable.
-- Fix: added a concise mobile-only swipe instruction and named the scrollable
-  history region for assistive technology and keyboard access.
+  look clipped rather than intentionally swipeable. A 768 px tablet audit
+  showed the same issue before the history reaches its non-scrolling layout.
+- Fix: added a concise compact-view swipe instruction and named the scrollable
+  history region for assistive technology and keyboard access. The instruction
+  remains visible through the tablet breakpoint and disappears once the
+  timeline fits without scrolling.
 - Post-fix evidence: the connected suite now includes the complete eight-mouse
   review path plus the mobile affordance and accessibility checks; all 41
   workflows pass.

@@ -133,6 +133,12 @@ test.describe("supervisor demo connected workflow", () => {
 
     const results = await new AxeBuilder({ page }).analyze();
     expect(results.violations).toEqual([]);
+
+    await page.setViewportSize({ width: 768, height: 1024 });
+    await expect(page.getByText("Swipe the timeline for earlier and later days")).toBeVisible();
+
+    await page.setViewportSize({ width: 1024, height: 900 });
+    await expect(page.getByText("Swipe the timeline for earlier and later days")).toBeHidden();
   });
 
   test("captures the selected day-complete visual target", async ({ page }) => {
