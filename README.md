@@ -10,7 +10,7 @@ The public rehearsal is available at
 [estrus-dusky.vercel.app/supervisor-demo](https://estrus-dusky.vercel.app/supervisor-demo).
 It is a complete, self-contained product journey:
 
-- **Prediction inbox** — triage eight observations by confidence and urgency.
+- **Prediction inbox** — triage eight observations by model support and urgency.
 - **Focused review** — inspect the image, cycle history, and four-stage model support.
 - **Review receipt** — distinguish accepted, corrected, and uncertain decisions and
   export a provenance-rich CSV.
