@@ -16,6 +16,7 @@ import {
   shouldAbstain,
   CLASSIFIER_SETTINGS,
 } from "@/lib/server/reference-classifier";
+import { saveDemoAnalysis, signStoredImages } from "@/lib/server/demo-analysis-store";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -64,7 +65,9 @@ function rateLimited(request: NextRequest): boolean {
   return false;
 }
 
-async function segment(base64Image: string): Promise<string | null> {
+type Segmentation = { bytes: Buffer; mimeType: string };
+
+async function segment(base64Image: string): Promise<Segmentation | null> {
   try {
     const response = await fetch(SAM3_URL, {
       method: "POST",
@@ -81,8 +84,10 @@ async function segment(base64Image: string): Promise<string | null> {
     const result = (await response.json()) as { image?: string; format?: string };
     if (!result.image) return null;
 
-    const mime = result.format === "png" ? "image/png" : "image/jpeg";
-    return `data:${mime};base64,${result.image}`;
+    return {
+      bytes: Buffer.from(result.image, "base64"),
+      mimeType: result.format === "png" ? "image/png" : "image/jpeg",
+    };
   } catch {
     // Segmentation is a visual aid, not a precondition for classification.
     return null;
@@ -164,12 +169,13 @@ export async function POST(request: NextRequest) {
   const startedAt = Date.now();
 
   try {
-    const base64Image = Buffer.from(await file.arrayBuffer()).toString("base64");
+    const originalBytes = Buffer.from(await file.arrayBuffer());
+    const base64Image = originalBytes.toString("base64");
 
     // Segmentation runs alongside the embedding: the crop is shown to the
     // reviewer, but the classifier reads the photograph as supplied, which is
     // the domain the reference library was built from.
-    const [croppedDataUri, embedding] = await Promise.all([
+    const [segmentation, embedding] = await Promise.all([
       segment(base64Image),
       embed(base64Image),
     ]);
@@ -177,7 +183,7 @@ export async function POST(request: NextRequest) {
     const classification = await classifyEmbedding(embedding);
     const abstained = shouldAbstain(classification);
 
-    return Response.json({
+    const result = {
       stage: classification.stage,
       abstained,
       scores: classification.scores,
@@ -195,7 +201,33 @@ export async function POST(request: NextRequest) {
       },
       review_required: true,
       review_reasons: classification.reviewReasons,
-      cropped_image: croppedDataUri,
+    };
+
+    // Persist so the analysis can be revisited and shared. A storage failure
+    // degrades to an in-memory result rather than losing the analysis.
+    const stored = await saveDemoAnalysis({
+      original: { bytes: originalBytes, mimeType: file.type },
+      segmented: segmentation,
+      result,
+    });
+
+    let originalUrl: string | null = null;
+    let segmentedUrl: string | null = null;
+    if (stored) {
+      ({ originalUrl, segmentedUrl } = await signStoredImages(stored));
+    }
+
+    return Response.json({
+      ...result,
+      id: stored?.id ?? null,
+      original_url: originalUrl,
+      // Fall back to an inline data URI when object storage is unavailable, so
+      // the segmentation is still visible.
+      cropped_image:
+        segmentedUrl ??
+        (segmentation
+          ? `data:${segmentation.mimeType};base64,${segmentation.bytes.toString("base64")}`
+          : null),
       elapsed_ms: Date.now() - startedAt,
     });
   } catch (error) {
