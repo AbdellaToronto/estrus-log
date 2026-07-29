@@ -468,22 +468,67 @@ export function LiveAnalysis() {
         </div>
       </section>
 
-      <section className="mt-5 flex gap-3 border border-[#e2bf95] bg-[#fff7e9] p-5 text-[#7d4a2f]">
-        <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
-        <div>
-          <p className="font-semibold">
-            This pipeline is live. The four-stage classifier behind it is not yet usable.
-          </p>
-          <p className="mt-1 text-sm leading-6">
-            Evaluated across 222 photographs with every mouse held out of its own
-            reference set, four-stage agreement is 27.7% balanced accuracy against a
-            25% chance rate, and 35.1% plain accuracy against a 39.2% majority-class
-            baseline. Recall is 68% for Estrus and 10–17% for the other three stages:
-            in practice this is an Estrus detector that over-predicts Estrus, not a
-            stage classifier. Treat what you see below as a working demonstration of
-            the encode-and-match pipeline, not as a staging result. Percentages are
-            relative support among the nearest references, never calibrated
-            probabilities.
+      <section className="mt-5 border border-[#ded9cd] bg-white">
+        <div className="flex gap-3 border-b border-[#ded9cd] bg-[#fff7e9] p-5 text-[#7d4a2f]">
+          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+          <div>
+            <p className="font-semibold">
+              This pipeline is live. No four-stage classifier is usable on this colony yet.
+            </p>
+            <p className="mt-1 text-sm leading-6">
+              Every figure below holds each mouse out of its own training set, because an
+              image-level split leaks: the same photographs score 53.3% that way, which
+              measures mouse recognition rather than staging.
+            </p>
+          </div>
+        </div>
+
+        <div className="overflow-x-auto p-5">
+          <table className="w-full min-w-[640px] border-collapse text-sm">
+            <caption className="mb-3 text-left text-[10px] font-bold uppercase tracking-[0.16em] text-[#68645d]">
+              Held out by mouse · balanced accuracy
+            </caption>
+            <thead>
+              <tr className="border-b border-[#ded9cd] text-left text-[11px] uppercase tracking-[0.1em] text-[#68645d]">
+                <th className="pb-2 font-bold">Photographs</th>
+                <th className="pb-2 font-bold">Method</th>
+                <th className="pb-2 text-right font-bold">Four-stage</th>
+                <th className="pb-2 text-right font-bold">Binary</th>
+              </tr>
+            </thead>
+            <tbody className="text-[#292b4c]">
+              {[
+                ["222 whole-animal · 11 mice", "BioCLIP + similarity k-NN", "27.7%", "—", false],
+                ["222 whole-animal · 11 mice", "DINOv2-base + logistic", "28.2%", "55.2%", false],
+                ["56 tight ROI · 14 mice", "DINOv2-base + logistic", "22.8%", "51.7%", false],
+                ["Public light-coated benchmark", "DINOv2 eight-head ensemble", "not applicable", "86.8%", true],
+              ].map(([data, method, four, binary, highlight]) => (
+                <tr
+                  key={String(data) + String(method)}
+                  className={cn(
+                    "border-b border-[#f0ece3]",
+                    highlight && "bg-[#f3faf5]"
+                  )}
+                >
+                  <td className="py-2 pr-4">{String(data)}</td>
+                  <td className="py-2 pr-4 text-[#625f58]">{String(method)}</td>
+                  <td className="py-2 text-right tabular-nums">{String(four)}</td>
+                  <td className={cn("py-2 text-right tabular-nums", highlight && "font-semibold")}>
+                    {String(binary)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="mt-4 max-w-3xl text-sm leading-6 text-[#625f58]">
+            Chance is 25% for four stages and 50% for binary. Swapping BioCLIP for DINOv2
+            moves four-stage accuracy by half a point across 11 mice, and tighter ROI
+            crops score below chance — so the backbone was never the bottleneck. The
+            useful signal is the last row: the same architecture reaches 86.8% on the
+            public light-coated benchmark. What separates those two numbers is the data —
+            coat colour, label provenance, and how many mice — not the model. Percentages
+            shown above the fold are relative support among nearest references, never
+            calibrated probabilities.
           </p>
         </div>
       </section>

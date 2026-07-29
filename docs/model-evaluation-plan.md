@@ -64,6 +64,40 @@ terms. Leave-one-mouse-out over all 222 local photographs, k=15, softmax tempera
 Scoring the same bank with the leaky image-level split instead reports 53.3%, so that
 number should never be quoted. It measures mouse recognition, not staging.
 
+### 2026-07-29 can DINOv2 carry four stages on this colony?
+
+No. `python-service/four_stage_dinov2_experiment.py` fits four-stage heads on the
+promoted policy's frozen DINOv2-small and DINOv2-base features under its robust
+colour views (`rgb`, `gray`, `dark`), scored leave-one-mouse-out. Every number below
+holds every subject out of its own training set.
+
+| Data | Method | Four-stage balanced | Binary balanced |
+| --- | --- | --- | --- |
+| Whole-animal, 222 images, 11 mice | BioCLIP + similarity k-NN | 27.7% | — |
+| Whole-animal, 222 images, 11 mice | DINOv2-base concat + logistic | **28.2%** | 55.2% |
+| Tight ROI, 56 images, 14 mice | DINOv2-base mean + logistic | 22.8% | 51.7% |
+| Public light-coated benchmark | DINOv2 eight-head ensemble | not applicable | **86.8%** |
+
+Chance is 25% for four stages and 50% for binary.
+
+Three conclusions:
+
+- **The backbone is not the bottleneck.** DINOv2 beats BioCLIP by half a point across
+  11 mice, which is nothing. The failure shape is identical under both: only Estrus is
+  detectable, with Metestrus and Diestrus recall near 17%.
+- **Tighter framing did not help.** ROI crops score *below* chance at 22.8%. The
+  hypothesis that whole-animal framing was diluting the signal is not supported at
+  n=56, though that sample is small enough that it argues for collecting more rather
+  than for abandoning ROI capture.
+- **The same architecture reaching 86.8% on the public set is the useful signal.**
+  What separates 86.8% from 55.2% is the data, not the model: coat colour, label
+  provenance, and subject count. The public model's own reference guard already flags
+  all 222 local images as out-of-reference.
+
+This is independent quantitative support for the protocol below. Collecting
+cytology-grounded labels across light, brown, grey, and dark coats, grouped by mouse
+and capture session, is worth more than any further backbone substitution.
+
 Domain note: `dataset_split_cropped/` holds whole-animal photographs and
 `dataset_split/` holds tight ROI crops, despite the names suggesting the reverse. A bank
 built only from the 56 ROI crops scores **below** its own majority baseline (33.9% versus
