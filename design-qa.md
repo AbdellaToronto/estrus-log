@@ -180,8 +180,9 @@ comparison.
   reduced-motion preferences.
 - Open saved records preserves AI proposal and scientist-saved decision side by
   side.
-- Export review receipt downloads a CSV with proposal, decision, and model
-  support provenance.
+- Export review receipt downloads a CSV with the proposal, all four relative
+  support scores, image reference, guardrail, scientist decision, review
+  outcome, timestamp, and explicit illustrative-demo scope.
 - Mobile at 390 x 844 has no page-level overflow, explains how to swipe the
   dense timeline, and passes Axe.
 

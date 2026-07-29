@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
+import { text } from "node:stream/consumers";
 
 test.describe("supervisor demo connected workflow", () => {
   test("keeps the public supervisor journey independent from Clerk", async ({ page }) => {
@@ -120,6 +121,31 @@ test.describe("supervisor demo connected workflow", () => {
     expect(download.suggestedFilename()).toBe(
       "north-colony-review-receipt-2026-07-28.csv"
     );
+    const csv = await text(await download.createReadStream());
+    expect(csv).toContain('"proestrus_relative_support"');
+    expect(csv).toContain('"estrus_relative_support"');
+    expect(csv).toContain('"metestrus_relative_support"');
+    expect(csv).toContain('"diestrus_relative_support"');
+    expect(csv).toContain('"score_semantics"');
+    expect(csv).toContain('"inference_mode"');
+    expect(csv).toContain('"relative_support_not_calibrated_probability"');
+    expect(csv).toContain('"illustrative_not_live_inference"');
+    expect(csv).toContain(
+      '"illustrative_demo","N-225","BALB/c","14 weeks","S-BIAD2395 · external photograph 155","Estrus","0.27","0.43","0.19","0.11","Proestrus","corrected"'
+    );
+    expect(csv).toContain(
+      '"illustrative_demo","N-227","C57BL/6J","16 weeks","S-BIAD2395 · external photograph 174","Proestrus","0.39","0.31","0.18","0.12","Uncertain / transition","uncertain"'
+    );
+    const correctedFields = csv
+      .split("\n")
+      .find((row) => row.includes('"N-225"'))
+      ?.slice(1, -1)
+      .split('","');
+    expect(correctedFields).toBeDefined();
+    const supportTotal = correctedFields!
+      .slice(6, 10)
+      .reduce((total, value) => total + Number(value), 0);
+    expect(supportTotal).toBeCloseTo(1, 8);
 
     await page.getByRole("button", { name: "Open saved records" }).click();
     await expect(page.getByRole("heading", { name: "Review complete" })).toBeVisible();

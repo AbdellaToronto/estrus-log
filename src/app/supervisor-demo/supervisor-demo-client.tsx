@@ -526,13 +526,52 @@ export function SupervisorDemoClient() {
     setView("receipt");
   };
   const exportReceipt = () => {
-    const header = ["subject", "ai_proposal", "saved_decision", "model_support"];
-    const rows = dayCompleteItems.map((item) => [
-      item.subject,
-      item.prediction,
-      item.finalStage ?? "",
-      String(item.scores[item.prediction]),
-    ]);
+    const header = [
+      "record_scope",
+      "subject",
+      "strain",
+      "age",
+      "image_reference",
+      "ai_proposal",
+      "proestrus_relative_support",
+      "estrus_relative_support",
+      "metestrus_relative_support",
+      "diestrus_relative_support",
+      "saved_decision",
+      "review_outcome",
+      "guardrail",
+      "score_semantics",
+      "inference_mode",
+      "reviewed_at",
+    ];
+    const rows = dayCompleteItems.map((item, index) => {
+      const savedDecision = item.finalStage ?? "";
+      const reviewOutcome =
+        savedDecision === "Uncertain / transition"
+          ? "uncertain"
+          : savedDecision === item.prediction
+            ? "accepted"
+            : "corrected";
+
+      return [
+        "illustrative_demo",
+        item.subject,
+        item.strain,
+        item.age,
+        item.filename,
+        item.prediction,
+        String(item.scores.Proestrus),
+        String(item.scores.Estrus),
+        String(item.scores.Metestrus),
+        String(item.scores.Diestrus),
+        savedDecision,
+        reviewOutcome,
+        item.guardrail,
+        "relative_support_not_calibrated_probability",
+        "illustrative_not_live_inference",
+        `2026-07-28T09:${String(24 + index).padStart(2, "0")}:00-04:00`,
+      ];
+    });
     const csv = [header, ...rows]
       .map((row) => row.map((value) => `"${String(value).replaceAll('"', '""')}"`).join(","))
       .join("\n");
