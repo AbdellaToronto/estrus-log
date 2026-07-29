@@ -84,9 +84,12 @@ test.describe("supervisor demo connected workflow", () => {
 
   test("carries real review decisions into the completed-day history", async ({ page }) => {
     await page.goto("/supervisor-demo");
+    const progress = page.getByRole("progressbar", { name: "Review progress" });
+    await expect(progress).toHaveAttribute("aria-valuenow", "0");
 
     // The queue begins on N-223, then advances to the earliest remaining item.
     await page.getByRole("button", { name: "Accept Metestrus" }).click();
+    await expect(progress).toHaveAttribute("aria-valuenow", "1");
     await page.getByRole("button", { name: "Accept Estrus" }).click();
     await page.getByRole("button", { name: "Accept Proestrus" }).click();
     await page.getByRole("button", { name: "Accept Diestrus" }).click();
@@ -102,6 +105,11 @@ test.describe("supervisor demo connected workflow", () => {
 
     await expect(page.getByRole("heading", { name: "Morning review complete" })).toBeVisible();
     await expect(page.getByText("8 / 8", { exact: true })).toBeVisible();
+    await expect(progress).toHaveAttribute("aria-valuenow", "8");
+    await expect(page.getByRole("button", { name: "Day complete" })).toHaveAttribute(
+      "aria-current",
+      "page"
+    );
     await expect(page.getByText("1", { exact: true }).nth(0)).toBeVisible();
 
     await page.getByRole("button", { name: "Open saved records" }).click();

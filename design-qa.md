@@ -180,6 +180,9 @@ comparison.
 ## Primary interactions tested
 
 - Day Complete is directly reachable from the demo navigation.
+- Demo navigation exposes the current page semantically, and the animated
+  review-progress bar reports 0 through 8 decisions to assistive technology
+  while respecting reduced-motion preferences.
 - The real queue can be completed from AI proposals through five accepted
   predictions, one corrected stage, and one uncertain transition; those exact
   scientist decisions then appear in Day Complete and the saved-record receipt.

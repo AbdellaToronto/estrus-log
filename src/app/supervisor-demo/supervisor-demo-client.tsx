@@ -194,6 +194,7 @@ function DemoHeader({
               <button
                 key={target}
                 type="button"
+                aria-current={view === target ? "page" : undefined}
                 onClick={() => onNavigate(target as DemoView)}
                 className={cn(
                   "relative px-3 py-2 text-sm font-semibold",
@@ -207,8 +208,18 @@ function DemoHeader({
           </nav>
           <div className="flex items-center gap-4 lg:ml-auto">
             <p className="text-xs text-[#625f58]"><span className="font-semibold text-[#292b4c]">{confirmedCount} of 8</span> reviewed</p>
-            <div className="h-1.5 w-32 overflow-hidden rounded-full bg-[#e4dfd5]">
-              <div className="h-full rounded-full bg-[#454a9f]" style={{ width: `${(confirmedCount / 8) * 100}%` }} />
+            <div
+              className="h-1.5 w-32 overflow-hidden rounded-full bg-[#e4dfd5]"
+              role="progressbar"
+              aria-label="Review progress"
+              aria-valuemin={0}
+              aria-valuemax={8}
+              aria-valuenow={confirmedCount}
+            >
+              <div
+                className="h-full rounded-full bg-[#454a9f] transition-[width] duration-500 ease-out motion-reduce:transition-none"
+                style={{ width: `${(confirmedCount / 8) * 100}%` }}
+              />
             </div>
           </div>
         </div>
