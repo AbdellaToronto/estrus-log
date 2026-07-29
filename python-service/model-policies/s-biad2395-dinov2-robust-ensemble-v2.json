@@ -1,0 +1,60 @@
+{
+  "model_version": "s-biad2395-dinov2-robust-ensemble-20260719-v2",
+  "system": "all_robust_average",
+  "components": [
+    "small_mean_logistic",
+    "small_mean_rbf",
+    "base_mean_logistic",
+    "base_mean_rbf",
+    "small_concat_logistic",
+    "small_concat_rbf",
+    "base_concat_logistic",
+    "base_concat_rbf"
+  ],
+  "threshold": 0.579,
+  "dataset_manifest_sha256": "41bd369e4a310a536433dd563a12c96602f5ac1bd88f04cc42ea300c492a26fa",
+  "backbone_revisions": {
+    "facebook/dinov2-small": "ed25f3a31f01632728cabb09d1542f84ab7b0056",
+    "facebook/dinov2-base": "f9e44c814b77203eaa57a6bdbbd535f21ede1415"
+  },
+  "base_model_report_sha256": "7b4fba926f5b444551c50f81a7839e1456d63a9b95845a3864f85ec621c3b0f0",
+  "selection_report_sha256": "8f574d088ef1bd6f4b91a21bb0a247976c3413b07328ecb04962ca40f5492388",
+  "acquisition_guard_report_sha256": "ff6dd30b883866ddf7ff709cf7bc9fb96cee1f01e3dddf8dbbeb608908153063",
+  "selection_contract": "clean-only policy and threshold selected by five repeated five-fold training-only CV runs",
+  "public_official_test": {
+    "records": 76,
+    "correct": 66,
+    "accuracy": 0.868421052631579,
+    "paper_correct": 63,
+    "paper_accuracy": 0.8289473684210527
+  },
+  "promotion_guardrails": {
+    "synthetic_condition_mean_accuracy": 0.8240131578947368,
+    "synthetic_condition_worst_accuracy": 0.7894736842105263,
+    "inference_synthetic_dark_correct": 63,
+    "clean_dark_agreement_records": 67,
+    "clean_dark_selective_accuracy": 0.8955223880597015,
+    "all_results_review_required": true,
+    "out_of_reference_or_clean_dark_disagreement_abstains": true,
+    "real_dark_coat_validation_complete": false
+  },
+  "acquisition_guard": {
+    "selection_source": "public training images only",
+    "tail_quantile": 0.0005,
+    "metrics": [
+      "median_luminance",
+      "median_saturation",
+      "red_green_ratio",
+      "blue_green_ratio",
+      "shadow_fraction",
+      "highlight_fraction",
+      "centre_outer_luminance_ratio"
+    ],
+    "clean_reference_backed_suggestions": 65,
+    "clean_reference_backed_correct": 58,
+    "clean_selective_accuracy": 0.8923076923076924,
+    "clean_acquisition_abstentions": 2,
+    "synthetic_shift_reference_backed_suggestions": 0,
+    "real_multi_coat_cytology_validation_complete": false
+  }
+}
