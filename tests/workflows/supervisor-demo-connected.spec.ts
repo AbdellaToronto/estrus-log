@@ -2,6 +2,19 @@ import { expect, test } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 
 test.describe("supervisor demo connected workflow", () => {
+  test("keeps the public supervisor journey independent from Clerk", async ({ page }) => {
+    await page.goto("/supervisor-demo");
+    await expect(page.getByRole("heading", { name: "Prediction inbox" })).toBeVisible();
+
+    const clerkBrowserRequests = await page.evaluate(() =>
+      performance
+        .getEntriesByType("resource")
+        .map((entry) => entry.name)
+        .filter((name) => name.includes(".clerk.accounts.dev"))
+    );
+    expect(clerkBrowserRequests).toEqual([]);
+  });
+
   test("makes a mouse card open a usable profile", async ({ page }) => {
     await page.goto("/cohort-lab");
     await page.waitForTimeout(600);

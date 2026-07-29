@@ -18,10 +18,10 @@ export const metadata: Metadata = {
   description: "Capture, review, and export scientist-confirmed mouse estrus-cycle observations.",
 };
 
-import { ClerkProvider } from '@clerk/nextjs'
 import { Sidebar } from "@/components/layout/sidebar";
 import { MobileNav } from "@/components/layout/mobile-nav";
 import { AppContent } from "@/components/layout/app-content";
+import { RouteAwareClerkProvider } from "@/components/auth/route-aware-clerk-provider";
 
 export default function RootLayout({
   children,
@@ -29,20 +29,16 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <ClerkProvider
-      afterSignOutUrl="/"
-      signInFallbackRedirectUrl="/onboarding"
-      signUpFallbackRedirectUrl="/onboarding"
-    >
-      <html lang="en">
-        <body
-          className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-screen`}
-        >
+    <html lang="en">
+      <body
+        className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-screen`}
+      >
+        <RouteAwareClerkProvider>
           <Sidebar />
           <MobileNav />
           <AppContent>{children}</AppContent>
-        </body>
-      </html>
-    </ClerkProvider>
+        </RouteAwareClerkProvider>
+      </body>
+    </html>
   );
 }

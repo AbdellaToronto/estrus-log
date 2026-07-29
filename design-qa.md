@@ -151,7 +151,7 @@ comparison.
   remains visible through the tablet breakpoint and disappears once the
   timeline fits without scrolling.
 - Post-fix evidence: the connected suite now includes the complete eight-mouse
-  review path plus the mobile affordance and accessibility checks; all 41
+  review path plus the mobile affordance and accessibility checks; all 42
   workflows pass.
 
 ## Primary interactions tested
@@ -177,9 +177,12 @@ comparison.
 ## Console check
 
 - In-app browser console errors: none.
-- The final settled load produced only the expected Clerk development-key
-  warning. Earlier Recharts measurement warnings did not recur after adding
-  initial responsive-container dimensions.
+- The public rehearsal routes no longer initialize Clerk, so the supervisor
+  demo has no development-key warning and makes no request to the Clerk browser
+  client at `*.clerk.accounts.dev`. Authenticated application routes retain the
+  normal Clerk provider.
+- Earlier Recharts measurement warnings did not recur after adding initial
+  responsive-container dimensions.
 
 ## Remaining findings
 
