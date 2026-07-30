@@ -18,7 +18,7 @@ import {
   BarChart,
   CartesianGrid,
   ComposedChart,
-  Line,
+  ReferenceArea,
   ReferenceLine,
   ResponsiveContainer,
   Scatter,
@@ -27,6 +27,8 @@ import {
   YAxis,
 } from "recharts";
 import { ESTRUS_STAGES, type ClassificationStage } from "@/lib/classification";
+import { CycleLegend, CycleStrip } from "@/components/prediction/cycle-strip";
+import { STAGE_VISUAL } from "@/lib/stage-palette";
 import { cn } from "@/lib/utils";
 
 type SavedStage = ClassificationStage | "Uncertain / transition";
@@ -50,14 +52,19 @@ type HistoryPoint = {
   value: number | null;
 };
 
-const STAGE_META: Record<
-  ClassificationStage,
-  { color: string; value: number; short: string }
-> = {
-  Diestrus: { color: "#446cb3", value: 1, short: "D" },
-  Proestrus: { color: "#77a6d2", value: 2, short: "P" },
-  Estrus: { color: "#5f8c55", value: 3, short: "E" },
-  Metestrus: { color: "#ce993b", value: 4, short: "M" },
+/**
+ * Lane positions only. Colour comes from the validated palette in
+ * src/lib/stage-palette.ts — this file used to carry a fourth, conflicting set.
+ *
+ * The order runs Diestrus, Proestrus, Estrus, Metestrus so the lanes stack in
+ * the cycle's own sequence. It is a position on a loop, not a magnitude, which
+ * is why nothing draws a line between the lanes.
+ */
+const STAGE_META: Record<ClassificationStage, { value: number }> = {
+  Diestrus: { value: 1 },
+  Proestrus: { value: 2 },
+  Estrus: { value: 3 },
+  Metestrus: { value: 4 },
 };
 
 const CYCLE_PATTERN: ClassificationStage[] = [
@@ -140,7 +147,7 @@ function CompactSupportScores({
                 animate={{ width: `${item.scores[stage] * 100}%` }}
                 transition={{ duration: reduceMotion ? 0 : 0.65, ease: [0.22, 1, 0.36, 1] }}
                 className="block h-full"
-                style={{ backgroundColor: STAGE_META[stage].color }}
+                style={{ backgroundColor: STAGE_VISUAL[stage].color }}
               />
             </span>
             <span className="text-right font-semibold tabular-nums text-[#292b4c]">
@@ -149,60 +156,6 @@ function CompactSupportScores({
           </div>
         ))}
       </div>
-    </div>
-  );
-}
-
-function MiniHistoryChart({
-  points,
-  replayKey,
-  reduceMotion,
-}: {
-  points: HistoryPoint[];
-  replayKey: number;
-  reduceMotion: boolean;
-}) {
-  return (
-    <div className="h-10 min-w-[620px]" aria-hidden="true">
-      <ResponsiveContainer
-        width="100%"
-        height="100%"
-        minWidth={0}
-        minHeight={1}
-        initialDimension={{ width: 620, height: 40 }}
-      >
-        <ComposedChart
-          key={replayKey}
-          data={points}
-          margin={{ top: 5, right: 8, bottom: 5, left: 8 }}
-          accessibilityLayer={false}
-        >
-          <XAxis dataKey="day" type="number" domain={["dataMin", "dataMax"]} hide />
-          <YAxis domain={[0.6, 4.4]} hide />
-          <Line
-            dataKey="value"
-            type="linear"
-            stroke="#aaa8bb"
-            strokeWidth={1.25}
-            dot={false}
-            connectNulls={false}
-            isAnimationActive={!reduceMotion}
-            animationDuration={900}
-          />
-          {(Object.keys(STAGE_META) as ClassificationStage[]).map((stage, stageIndex) => (
-            <Scatter
-              key={stage}
-              data={pointsForStage(points, stage)}
-              dataKey="value"
-              fill={STAGE_META[stage].color}
-              isAnimationActive={!reduceMotion}
-              animationBegin={stageIndex * 70}
-              animationDuration={650}
-            />
-          ))}
-          <ReferenceLine x={28} stroke="#454a9f" strokeWidth={1.2} strokeOpacity={0.55} />
-        </ComposedChart>
-      </ResponsiveContainer>
     </div>
   );
 }
@@ -274,7 +227,7 @@ function ExpandedHistory({
                 margin={{ top: 8, right: 20, bottom: 4, left: 2 }}
                 accessibilityLayer={false}
               >
-                <CartesianGrid vertical={false} stroke="#d9d6e7" strokeDasharray="2 4" />
+                <CartesianGrid vertical={false} stroke="#e2dff0" />
                 <XAxis
                   dataKey="day"
                   type="number"
@@ -316,22 +269,29 @@ function ExpandedHistory({
                     );
                   }}
                 />
-                <Line
-                  dataKey="value"
-                  type="monotone"
-                  stroke="#5f617a"
-                  strokeWidth={1.75}
-                  dot={false}
-                  connectNulls={false}
-                  isAnimationActive={!reduceMotion}
-                  animationDuration={1200}
-                />
+                {/* Lanes, not a line. The stages are named states in a loop, so
+                    a connecting line both invented values between them and made
+                    the wrap from the last stage back to the first read as a
+                    full-height plunge. The band behind each lane carries the
+                    category; the dots carry the days. */}
+                {(Object.keys(STAGE_META) as ClassificationStage[]).map((stage) => (
+                  <ReferenceArea
+                    key={`lane-${stage}`}
+                    y1={STAGE_META[stage].value - 0.42}
+                    y2={STAGE_META[stage].value + 0.42}
+                    fill={STAGE_VISUAL[stage].tint}
+                    fillOpacity={0.55}
+                    stroke="none"
+                    ifOverflow="extendDomain"
+                  />
+                ))}
                 {(Object.keys(STAGE_META) as ClassificationStage[]).map((stage, stageIndex) => (
                   <Scatter
                     key={stage}
                     data={pointsForStage(visible, stage)}
                     dataKey="value"
-                    fill={STAGE_META[stage].color}
+                    fill={STAGE_VISUAL[stage].color}
+                    shape="circle"
                     isAnimationActive={!reduceMotion}
                     animationBegin={stageIndex * 90}
                     animationDuration={750}
@@ -445,7 +405,7 @@ function TodayDistribution({
                 key={stage}
                 dataKey={stage}
                 stackId="stages"
-                fill={STAGE_META[stage].color}
+                fill={STAGE_VISUAL[stage].color}
                 isAnimationActive={!reduceMotion}
                 animationDuration={900}
               />
@@ -456,7 +416,7 @@ function TodayDistribution({
       <ul className="mt-4 space-y-2" aria-label="Saved stage counts">
         {(Object.keys(STAGE_META) as ClassificationStage[]).map((stage) => (
           <li key={stage} className="grid grid-cols-[14px_1fr_auto] items-center gap-2 text-sm">
-            <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: STAGE_META[stage].color }} />
+            <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: STAGE_VISUAL[stage].color }} />
             <span className="text-[#625f58]">{stage}</span>
             <span className="font-semibold tabular-nums text-[#292b4c]">
               {counts[stage]}{" "}
@@ -672,10 +632,13 @@ export function DayComplete({
                           </span>
                         </span>
                       </span>
-                      <MiniHistoryChart
+                      <CycleStrip
+                        key={`${item.subject}-${range}-${replayKey}`}
                         points={points}
-                        replayKey={replayKey}
+                        label={`${item.subject} cycle history`}
                         reduceMotion={reduceMotion}
+                        todayDay={28}
+                        className="py-2"
                       />
                     </button>
 
@@ -698,17 +661,9 @@ export function DayComplete({
             </div>
           </div>
 
-          <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-xs text-[#625f58]" aria-label="Cycle history legend">
-            {(Object.keys(STAGE_META) as ClassificationStage[]).map((stage) => (
-              <span key={stage} className="inline-flex items-center gap-1.5">
-                <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: STAGE_META[stage].color }} />
-                {stage}
-              </span>
-            ))}
-            <span className="inline-flex items-center gap-1.5">
-              <span className="h-px w-3 bg-[#bbb7ad]" />No observation
-            </span>
-            <span className="inline-flex items-center gap-1.5">
+          <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2" aria-label="Cycle history legend">
+            <CycleLegend />
+            <span className="inline-flex items-center gap-1.5 text-xs text-[#625f58]">
               <CircleAlert className="h-3.5 w-3.5 text-[#454a9f]" />Uncertain transition
             </span>
           </div>

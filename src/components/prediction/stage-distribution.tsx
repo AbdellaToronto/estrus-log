@@ -7,11 +7,14 @@ import {
 } from "@/lib/classification";
 import { cn } from "@/lib/utils";
 
+// Colour comes from the one validated palette. The previous values put Estrus
+// and Proestrus at ΔE 14.5, below the floor at which normal colour vision can
+// separate them — and those are the two stages the model confuses most.
 const STAGE_TONES: Record<ClassificationStage, string> = {
-  Proestrus: "bg-[#8f83d8]",
-  Estrus: "bg-[#c76f87]",
-  Metestrus: "bg-[#d3a450]",
-  Diestrus: "bg-[#6493ba]",
+  Proestrus: "bg-[#4a3aa7]",
+  Estrus: "bg-[#e34948]",
+  Metestrus: "bg-[#eda100]",
+  Diestrus: "bg-[#2a78d6]",
 };
 
 export function StageDistribution({

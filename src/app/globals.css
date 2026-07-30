@@ -115,6 +115,31 @@
   --sidebar-ring: oklch(0.556 0 0);
 }
 
+/* Cycle-history cells arrive along the axis the data moves on — left to right,
+   one day after another — rather than growing from nothing, which would imply
+   the stage itself was changing in magnitude. */
+@keyframes cycle-cell-in {
+  from {
+    opacity: 0;
+    transform: translateX(-4px) scaleY(0.55);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  @keyframes cycle-cell-in {
+    from {
+      opacity: 1;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

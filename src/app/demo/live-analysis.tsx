@@ -149,10 +149,10 @@ const STAGE_COPY: Record<Stage, { label: string; detail: string }> = {
 const MAX_BYTES = 10 * 1024 * 1024;
 
 const STAGE_SWATCH: Record<ClassificationStage, string> = {
-  Proestrus: "bg-[#8f83d8]",
-  Estrus: "bg-[#c76f87]",
-  Metestrus: "bg-[#d3a450]",
-  Diestrus: "bg-[#6493ba]",
+  Proestrus: "bg-[#4a3aa7]",
+  Estrus: "bg-[#e34948]",
+  Metestrus: "bg-[#eda100]",
+  Diestrus: "bg-[#2a78d6]",
 };
 
 function Eyebrow({ children }: { children: React.ReactNode }) {
@@ -1072,10 +1072,10 @@ export function LiveAnalysis() {
 }
 
 const STAGE_TONE: Record<ClassificationStage, string> = {
-  Proestrus: "bg-[#8f83d8]",
-  Estrus: "bg-[#c76f87]",
-  Metestrus: "bg-[#d3a450]",
-  Diestrus: "bg-[#6493ba]",
+  Proestrus: "bg-[#4a3aa7]",
+  Estrus: "bg-[#e34948]",
+  Metestrus: "bg-[#eda100]",
+  Diestrus: "bg-[#2a78d6]",
 };
 
 /**
