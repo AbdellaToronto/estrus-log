@@ -269,7 +269,11 @@ async function runAnalysis(
     binary: ensemble
       ? {
           source: "promoted_ensemble" as const,
-          group: ensemble.reference_backed_binary_suggestion ?? ensemble.binary_suggestion,
+          // Null when the guards refused to back it. Kept null rather than
+          // falling back to the raw suggestion, so a consumer of this API cannot
+          // read an abstention as an answer.
+          group: ensemble.reference_backed_binary_suggestion,
+          raw_suggestion: ensemble.binary_suggestion,
           probability_proestrus_or_estrus: ensemble.probability_proestrus_or_estrus,
           threshold: ensemble.threshold,
           decision_status: ensemble.decision_status,

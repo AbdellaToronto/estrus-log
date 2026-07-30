@@ -40,7 +40,10 @@ type SealedTest = { records: number; correct: number; balancedAccuracy: number }
 /** The validated DINOv2 ensemble, when its service answers. */
 type EnsembleResult = {
   source: "promoted_ensemble";
-  group: BinaryGroup;
+  /** Null when the guards declined to back a suggestion. */
+  group: BinaryGroup | null;
+  /** What it would have said without the guards. Never presented as the answer. */
+  raw_suggestion: BinaryGroup;
   probability_proestrus_or_estrus: number;
   threshold: number;
   decision_status: "reference_backed_suggestion" | "abstain";
@@ -67,9 +70,28 @@ type FloorResult = {
 
 type BinaryResult = EnsembleResult | FloorResult;
 
+/** The call to show. When the guards could not back it the raw suggestion is
+ *  still displayed, marked as unvalidated rather than withheld. */
+function displayedGroup(binary: BinaryResult): BinaryGroup {
+  if (binary.group) return binary.group;
+  return binary.source === "promoted_ensemble"
+    ? binary.raw_suggestion
+    : "PROESTRUS_OR_ESTRUS";
+}
+
 const BINARY_LABEL: Record<BinaryGroup, string> = {
   PROESTRUS_OR_ESTRUS: "Proestrus or Estrus",
   METESTRUS_OR_DIESTRUS: "Metestrus or Diestrus",
+};
+
+/** The service returns machine reasons; a scientist needs to know what to do. */
+const ABSTENTION_COPY: Record<string, string> = {
+  out_of_public_training_reference:
+    "This animal sits outside the reference library, which today holds only white-coated mice.",
+  acquisition_colour_or_exposure_out_of_range:
+    "Colour or exposure falls outside the range of the reference photographs — a different coat, or different lighting.",
+  clean_dark_coat_disagreement:
+    "The call changed when the coat was synthetically darkened, so it is leaning on coat brightness rather than on tissue.",
 };
 
 type AnalysisResponse = {
@@ -603,12 +625,19 @@ export function LiveAnalysis() {
                     </span>
                   </div>
 
-                  <h2 className="mt-2 font-serif text-4xl text-[#292b4c]">
-                    {result.binary.source === "promoted_ensemble" &&
-                    result.binary.decision_status === "abstain"
-                      ? "Abstained"
-                      : BINARY_LABEL[result.binary.group]}
-                  </h2>
+                  {/* The call is always shown. When the guards could not back it
+                      that is context on the reference set's current coverage,
+                      not a reason to withhold the result. */}
+                  <div className="mt-2 flex flex-wrap items-center gap-3">
+                    <h2 className="font-serif text-4xl text-[#292b4c]">
+                      {BINARY_LABEL[displayedGroup(result.binary)]}
+                    </h2>
+                    {!result.binary.group && (
+                      <span className="bg-[#efece5] px-2 py-1 text-[10px] font-bold uppercase tracking-[0.1em] text-[#68645d]">
+                        Not yet validated for this coat
+                      </span>
+                    )}
+                  </div>
 
                   {result.binary.source === "promoted_ensemble" ? (
                     <>
@@ -648,6 +677,29 @@ export function LiveAnalysis() {
                           </div>
                         ))}
                       </dl>
+                      {/* Why the guards could not back the call. Framed as where
+                          the reference set currently reaches, since expanding it
+                          is planned work rather than a fault in this photograph. */}
+                      {result.binary.abstention_reasons.length > 0 && (
+                        <div className="mt-4 border-l-2 border-[#b4b2d4] bg-[#fbfaf7] px-4 py-3">
+                          <p className="text-[13px] font-semibold text-[#292b4c]">
+                            Shown, but not yet backed by validation
+                          </p>
+                          <ul className="mt-1.5 space-y-1 text-[13px] leading-5 text-[#625f58]">
+                            {result.binary.abstention_reasons.map((reason) => (
+                              <li key={reason}>{ABSTENTION_COPY[reason] ?? reason}</li>
+                            ))}
+                          </ul>
+                          <p className="mt-2 border-t border-[#e8e3da] pt-2 text-[12px] leading-5 text-[#625f58]">
+                            This is expected at this stage. The reference library is built
+                            from the published white-coated benchmark, so anything outside
+                            that — a darker coat, different lighting — sits ahead of where
+                            validation currently reaches. Building a reference set across
+                            coat colours is the next dataset effort, and it is what will
+                            turn calls like this one into backed results.
+                          </p>
+                        </div>
+                      )}
                       {/* The floor is kept visible so the ensemble's contribution is
                           legible rather than asserted. */}
                       {result.binary_floor && (
@@ -726,15 +778,24 @@ export function LiveAnalysis() {
                   that would sit at chance. */}
               {result.binary && (
                 <FourStageEstimate
-                  group={result.binary.group as PosteriorGroup}
+                  // Falls back to the raw suggestion only to satisfy the shape;
+                  // `abstained` below makes the likelihood uniform, so the value
+                  // has no influence on the result when the guards refused.
+                  group={
+                    (result.binary.group ??
+                      (result.binary.source === "promoted_ensemble"
+                        ? result.binary.raw_suggestion
+                        : "PROESTRUS_OR_ESTRUS")) as PosteriorGroup
+                  }
                   probabilityProestrusOrEstrus={
                     result.binary.source === "promoted_ensemble"
                       ? result.binary.probability_proestrus_or_estrus
                       : result.binary.scores.PROESTRUS_OR_ESTRUS
                   }
                   abstained={
-                    result.binary.source === "promoted_ensemble" &&
-                    result.binary.decision_status === "abstain"
+                    result.binary.source === "promoted_ensemble"
+                      ? result.binary.group === null
+                      : !result.binary.in_reference_domain
                   }
                   previousStage={previousStage}
                   daysSince={daysSince}

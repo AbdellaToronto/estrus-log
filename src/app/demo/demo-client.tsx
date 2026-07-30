@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { DayComplete } from "./day-complete";
 import { LiveAnalysis } from "./live-analysis";
+import { BulkEvaluation } from "./bulk-evaluation";
 import { StageDistribution } from "@/components/prediction/stage-distribution";
 import {
   EXTERNAL_ROI_REFERENCE_HEIGHT,
@@ -22,7 +23,7 @@ import { ESTRUS_STAGES, type ClassificationStage } from "@/lib/classification";
 import { cn } from "@/lib/utils";
 
 type ReviewState = "ready" | "attention" | "abstained";
-type DemoView = "review" | "receipt" | "complete" | "live" | "method";
+type DemoView = "review" | "receipt" | "complete" | "live" | "batch" | "method";
 
 type DemoPrediction = {
   id: string;
@@ -190,12 +191,15 @@ function DemoHeader({
             <p className="font-serif text-xl font-semibold text-[#30345f]">Estrus</p>
             <p className="text-[10px] font-bold uppercase tracking-[0.17em] text-[#625f58]">Demonstration</p>
           </div>
-          <nav className="flex lg:ml-10" aria-label="Demo pages">
+          {/* Five tabs no longer fit a phone in one row. Wrapping keeps every
+              tab reachable without the header forcing the page sideways. */}
+          <nav className="flex flex-wrap lg:ml-10 lg:flex-nowrap" aria-label="Demo pages">
             {[
               ["review", "Prediction inbox"],
               ["receipt", "Review receipt"],
               ["complete", "Day complete"],
               ["live", "Analyze a photo"],
+              ["batch", "Batch evaluation"],
             ].map(([target, label]) => (
               <button
                 key={target}
@@ -208,8 +212,8 @@ function DemoHeader({
                 )}
               >
                 {label}
-                {/* The only view backed by real inference rather than replayed data. */}
-                {target === "live" && (
+                {/* The views backed by real inference rather than replayed data. */}
+                {(target === "live" || target === "batch") && (
                   <span
                     className="h-1.5 w-1.5 rounded-full bg-[#c76f87]"
                     aria-label="live inference"
@@ -684,15 +688,20 @@ export function DemoClient() {
         />
       )}
       {view === "live" && <LiveAnalysis />}
+      {view === "batch" && (
+        <main className="mx-auto max-w-[1500px] px-5 py-7 sm:px-8 lg:px-12">
+          <BulkEvaluation />
+        </main>
+      )}
       {view === "method" && <Method />}
       <footer className="mt-8 border-t border-[#ded9cd] bg-[#f0ede5]">
         <div className="mx-auto flex max-w-[1500px] flex-col gap-3 px-5 py-4 text-[10px] leading-4 text-[#625f58] sm:px-8 lg:flex-row lg:items-center lg:justify-between lg:px-12">
           <div>
             <p>Estrus demo · public reference photographs · no production record is changed</p>
-            {/* The live view is the one place the numbers come from a real
-                encoder call, so it must not carry the "illustrative" caption. */}
+            {/* The live and batch views are where numbers come from a real
+                encoder call, so they must not carry the "illustrative" caption. */}
             <p className="mt-1">
-              {view === "live"
+              {view === "live" || view === "batch"
                 ? "This view runs live inference against the deployed encoder. Scores are relative model support, not calibrated probabilities, and nothing is saved."
                 : "Historical observations are illustrative demo data. Scores are relative model support, not live calibrated inference."}
             </p>
