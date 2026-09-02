@@ -97,6 +97,7 @@ export function CycleRing({
   arcs,
   size = 280,
   reduceMotion = false,
+  showReadout = true,
   label,
   className,
 }: {
@@ -107,6 +108,11 @@ export function CycleRing({
   arcs: StageArc[];
   size?: number;
   reduceMotion?: boolean;
+  /**
+   * Print the date and description in the clear centre. Off when a readout
+   * sits beside the ring, so the needle has the centre to itself.
+   */
+  showReadout?: boolean;
   label: string;
   className?: string;
 }) {
@@ -260,7 +266,7 @@ export function CycleRing({
       </svg>
 
       {/* Readout in the clear centre. HTML so the description can wrap. */}
-      <div
+      {showReadout && <div
         className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center"
         style={{ padding: petalOuter - petalDepth + 12 }}
         aria-hidden="true"
@@ -275,7 +281,7 @@ export function CycleRing({
         <p className="mt-0.5 text-[10px] leading-3.5" style={{ color: MUTED }}>
           {description}
         </p>
-      </div>
+      </div>}
     </div>
   );
 }
@@ -334,22 +340,29 @@ export function PhaseScrubber({
                 onSelect(day.date);
               }}
               className={cn(
-                "relative h-8 min-w-0 flex-1 overflow-hidden outline-none",
+                "relative h-8 min-w-0 flex-1 overflow-hidden outline-none transition-[box-shadow] duration-150",
                 !day.observed && !day.forecast && "border border-dashed border-[#b9b5a8]",
-                selected && "ring-2 ring-[#292b4c] ring-offset-1"
+                selected ? "ring-2 ring-inset ring-[#292b4c]" : "focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#8f91bd]"
               )}
               style={{
-                backgroundColor: day.forecast ? undefined : visual.color,
-                backgroundImage: background,
-                opacity: alpha,
                 animation: reduceMotion
                   ? undefined
                   : "cycle-cell-in 320ms cubic-bezier(0.22,1,0.36,1) both",
                 animationDelay: reduceMotion ? undefined : `${Math.min(index * 22, 800)}ms`,
               }}
             >
+              {/* The fill fades with certainty; the button stays opaque so the
+                  selection ring and the letter read at full strength. */}
+              <span
+                className="absolute inset-0"
+                style={{
+                  backgroundColor: day.forecast ? undefined : visual.color,
+                  backgroundImage: background,
+                  opacity: alpha,
+                }}
+              />
               {day.observed && (
-                <span className="pointer-events-none absolute inset-0 flex items-center justify-center text-[10px] font-bold text-white/90">
+                <span className="pointer-events-none absolute inset-0 flex items-center justify-center text-[10px] font-bold text-white">
                   {visual.short}
                 </span>
               )}

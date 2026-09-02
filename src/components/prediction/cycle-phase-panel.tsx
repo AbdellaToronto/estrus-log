@@ -119,6 +119,7 @@ export function CyclePhasePanel({
           arcs={result.arcs}
           size={compact ? 232 : 284}
           reduceMotion={reduceMotion}
+          showReadout={false}
           label={`${subjectLabel} cycle phase`}
           className="justify-self-center"
         />
@@ -157,7 +158,7 @@ export function CyclePhasePanel({
           </dl>
 
           <dl className="mt-3 grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 border-t border-[#ebe6dc] pt-3 text-xs">
-            <dt className="text-[#625f58]">Commitment of this estimate</dt>
+            <dt className="text-[#625f58]">Certainty of this position</dt>
             <dd className="font-semibold tabular-nums text-[#292b4c]">{Math.round(selected.concentration * 100)}%</dd>
             <dt className="text-[#625f58]">Estrus expected</dt>
             <dd className="font-semibold text-[#292b4c]">
@@ -180,13 +181,27 @@ export function CyclePhasePanel({
         label={`${subjectLabel} phase by day`}
       />
 
-      <p className="mt-3 text-[10px] leading-4 text-[#77736c]">
-        Phase is inferred from the saved stages, the order they must follow, and a
-        {" "}{result.period.toFixed(1)}-day period; petal depth is posterior mass and the solid
-        needle is how committed the estimate is. Days without a photo are carried by the
-        prior, hatched days are forecasts, and the binary model&apos;s vote is tempered by
-        whether the photograph was in its reference range. The saved stage remains the
-        scientific record.
+      <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1.5" aria-label="Scrubber legend">
+        <span className="inline-flex items-center gap-1.5 text-[11px] text-[#625f58]">
+          <span className="inline-flex h-3 w-3 items-center justify-center bg-[#292b4c] text-[8px] font-bold text-white">E</span>
+          Observed, faded by certainty
+        </span>
+        <span className="inline-flex items-center gap-1.5 text-[11px] text-[#625f58]">
+          <span className="inline-block h-3 w-3 border border-dashed border-[#b9b5a8] bg-[#292b4c]/40" />
+          No photo, carried by the prior
+        </span>
+        <span className="inline-flex items-center gap-1.5 text-[11px] text-[#625f58]">
+          <span
+            className="inline-block h-3 w-3"
+            style={{ backgroundImage: "repeating-linear-gradient(135deg, #292b4c 0 2px, transparent 2px 4px)" }}
+          />
+          Forecast
+        </span>
+      </div>
+      <p className="mt-2 text-[10px] leading-4 text-[#77736c]">
+        Petal depth is posterior mass; the solid needle is how sure the position is. The
+        estimate follows the saved stages, their fixed order, and a {result.period.toFixed(1)}-day
+        cycle. The saved stage remains the scientific record.
       </p>
     </section>
   );
