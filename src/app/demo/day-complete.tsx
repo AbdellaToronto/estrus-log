@@ -28,6 +28,8 @@ import {
 } from "recharts";
 import { ESTRUS_STAGES, type ClassificationStage } from "@/lib/classification";
 import { CycleLegend, CycleStrip } from "@/components/prediction/cycle-strip";
+import { CyclePhasePanel } from "@/components/prediction/cycle-phase-panel";
+import type { PhaseObservation } from "@/lib/cycle-phase";
 import { STAGE_VISUAL } from "@/lib/stage-palette";
 import { cn } from "@/lib/utils";
 
@@ -174,6 +176,27 @@ function ExpandedHistory({
   reduceMotion: boolean;
 }) {
   const visible = points.slice(-range);
+  // The whole 28-day record feeds the phase model even when the chart shows a
+  // shorter range: a cycle length cannot be fitted to a week. Today's four
+  // relative support scores enter as the early-group share, the same half-ring
+  // vote the public binary model casts on a real record.
+  const phaseObservations = useMemo<PhaseObservation[]>(
+    () =>
+      points
+        // A day with no saved stage is a gap for the prior to carry, not an
+        // observation. Today is the exception when it was saved as uncertain:
+        // a photo was taken, it just did not settle on a stage.
+        .filter((point) => point.stage !== null || point.day === 28)
+        .map((point) => ({
+          date: `2026-07-${String(point.day).padStart(2, "0")}`,
+          stage: point.stage,
+          uncertain: point.day === 28 && item.finalStage === "Uncertain / transition",
+          earlyGroupProbability:
+            point.day === 28 ? item.scores.Proestrus + item.scores.Estrus : null,
+          earlyGroupReferenceBacked: true,
+        })),
+    [points, item]
+  );
   const aiProposal = [
     { day: 28, value: STAGE_META[item.prediction].value },
   ];
@@ -346,6 +369,15 @@ function ExpandedHistory({
           </div>
           <CompactSupportScores item={item} reduceMotion={reduceMotion} />
         </div>
+      </div>
+      <div className="border-t border-[#c9c7e7] px-4 pb-5 pt-4">
+        <CyclePhasePanel
+          compact
+          observations={phaseObservations}
+          subjectLabel={item.subject}
+          heading="Inferred cycle phase"
+          reduceMotion={reduceMotion}
+        />
       </div>
     </motion.div>
   );

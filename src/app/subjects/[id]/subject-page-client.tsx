@@ -26,6 +26,8 @@ import { ChevronDown, Loader2, Pencil, Search } from "lucide-react";
 import { LogEntryModal } from "@/components/log-entry-modal";
 import { EstrusIcon } from "@/components/estrus-icon";
 import { StageDistribution } from "@/components/prediction/stage-distribution";
+import { CyclePhasePanel } from "@/components/prediction/cycle-phase-panel";
+import type { PhaseObservation } from "@/lib/cycle-phase";
 import {
   ESTRUS_STAGES,
   isClassificationStage,
@@ -65,6 +67,8 @@ type SubjectLog = {
   stage: string;
   confidence: ConfidenceShape;
   created_at: string;
+  capture_date?: string | null;
+  label_status?: string | null;
   image_url: string | null;
   reference_image_url?: string | null;
   reference_modality?: string | null;
@@ -264,6 +268,36 @@ export function SubjectPageClient({
     [logs]
   );
 
+  // One observation per log for the phase model. The capture date is the
+  // scientific day; created_at is only a fallback for records saved before
+  // capture dates were recorded, and it can sit a day off across midnight.
+  const phaseObservations = useMemo<PhaseObservation[]>(
+    () =>
+      logs.map((log) => {
+        const context = getObservationContext(log);
+        const binary = getExternalBinaryEvidence(log);
+        const date =
+          context?.capture_date ||
+          log.capture_date ||
+          new Date(log.created_at).toISOString().slice(0, 10);
+        const uncertain =
+          context?.label_status === "uncertain_or_transition" ||
+          log.label_status === "uncertain_or_transition";
+        return {
+          date,
+          stage: isClassificationStage(log.stage) ? log.stage : null,
+          uncertain,
+          earlyGroupProbability:
+            typeof binary?.probability_proestrus_or_estrus === "number"
+              ? binary.probability_proestrus_or_estrus
+              : null,
+          earlyGroupReferenceBacked:
+            binary?.decision_status === "reference_backed_suggestion",
+        };
+      }),
+    [logs]
+  );
+
   const distributionData = useMemo<StageDistributionEntry[]>(() => {
     const counts = logs.reduce<Record<string, number>>((acc, log) => {
       acc[log.stage] = (acc[log.stage] || 0) + 1;
@@ -408,6 +442,12 @@ export function SubjectPageClient({
           </p>
         </section>
       ) : (<>
+      <CyclePhasePanel
+        className="order-2"
+        observations={phaseObservations}
+        subjectLabel={subject.name}
+      />
+
       {/* Secondary analytical summary */}
       <details
         className="group order-4 border border-[#ded9cd] bg-[#fbfaf7]"

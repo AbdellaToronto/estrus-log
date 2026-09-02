@@ -18,7 +18,8 @@
     "db:status": "supabase status",
     "typegen": "npx supabase gen types typescript --project-id zqsuaoduwsktldzlfcha > src/lib/database-types.ts",
     "trigger:dev": "pnpm dlx trigger.dev@latest dev",
-    "webhook": "npx localtunnel --port 3000"
+    "webhook": "npx localtunnel --port 3000",
+    "test": "node --import ./scripts/node-ts-resolve.mjs --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test \"src/**/*.test.ts\""
   },
   "dependencies": {
     "@ai-sdk/google": "^2.0.40",
